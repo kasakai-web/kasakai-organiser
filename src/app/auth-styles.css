@@ -1,0 +1,19 @@
+@media (max-width: 480px) {
+  .auth-form-container {
+    padding: 20px 15px !important;
+  }
+
+  .otp-input-container {
+    gap: 5px !important;
+    padding-left: 5px;
+    padding-right: 5px;
+    box-sizing: border-box;
+    width: 100%;
+  }
+
+  .otp-input {
+    width: 14% !important;
+    height: 45px !important;
+    font-size: 20px !important;
+  }
+}

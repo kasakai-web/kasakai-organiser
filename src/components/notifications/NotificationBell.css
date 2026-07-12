@@ -1,0 +1,79 @@
+/* ══════════════════════════════════════════════
+   NOTIFICATION BELL
+══════════════════════════════════════════════ */
+
+.nb-wrap {
+  position: relative;
+  display: flex;
+  align-items: center;
+  height: 100%;
+}
+
+/* ── Trigger button ── */
+.nb-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 40px;
+  height: 40px;
+  border-radius: 10px;
+  background: transparent;
+  border: 1px solid transparent;
+  cursor: pointer;
+  color: #5a5a5a;
+  position: relative;
+  transition: color 0.15s, background 0.15s, border-color 0.15s;
+  flex-shrink: 0;
+}
+
+.nb-btn:hover {
+  color: var(--white, #f8f6f1);
+  background: rgba(200, 255, 62, 0.08);
+  border-color: rgba(200, 255, 62, 0.15);
+}
+
+.nb-btn:focus-visible {
+  outline: 2px solid rgba(200, 255, 62, 0.45);
+  outline-offset: 2px;
+}
+
+/* ── Unread badge ── */
+.nb-badge {
+  position: absolute;
+  top: 5px;
+  right: 5px;
+  min-width: 16px;
+  height: 16px;
+  padding: 0 4px;
+  border-radius: 8px;
+  background: #ff4444;
+  color: #fff;
+  font-size: 9px;
+  font-weight: 800;
+  line-height: 16px;
+  text-align: center;
+  font-family: var(--mono, monospace);
+  border: 1.5px solid var(--black, #080808);
+  pointer-events: none;
+  animation: nb-pop 0.3s cubic-bezier(0.34, 1.56, 0.64, 1) both;
+}
+
+@keyframes nb-pop {
+  from { transform: scale(0); opacity: 0; }
+  to   { transform: scale(1); opacity: 1; }
+}
+
+/* ── Navbar variant ── */
+.nb-nav-wrap {
+  height: 100%;
+  display: flex;
+  align-items: center;
+  padding: 0 14px;
+  border-left: 1px solid var(--border, #1e1e1e);
+  position: relative;
+}
+
+.nb-nav-wrap .nb-btn {
+  width: 36px;
+  height: 36px;
+}

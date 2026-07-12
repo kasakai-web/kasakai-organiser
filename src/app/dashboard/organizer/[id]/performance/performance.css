@@ -1,0 +1,192 @@
+/* ══════════════════════════════════════════════
+   ORGANISER PERFORMANCE PAGE
+══════════════════════════════════════════════ */
+
+/* ── Stats row ── */
+.op-stats-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  margin-bottom: 24px;
+  align-items: flex-start;
+}
+
+.op-stat {
+  background: #111114;
+  border: 1px solid #1e1e22;
+  border-radius: 10px;
+  padding: 14px 20px;
+  text-align: center;
+  min-width: 90px;
+  flex: 1 1 80px;
+  max-width: 140px;
+}
+
+.op-stat-value {
+  font-size: 28px;
+  font-weight: 800;
+  color: #f4efe8;
+  line-height: 1;
+  font-family: var(--mono, monospace);
+  margin-bottom: 4px;
+}
+.op-stat-value.op-gold  { color: #fbbf24; }
+.op-stat-value.op-lime  { color: #c4d56c; }
+.op-stat-value.op-green { color: #4ade80; }
+
+.op-stat-label {
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  color: #555;
+  font-weight: 700;
+}
+
+/* Top tags block (wider, sits beside stat cards) */
+.op-top-tags {
+  background: #111114;
+  border: 1px solid #1e1e22;
+  border-radius: 10px;
+  padding: 14px 16px;
+  flex: 2 1 200px;
+}
+
+/* ── Cards grid ── */
+.op-cards {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+  gap: 14px;
+}
+
+/* ── Individual card ── */
+.op-card {
+  background: #111114;
+  border: 1px solid #1e1e22;
+  border-radius: 10px;
+  padding: 16px 18px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  transition: border-color 0.15s;
+}
+.op-card:hover { border-color: rgba(196,213,108,0.2); }
+
+/* ── Card header ── */
+.op-card-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.op-card-main { flex: 1; min-width: 0; }
+
+.op-card-name {
+  font-size: 14px;
+  font-weight: 700;
+  color: #f4efe8;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  margin-bottom: 4px;
+}
+
+.op-card-meta {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.op-card-sub {
+  font-size: 11px;
+  color: #444;
+  flex-shrink: 0;
+  white-space: nowrap;
+}
+
+/* ── Badges ── */
+.op-badge {
+  font-size: 9px;
+  font-weight: 700;
+  padding: 2px 6px;
+  border-radius: 4px;
+  background: rgba(196,213,108,0.1);
+  color: #c4d56c;
+  border: 1px solid rgba(196,213,108,0.2);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.op-badge-pos {
+  background: rgba(251,191,36,0.1);
+  color: #fbbf24;
+  border-color: rgba(251,191,36,0.25);
+}
+
+.op-muted { font-size: 11px; color: #555; }
+
+/* ── Ratings row inside card ── */
+.op-ratings-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 14px;
+}
+
+.op-rating-cell {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 90px;
+}
+
+.op-rating-label {
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  color: #555;
+  font-weight: 700;
+}
+
+/* ── Tags ── */
+.op-tags-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.op-tag {
+  font-size: 10px;
+  font-weight: 600;
+  padding: 3px 9px;
+  border-radius: 20px;
+  background: rgba(196,213,108,0.08);
+  color: #c4d56c;
+  border: 1px solid rgba(196,213,108,0.18);
+}
+
+.op-tag-feedback {
+  background: rgba(74,222,128,0.07);
+  color: #4ade80;
+  border-color: rgba(74,222,128,0.18);
+}
+
+.op-tag-count { opacity: 0.6; }
+
+/* ── Comment ── */
+.op-comment {
+  font-size: 12px;
+  color: #666;
+  font-style: italic;
+  border-top: 1px solid #1a1a1e;
+  padding-top: 8px;
+  line-height: 1.5;
+}
+
+/* ── Mobile ── */
+@media (max-width: 640px) {
+  .op-cards { grid-template-columns: 1fr; }
+  .op-stats-row { gap: 8px; }
+  .op-stat { padding: 12px 14px; max-width: none; }
+  .op-stat-value { font-size: 22px; }
+}

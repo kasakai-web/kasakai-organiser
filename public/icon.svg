@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="64" height="64">
+  <rect width="64" height="64" fill="#f4efe8"/>
+  <rect y="33" width="64" height="31" fill="#111111"/>
+  <rect y="31" width="64" height="2" fill="#444444"/>
+  <text x="32" y="26" text-anchor="middle" font-family="Arial Black, Arial, sans-serif" font-weight="900" font-size="14" fill="#111111">KASA</text>
+  <text x="32" y="52" text-anchor="middle" font-family="Arial Black, Arial, sans-serif" font-weight="900" font-size="15" fill="#f4efe8">KAI</text>
+</svg>
