@@ -1,8 +1,8 @@
 "use client";
 
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import { buildApiUrl, getSession } from "@/utils/api";
-import { checkInDate, defaultCheckTimes, checkInIsoFromParts, istYMD, istHHmm } from "@/utils/checkins";
+import { checkInIsoFromParts, istYMD, istHHmm, sameMinute } from "@/utils/checkins";
 
 interface Turf { _id: string; name: string; location: { city: string } }
 
@@ -15,16 +15,42 @@ const slotsFromFormat = (fmt: string) => {
   return 10;
 };
 
+// "18:30" → "6:30 PM"
+const to12h = (v: string) => {
+  const [h, m] = v.split(":").map(Number);
+  if (Number.isNaN(h) || Number.isNaN(m)) return v;
+  const displayHour = h % 12 === 0 ? 12 : h % 12;
+  return `${displayHour}:${String(m).padStart(2, "0")} ${h < 12 ? "AM" : "PM"}`;
+};
+
 const TIME_SLOT_OPTIONS = Array.from({ length: 96 }, (_, idx) => {
   const hours = Math.floor(idx / 4);
   const minutes = String((idx % 4) * 15).padStart(2, "0");
   const value = `${String(hours).padStart(2, "0")}:${minutes}`;
-  const displayHour = hours % 12 === 0 ? 12 : hours % 12;
-  const period = hours < 12 ? "AM" : "PM";
-  return { value, label: `${displayHour}:${minutes} ${period}` };
+  return { value, label: to12h(value) };
 });
 
-const timeLabel = (v: string) => TIME_SLOT_OPTIONS.find((o) => o.value === v)?.label || v;
+// The quarter-hour grid, plus `value` itself when it sits off-grid. Games created
+// through the API (or seeded) can hold any minute, and a <select> whose value
+// matches no option renders blank — saving it would then silently move the time
+// to whatever the browser fell back to.
+const timeOptionsFor = (value: string) => {
+  if (!value || TIME_SLOT_OPTIONS.some((o) => o.value === value)) return TIME_SLOT_OPTIONS;
+  return [...TIME_SLOT_OPTIONS, { value, label: `${to12h(value)} (current)` }]
+    .sort((a, b) => a.value.localeCompare(b.value));
+};
+
+// "Sun, 19 Jul 2026 · 9:00 AM" — always IST, never the browser's zone.
+const prettyIst = (iso?: string | null) => {
+  if (!iso) return "—";
+  const d = new Date(iso);
+  if (isNaN(d.getTime())) return "—";
+  return d.toLocaleString("en-IN", {
+    timeZone: "Asia/Kolkata",
+    weekday: "short", day: "2-digit", month: "short", year: "numeric",
+    hour: "2-digit", minute: "2-digit", hour12: true,
+  });
+};
 
 interface GuestReg {
   _id: string; plusOneName: string;
@@ -84,6 +110,8 @@ export function EditEventModal({
     | { type: "join" | "leave" }
     | { type: "remove-guest"; guest: GuestReg };
   const [pending, setPending] = useState<PendingAction | null>(null);
+  // The kickoff-move confirmation, raised by Save rather than by a field.
+  const [pendingSave, setPendingSave] = useState(false);
 
   /* ── Guest pref mini-modal ── */
   const [prefOpen, setPrefOpen] = useState(false);
@@ -106,15 +134,15 @@ export function EditEventModal({
   const [reportingMins, setReportingMins] = useState(initialData.reportingMinsBeforeGame ?? 30);
 
   const initialDateTime = useMemo(() => {
-    const scheduled = initialData.scheduledAt ? new Date(initialData.scheduledAt) : null;
-    if (!scheduled) return { date: "", time: "18:00" };
+    if (!initialData.scheduledAt) return { date: "", time: "18:00" };
     // Read both date and time in IST — never browser TZ or UTC, so late-night IST
-    // games keep the correct calendar date and hour when editing.
-    const istDate = scheduled.toLocaleDateString("en-CA", { timeZone: "Asia/Kolkata" }); // YYYY-MM-DD
-    const istHM = scheduled.toLocaleTimeString("en-GB", { timeZone: "Asia/Kolkata", hour: "2-digit", minute: "2-digit", hour12: false }); // HH:MM
-    const [hh, mmRaw] = istHM.split(":");
-    const mm = String(Math.round(Number(mmRaw) / 15) * 15 % 60).padStart(2, "0");
-    return { date: istDate, time: `${hh}:${mm}` };
+    // games keep the correct calendar date and hour when editing. The exact stored
+    // minute is kept: snapping it to the picker's grid here would move the game
+    // the first time the organiser saved anything at all.
+    return {
+      date: istYMD(initialData.scheduledAt),
+      time: istHHmm(initialData.scheduledAt),
+    };
   }, [initialData.scheduledAt]);
 
   const [date, setDate] = useState(initialDateTime.date);
@@ -136,13 +164,27 @@ export function EditEventModal({
   // misleading "< main fee" placeholder instead of the real cost.
   const [altFee, setAltFee] = useState<string>(hadAlternate ? String((lastAlt!.feeInPaise ?? 0) / 100) : "");
 
-  /* ── Confirmation check-ins (3.1) — restore saved times/dates, else derive ── */
+  /* ── Confirmation check-ins (3.1) — restore the saved times/dates ── */
   const [automationEnabled, setAutomationEnabled] = useState(Boolean(initialData.lifecycle?.automationEnabled));
-  const [firstCheckDate, setFirstCheckDate]   = useState(istYMD(initialData.lifecycle?.firstCheckAt)  || checkInDate(initialDateTime.date, initialDateTime.time));
-  const [firstCheckTime, setFirstCheckTime]   = useState(istHHmm(initialData.lifecycle?.firstCheckAt) || defaultCheckTimes(initialDateTime.time).first);
-  const [secondCheckDate, setSecondCheckDate] = useState(istYMD(initialData.lifecycle?.secondCheckAt)  || checkInDate(initialDateTime.date, initialDateTime.time));
-  const [secondCheckTime, setSecondCheckTime] = useState(istHHmm(initialData.lifecycle?.secondCheckAt) || defaultCheckTimes(initialDateTime.time).second);
-  const [checkTip, setCheckTip] = useState<"first" | "second" | null>(null);
+  const [firstCheckDate, setFirstCheckDate]   = useState(istYMD(initialData.lifecycle?.firstCheckAt));
+  const [firstCheckTime, setFirstCheckTime]   = useState(istHHmm(initialData.lifecycle?.firstCheckAt));
+  const [secondCheckDate, setSecondCheckDate] = useState(istYMD(initialData.lifecycle?.secondCheckAt));
+  const [secondCheckTime, setSecondCheckTime] = useState(istHHmm(initialData.lifecycle?.secondCheckAt));
+
+  /* ── Start-time edit (see Game-Time-Edit-Plan §3) ──
+     A check-in that has ALREADY run is settled — its moment has passed and the
+     engine is done with it, so it is neither shown nor sent. A check-in still
+     PENDING has to stay before kickoff, which is what the validation below and
+     the backend both enforce. */
+  const firstCheckDone  = Boolean(initialData.lifecycle?.firstCheckDoneAt);
+  const secondCheckDone = Boolean(initialData.lifecycle?.secondCheckDoneAt);
+  const timeEditable    = !["completed", "cancelled"].includes(initialData.status);
+
+  // Set once the organiser actually touches the kickoff / a check-in, so the
+  // re-anchoring below never fires on mount (which would overwrite saved values)
+  // and never overrules a check-in they set by hand.
+  const scheduleTouched  = useRef(false);
+  const checkTimesEdited = useRef(false);
 
   useEffect(() => {
     const { token } = getSession();
@@ -170,10 +212,68 @@ export function EditEventModal({
   const openSlots = Math.max(0, hardCap - filled);
 
   /* ── Check-in date pickers: lower bound + live ordering check ── */
-  const todayStr = new Date().toISOString().slice(0, 10);
+  // Today in IST — the pickers are IST, so a UTC "today" would offer yesterday
+  // to anyone editing between midnight and 5:30am IST.
+  const todayStr = istYMD(new Date().toISOString());
   const firstCheckIso  = checkInIsoFromParts(firstCheckDate, firstCheckTime);
   const secondCheckIso = checkInIsoFromParts(secondCheckDate, secondCheckTime);
-  const checkOrderBad  = !!(firstCheckIso && secondCheckIso && new Date(firstCheckIso) >= new Date(secondCheckIso));
+
+  /* ── The kickoff the form currently describes ── */
+  const scheduledIso = date && time
+    ? new Date(`${date}T${time}:00+05:30`).toISOString()   // entered in IST
+    : null;
+
+  // Only genuinely moved fields are treated as edits — and only those are sent
+  // (see handleSubmit). sameMinute is what stops an untouched save from reading
+  // as a reschedule and WhatsApping everyone about a change that never happened.
+  const timeChanged        = Boolean(scheduledIso) && !sameMinute(scheduledIso, initialData.scheduledAt);
+  const firstCheckChanged  = !firstCheckDone  && !sameMinute(firstCheckIso,  initialData.lifecycle?.firstCheckAt);
+  const secondCheckChanged = !secondCheckDone && !sameMinute(secondCheckIso, initialData.lifecycle?.secondCheckAt);
+
+  // How many people the save would message: every active registered person
+  // (a player and their guests are one human) plus the waitlist.
+  const notifyCount = useMemo(() => {
+    const ids = new Set<string>();
+    const idOf = (v: any) => String(v?._id ?? v ?? "");
+    (initialData.registrations || []).forEach((r: any) => {
+      if (["refunded", "forfeited"].includes(r.paymentStatus || "") || r.optedOut) return;
+      if (idOf(r.player)) ids.add(idOf(r.player));
+    });
+    (initialData.waitlist || []).forEach((w: any) => {
+      if (!["waiting", "notified", "approved"].includes(w.status || "")) return;
+      if (idOf(w.player)) ids.add(idOf(w.player));
+    });
+    return ids.size;
+  }, [initialData]);
+
+  /* ── Move the pending check-ins with the kickoff ──
+     A check-in is "N hours before kickoff", not a fixed wall-clock moment. If the
+     game moves a week out and the check-ins stay put, the engine reaches the 2nd
+     check-in on the old date and decides the game's fate a week early — with
+     automation ON, that auto-cancels and refunds a game nobody had a chance to
+     fill. Translating every pending check by the same delta keeps the organiser's
+     intent and preserves 1st < 2nd < kickoff for free. Always measured from the
+     ORIGINAL values so repeated edits can't compound. */
+  useEffect(() => {
+    if (!scheduleTouched.current || checkTimesEdited.current) return;
+    if (!scheduledIso || !initialData.scheduledAt) return;
+    const delta = +new Date(scheduledIso) - +new Date(initialData.scheduledAt);
+    if (delta === 0) return;
+
+    const shift = (iso: string | null | undefined) =>
+      new Date(+new Date(iso as string) + delta).toISOString();
+
+    if (!firstCheckDone && initialData.lifecycle?.firstCheckAt) {
+      const moved = shift(initialData.lifecycle.firstCheckAt);
+      setFirstCheckDate(istYMD(moved));
+      setFirstCheckTime(istHHmm(moved));
+    }
+    if (!secondCheckDone && initialData.lifecycle?.secondCheckAt) {
+      const moved = shift(initialData.lifecycle.secondCheckAt);
+      setSecondCheckDate(istYMD(moved));
+      setSecondCheckTime(istHHmm(moved));
+    }
+  }, [date, time]); // eslint-disable-line react-hooks/exhaustive-deps
 
   /* ── Execute confirmed action ── */
   const executeAction = async () => {
@@ -252,8 +352,11 @@ export function EditEventModal({
     setMinPlayers(Math.floor(slots * 0.7));
   };
 
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
+  // `timeConfirmed` is set when the organiser has OK'd the "this messages N
+  // people" bar; a plain submit with a moved kickoff raises that bar instead.
+  const handleSubmit = async (e: React.FormEvent | null, timeConfirmed = false) => {
+    e?.preventDefault();
+    setPendingSave(false);
     const newErrors: Record<string, string> = {};
     if (!title.trim()) newErrors.title = "Title is required";
     if (!turf) newErrors.turf = "Venue is required";
@@ -275,34 +378,46 @@ export function EditEventModal({
         else if (Number(feeInRs) > 0 && altFeeNum >= Number(feeInRs)) newErrors.alt = `Alternate fee must be less than the main fee (₹${feeInRs})`;
       }
     }
-    // Check-ins: second after first, both before kickoff.
-    if (date) {
-      const fIso = checkInIsoFromParts(firstCheckDate, firstCheckTime);
-      const sIso = checkInIsoFromParts(secondCheckDate, secondCheckTime);
-      const kickoff = new Date(`${date}T${time}:00+05:30`);
-      if (fIso && sIso) {
-        if (new Date(fIso) >= new Date(sIso)) newErrors.checks = "Second check-in must be after the first.";
-        else if (new Date(sIso) >= kickoff) newErrors.checks = "Check-ins must be before the game start time.";
+    // Start time + check-ins (plan §4). The backend re-validates all of this —
+    // this is only here to fail fast with a message that names what to fix.
+    if (timeChanged && scheduledIso && new Date(scheduledIso) <= new Date()) {
+      newErrors.date = "The new start time must be in the future.";
+    }
+    if (scheduledIso) {
+      const kickoff = new Date(scheduledIso);
+      // A check that already ran is exempt — its moment has passed.
+      if (!secondCheckDone && secondCheckIso && new Date(secondCheckIso) >= kickoff) {
+        newErrors.checks = `Your game would start before its 2nd check-in (${prettyIst(secondCheckIso)}). Move the 2nd check-in too, or pick a later start time.`;
+      } else if (!firstCheckDone && firstCheckIso && new Date(firstCheckIso) >= kickoff) {
+        newErrors.checks = `Your game would start before its 1st check-in (${prettyIst(firstCheckIso)}). Move the 1st check-in too, or pick a later start time.`;
+      } else if (!firstCheckDone && !secondCheckDone && firstCheckIso && secondCheckIso
+                 && new Date(firstCheckIso) >= new Date(secondCheckIso)) {
+        newErrors.checks = "The 2nd check-in must be after the 1st check-in.";
       }
     }
     if (Object.keys(newErrors).length > 0) { setErrors(newErrors); return; }
+
+    // Moving the kickoff messages everyone holding a place — confirm it first.
+    if (timeChanged && !timeConfirmed) { setErrors({}); setPendingSave(true); return; }
 
     setLoading(true);
     try {
       const { token } = getSession();
       if (!token) { setErrors({ submit: "Please login as organiser first" }); return; }
 
-      // Entered time is IST — anchor with +05:30 so the stored UTC instant is correct
-      // regardless of the organiser's browser timezone.
-      const scheduledAt = new Date(`${date}T${time}:00+05:30`);
-      const cutoffAt = new Date(scheduledAt.getTime() - 2 * 60 * 60 * 1000);
+      // Only fields that actually moved are sent. A check-in that has already run
+      // is never sent (nothing to change about it), and neither is one the
+      // organiser left alone — re-sending it could only ever disturb it.
+      const lifecycle: Record<string, unknown> = { automationEnabled };
+      if (firstCheckChanged)  lifecycle.firstCheckAt  = firstCheckIso;
+      if (secondCheckChanged) lifecycle.secondCheckAt = secondCheckIso;
 
-      // organiserIsPlaying is NOT included — it's managed in real-time above
+      // organiserIsPlaying is NOT included — it's managed in real-time above.
+      // cutoffAt is not sent either: the backend always re-derives it from the
+      // start time, so sending it would just be a second opinion it ignores.
       const payload: Record<string, unknown> = {
         title: title.trim(),
         turf,
-        scheduledAt: scheduledAt.toISOString(),
-        cutoffAt: cutoffAt.toISOString(),
         status,
         format,
         totalSlots: Number(totalSlots),
@@ -310,12 +425,11 @@ export function EditEventModal({
         durationMins: Number(durationMins),
         minPlayers: Number(minPlayers),
         reportingMinsBeforeGame: Number(reportingMins),
-        lifecycle: {
-          firstCheckAt:  checkInIsoFromParts(firstCheckDate, firstCheckTime),
-          secondCheckAt: checkInIsoFromParts(secondCheckDate, secondCheckTime),
-          automationEnabled,
-        },
+        lifecycle,
       };
+      // IST-anchored, and only when the organiser actually moved it — the backend
+      // treats an absent start time as "leave it alone".
+      if (timeChanged) payload.scheduledAt = scheduledIso;
 
       // Format Change is only editable when an alternate was defined at creation.
       // If none existed, leave allowSizeChange / alternateFormats untouched (don't
@@ -437,23 +551,51 @@ export function EditEventModal({
 
           {/* ── Schedule ── */}
           <Section title="Schedule">
-            <div style={{ fontSize: 11, color: "#e9b338", marginBottom: 4 }}>
-              🔒 The date &amp; start time are fixed once a game is created — they can&apos;t be edited.
-            </div>
+            {!timeEditable && (
+              <div style={{ fontSize: 11, color: "#e9b338", marginBottom: 4 }}>
+                🔒 This game is {initialData.status} — its date &amp; start time can no longer be edited.
+              </div>
+            )}
             <div className="form-row">
-              <Field label="Date 🔒">
-                <input type="date" className="form-input" value={date} disabled
-                  title="The game date is fixed at creation and can't be edited." />
+              <Field label={timeEditable ? "Date" : "Date 🔒"} error={errors.date}>
+                <input type="date" className={`form-input ${errors.date ? "error" : ""}`} value={date}
+                  disabled={!timeEditable} min={todayStr}
+                  onChange={(e) => { scheduleTouched.current = true; setDate(e.target.value); }}
+                  title={timeEditable ? undefined : `The date of a ${initialData.status} game can't be edited.`} />
               </Field>
-              <Field label="Game Start Time 🔒">
-                <select className="form-select" value={time} disabled
-                  title="The start time is fixed at creation and can't be edited.">
-                  {TIME_SLOT_OPTIONS.map((s) => (
+              <Field label={timeEditable ? "Game Start Time" : "Game Start Time 🔒"}>
+                <select className="form-select" value={time} disabled={!timeEditable}
+                  onChange={(e) => { scheduleTouched.current = true; setTime(e.target.value); }}
+                  title={timeEditable ? undefined : `The start time of a ${initialData.status} game can't be edited.`}>
+                  {timeOptionsFor(time).map((s) => (
                     <option key={s.value} value={s.value}>{s.label}</option>
                   ))}
                 </select>
               </Field>
             </div>
+            {timeEditable && timeChanged && (
+              <div style={{
+                padding: "9px 12px", borderRadius: 8, fontSize: 12, lineHeight: 1.5,
+                background: "rgba(233,179,56,0.08)", border: "1px solid rgba(233,179,56,0.3)", color: "#e9b338",
+              }}>
+                ⚠️ Changing the time notifies {notifyCount === 0
+                  ? "everyone registered & the waitlist"
+                  : `all ${notifyCount} ${notifyCount === 1 ? "person" : "people"} registered & waitlisted`} on WhatsApp.
+                <div style={{ marginTop: 6, color: "#aaa" }}>
+                  <span style={{ textDecoration: "line-through", color: "#777" }}>{prettyIst(initialData.scheduledAt)}</span>
+                  <span style={{ margin: "0 6px" }}>→</span>
+                  <span style={{ color: "#c8ff3e", fontWeight: 700 }}>{prettyIst(scheduledIso)}</span>
+                </div>
+              </div>
+            )}
+            {errors.checks && (
+              <div style={{
+                padding: "9px 12px", borderRadius: 8, fontSize: 12, lineHeight: 1.5,
+                background: "rgba(220,38,38,0.08)", border: "1px solid rgba(220,38,38,0.3)", color: "#f87171",
+              }}>
+                ⚠️ {errors.checks}
+              </div>
+            )}
             <div className="form-row">
               <Field label="Duration (mins)">
                 <input type="number" className="form-input" min="15" step="15" value={durationMins}
@@ -570,8 +712,47 @@ export function EditEventModal({
           </Section>
           )}
 
-          {/* Confirmation Check-ins are set at creation only — not editable here.
-              Saved check-in times / automation are preserved on save (state re-submitted unchanged). */}
+          {/* ── Confirmation Check-in (3.1) ──
+              Only the 2nd check-in is exposed, and only while it is still pending:
+              it is the decision point, and it is the one that constrains how far
+              back the kickoff can move. The 1st check-in follows the kickoff
+              automatically. Once the 2nd check has run there is nothing left to
+              change, so the section states that instead. */}
+          {initialData.lifecycle?.secondCheckAt && (
+            <Section title="Confirmation Check-in">
+              {secondCheckDone ? (
+                <div style={{ fontSize: 12, color: "#888" }}>
+                  ✓ 2nd check-in completed ({prettyIst(initialData.lifecycle.secondCheckAt)}) — only the start time can change now.
+                </div>
+              ) : (
+                <>
+                  <div style={{ fontSize: 11, color: "#666", marginBottom: 2 }}>
+                    The game&apos;s fate is decided here — it must stay before kickoff. It follows the start time automatically unless you set it yourself.
+                  </div>
+                  <div className="form-row">
+                    <Field label="2nd check-in date">
+                      <input type="date" className={`form-input ${errors.checks ? "error" : ""}`}
+                        value={secondCheckDate} min={todayStr}
+                        onChange={(e) => { checkTimesEdited.current = true; setSecondCheckDate(e.target.value); }} />
+                    </Field>
+                    <Field label="2nd check-in time">
+                      <select className={`form-select ${errors.checks ? "error" : ""}`} value={secondCheckTime}
+                        onChange={(e) => { checkTimesEdited.current = true; setSecondCheckTime(e.target.value); }}>
+                        {timeOptionsFor(secondCheckTime).map((s) => (
+                          <option key={s.value} value={s.value}>{s.label}</option>
+                        ))}
+                      </select>
+                    </Field>
+                  </div>
+                  <div style={{ fontSize: 11, color: "#666" }}>
+                    {automationEnabled
+                      ? `Automation is ON — the system will decide at ${prettyIst(secondCheckIso)}.`
+                      : `Automation is OFF — you'll be asked to decide at ${prettyIst(secondCheckIso)}.`}
+                  </div>
+                </>
+              )}
+            </Section>
+          )}
 
           {/* ── Your Participation (real-time) ── */}
           <Section title="Your Participation">
@@ -733,9 +914,38 @@ export function EditEventModal({
 
 
 
+          {/* Moving the kickoff is the one edit here that reaches out to other
+              people, so it gets a summary to confirm before the request fires. */}
+          {pendingSave && (
+            <div style={{
+              marginTop: 20, padding: "12px 14px",
+              background: "rgba(233,179,56,0.07)", border: "1px solid rgba(233,179,56,0.3)",
+              borderRadius: 8,
+            }}>
+              <div style={{ fontSize: 13, color: "#ddd", marginBottom: 10, lineHeight: 1.5 }}>
+                Move <b>{initialData.title}</b> from{" "}
+                <span style={{ textDecoration: "line-through", color: "#888" }}>{prettyIst(initialData.scheduledAt)}</span>{" "}
+                to <b style={{ color: "#c8ff3e" }}>{prettyIst(scheduledIso)}</b>
+                {notifyCount > 0
+                  ? <> and notify {notifyCount} {notifyCount === 1 ? "person" : "people"}?</>
+                  : <>?</>}
+              </div>
+              <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
+                <button type="button" onClick={() => setPendingSave(false)} disabled={loading}
+                  style={{ padding: "6px 14px", borderRadius: 6, background: "transparent", border: "1px solid #444", color: "#888", fontSize: 12, cursor: "pointer" }}>
+                  Cancel
+                </button>
+                <button type="button" onClick={() => handleSubmit(null, true)} disabled={loading}
+                  style={{ padding: "6px 16px", borderRadius: 6, background: "#e9b338", color: "#000", fontWeight: 700, fontSize: 12, border: "none", cursor: "pointer" }}>
+                  {loading ? "Saving…" : "Move & notify"}
+                </button>
+              </div>
+            </div>
+          )}
+
           <div className="form-actions" style={{ marginTop: 24 }}>
             <button type="button" className="btn-cancel" onClick={onClose} disabled={loading}>Cancel</button>
-            <button type="submit" className="btn-save" disabled={loading}>
+            <button type="submit" className="btn-save" disabled={loading || pendingSave}>
               {loading ? "Saving…" : "Save Changes"}
             </button>
           </div>
