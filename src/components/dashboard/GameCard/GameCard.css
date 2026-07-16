@@ -1,0 +1,552 @@
+/* .table-section:has(.games-list) {
+  overflow: visible;
+} */
+
+.games-list {
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+}
+
+.game-card {
+  position: relative;
+  display: flex;
+  align-items: center;
+  width: 100%;
+  gap: 28px;
+  background: #18191d;
+  border: 1px solid #2b2d33;
+  border-radius: 18px;
+  padding: 22px;
+  margin-bottom: 16px;
+  overflow: visible;
+}
+
+.status-bar {
+  position: absolute;
+  left: 0;
+  top: 18px;
+  bottom: 18px;
+  width: 4px;
+  border-radius: 10px;
+  background: #c8ff3e;
+}
+
+.status-bar.open {
+  background: #c8ff3e;
+}
+
+.status-bar.confirmed {
+  background: #44ff78;
+}
+
+.status-bar.starting-soon {
+  background: #ffc83d;
+}
+
+.status-bar.completed {
+  background: #60a5fa;
+}
+
+.status-bar.cancelled {
+  background: #f87171;
+}
+
+.game-left {
+  display: flex;
+  align-items: center;
+  gap: 22px;
+  flex: 1;
+}
+
+.status-box {
+  width: 120px;
+  height: 120px;
+  border-radius: 18px;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  align-items: center;
+  gap: 14px;
+  color: white;
+}
+
+.status-box.open {
+  background: #212816;
+  color: #c8ff3e;
+}
+
+.status-box.confirmed {
+  background: #16351f;
+  color: #44ff78;
+}
+
+.status-box.starting-soon {
+  background: #352d14;
+  color: #ffc83d;
+}
+
+.status-box.completed {
+  background: #16283a;
+  color: #60a5fa;
+}
+
+.status-box.cancelled {
+  background: #3a1616;
+  color: #f87171;
+}
+
+.status-pill {
+  padding: 7px 18px;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.status-box.open .status-pill {
+  background: rgba(200, 255, 62, 0.15);
+  color: #c8ff3e;
+}
+
+.status-box.confirmed .status-pill {
+  background: rgba(0, 255, 130, 0.15);
+  color: #43ff84;
+}
+
+.status-box.starting-soon .status-pill {
+  background: rgba(255, 180, 0, 0.18);
+  color: #ffc83d;
+}
+
+.status-box.completed .status-pill {
+  background: rgba(96, 165, 250, 0.15);
+  color: #60a5fa;
+}
+
+.status-box.cancelled .status-pill {
+  background: rgba(248, 113, 113, 0.15);
+  color: #f87171;
+}
+
+.game-card .game-details {
+  display: flex;
+  flex-direction: column;
+  flex-wrap: nowrap;
+  gap: 12px;
+}
+
+.title-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.game-details h3 {
+  color: white;
+  font-size: 22px;
+  margin: 0;
+}
+
+.detail-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: #b6b6b6;
+  font-size: 15px;
+}
+
+.detail-row svg {
+  color: white;
+}
+
+.game-card .game-stats {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 60px;
+  row-gap: 16px;
+}
+
+.stat {
+  border-left: 1px solid #777;
+  padding-left: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px; 
+  min-width: 95px;
+}
+
+.stat span {
+  font-size: 12px;
+  font-weight: 600;
+  color: #777;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.label { 
+  font-size: 12px;
+  color: #777;
+}
+
+.badge {
+  display: inline-block;
+  background: #33467a;
+  color: white;
+  border-radius: 8px;
+  padding: 6px 12px;
+  font-weight: 700;
+  width: fit-content;
+}
+
+.badge.format-5v5 {
+  background: #4a3d8f;
+}
+.badge.format-6v6 {
+  background: #33467a;
+}
+.badge.format-7v7 {
+  background: #7a4526;
+}
+.badge.format-8v8 {
+  background: #2f6b5e;
+}
+.badge.format-9v9 {
+  background: #7a2f57;
+}
+.badge.format-11v11 {
+  background: #7a2f2f;
+}
+.badge.format-default {
+  background: #33467a;
+}
+
+.stat strong { 
+  /* border: 1px solid red; */
+  font-size: 18px;
+  color: white;  
+  margin-top: 6px;
+}
+
+.players {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: #60a5fa;
+}
+
+.stat small {
+  color: #8a8a8a;
+}
+
+.stat-postgame {
+  min-width: 130px;
+}
+
+.postgame-mini {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin-top: 4px;
+}
+
+.postgame-mini-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  font-size: 12px;
+  color: #b6b6b6;
+}
+
+.postgame-mini-row b {
+  color: white;
+  font-weight: 700;
+  background: rgba(255, 255, 255, 0.06);
+  padding: 1px 7px;
+  border-radius: 5px;
+}
+
+.postgame-mini-status {
+  margin-top: 4px;
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.postgame-mini-status.cancelled {
+  color: #ff5b5b;
+}
+
+.postgame-mini-status.pending {
+  color: #4a3d8f;
+}
+
+.game-card .game-actions {
+  margin-left: auto;
+  position: relative;
+  display: block;
+  justify-content: normal;
+  gap: 0;
+}
+
+.dropdown-wrapper {
+  position: relative;
+}
+
+.game-card .action-btn {
+  background: #26282f;
+  border: 1px solid #3a3d44;
+  color: white;
+  border-radius: 10px;
+  height: 46px;
+  width: 150px;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  gap: 10px;
+  cursor: pointer;
+  text-transform: none;
+  transition:
+    background 0.15s,
+    color 0.15s,
+    border-color 0.15s;
+}
+
+.game-card .action-btn.active {
+  background: #c8ff3e;
+  border-color: #c8ff3e;
+  color: #0c0c0c;
+}
+
+.actions-dropdown {
+  position: absolute;
+  top: 54px;
+  right: 0;
+  width: 240px;
+  background: #1c1f24;
+  border: 1px solid #32343c;
+  border-radius: 14px;
+  padding: 8px;
+  display: flex;
+  flex-direction: column;
+  z-index: 50;
+  box-shadow: 0 16px 40px rgba(0, 0, 0, 0.45);
+}
+
+.actions-dropdown.dropdown-up {
+  top: auto;
+  bottom: 54px;
+}
+
+.actions-dropdown button {
+  background: transparent;
+  border: none;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px;
+  border-radius: 10px;
+  cursor: pointer;
+  font-size: 14px;
+}
+
+/* .actions-dropdown button:hover { 
+  border:10px solid  purple;
+  background: #2d3138;
+} */
+
+.view-players{
+   color: #c4b5fd;
+} 
+
+.view-players:hover{
+    background: rgba(167, 139, 250, 0.18);
+}
+
+
+.edit-item{
+   color: #93c5fd;
+} 
+
+.edit-item:hover{
+    background: rgba(96, 165, 250, 0.18);
+}
+.confirm-item {
+  color: #c8ff3e ;
+}
+
+.confirm-item:hover {
+  background: rgba(200, 255, 62, 0.15) ;
+} 
+
+.complete-event{
+   color: #a3e635;
+}  
+
+.ratings{
+  color: #4ade80;
+} 
+.ratings:hover{
+  background: rgba(74, 222, 128, 0.18);
+}
+
+.complete-event:hover{
+  background: rgba(163, 230, 53, 0.15);
+}
+
+.sos-item {
+  color: #ffc83d ;
+}
+
+.sos-item:hover {
+  background: rgba(255, 200, 61, 0.12) ;
+}
+
+.withdraw-item {
+  color: #ff9142 ;
+}
+
+.withdraw-item:hover {
+  background: rgba(255, 145, 66, 0.12) ;
+}
+
+.danger-item {
+  color: #ff5b5b;
+}
+
+.danger-item:hover {
+  background: rgba(255, 91, 91, 0.12);
+}
+
+.rotate-icon {
+  transform: rotate(180deg);
+  transition: 0.2s;
+}
+
+@media (min-width: 641px) and (max-width: 1100px) {
+  .game-card {
+    flex-wrap: wrap;
+    row-gap: 16px;
+  }
+
+  .game-card .game-left {
+    order: 0;
+    flex: 1 1 100%;
+  }
+
+  .game-card .game-stats {
+    order: 1;
+    flex: 1 1 auto;
+    gap: 28px;
+  }
+
+  .game-card .game-actions {
+    order: 2;
+    flex: 0 0 auto;
+  }
+
+  .game-card .action-btn {
+    width: auto;
+    min-width: 140px;
+  }
+}
+
+@media (max-width: 640px) {
+  .game-card {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 16px;
+  }
+
+  .game-card .game-left {
+    border-bottom: 1px solid #777;
+    padding-bottom: 10px;
+    width: 100%;
+    align-items: flex-start;
+    gap: 14px;
+    min-width: 0;
+  }
+
+  .game-card .status-box {
+    width: 72px;
+    height: 72px;
+    gap: 8px;
+    flex-shrink: 0;
+  }
+
+  .game-card .status-box svg {
+    width: 26px;
+    height: 26px;
+  }
+
+  .game-card .status-pill {
+    padding: 4px 10px;
+    font-size: 10px;
+    text-align: center;
+  }
+
+  .game-card .game-details {
+    order: 0;
+    min-width: 0;
+    flex: 1;
+  }
+
+  .game-details h3 {
+    font-size: 16px;
+    overflow-wrap: anywhere;
+  }
+
+  .detail-row {
+    font-size: 13px;
+  }
+
+  .detail-row span {
+    overflow-wrap: anywhere;
+  }
+
+  .game-card .game-stats {
+    order: 0;
+    width: 100%;
+    justify-content: flex-start;
+    gap: 12px;
+  }
+
+  .game-card .stat {
+    flex: 1;
+    min-width: 0;
+  }
+
+  .game-card .stat-postgame {
+    flex: 1 1 100%;
+    border-left: none;
+    padding-left: 0;
+    margin-top: 4px;
+    padding-top: 10px;
+    border-top: 1px solid #2b2d33;
+  }
+
+  .postgame-mini-row {
+    min-width: 0;
+  }
+
+  .postgame-mini-row span {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .game-card .game-actions {
+    order: 0;
+    width: 100%;
+    margin-left: 0;
+  }
+
+  .game-card .action-btn {
+    width: 100%;
+  }
+
+  .actions-dropdown {
+    width: 100%;
+    left: 0;
+    right: 0;
+  }
+}

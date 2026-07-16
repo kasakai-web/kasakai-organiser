@@ -12,7 +12,9 @@ import { buildApiUrl, clearSession, getSession } from "@/utils/api";
 import { activeRegCount, filledCount } from "@/utils/playerCount";
 import { useAuthGuard } from "@/hooks/useAuthGuard";
 import { useAutoRefresh } from "@/hooks/useAutoRefresh";
-import "../../organizer-dashboard.css";
+import "../../organizer-dashboard.css"; 
+import GameCard from "@/components/dashboard/GameCard/GameCard"; 
+
 
 export default function OrganizerDashboard() {
   const router = useRouter();
@@ -45,6 +47,7 @@ export default function OrganizerDashboard() {
   const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
   const [relativeTime, setRelativeTime] = useState("");
   const isFetchingGamesRef = useRef(false);
+  const [openMenuGameId, setOpenMenuGameId] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
   const [filterStatus, setFilterStatus] = useState('all');
   const [filterFormat, setFilterFormat] = useState('all');
@@ -58,6 +61,18 @@ export default function OrganizerDashboard() {
       showToast("success", "Game Created!", "Your event is now live.");
     }
   }, [showToast]);
+
+  // Close an open GameCard actions dropdown when clicking outside it
+  useEffect(() => {
+    if (!openMenuGameId) return;
+    const handleClickOutside = (e: MouseEvent) => {
+      if (!(e.target as HTMLElement).closest(".game-actions")) {
+        setOpenMenuGameId(null);
+      }
+    };
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => document.removeEventListener("mousedown", handleClickOutside);
+  }, [openMenuGameId]);
 
   const fetchWithLocalFallback = useCallback(
     async (url: string, init?: RequestInit): Promise<Response> => {
@@ -707,7 +722,7 @@ export default function OrganizerDashboard() {
       )}
 
       {/* Table Section */}
-      <div className="table-section">
+      {/* <div className="table-section"> */}
         {loading ? (
           <div className="loading-container">
             <div className="spinner"></div>
@@ -738,191 +753,33 @@ export default function OrganizerDashboard() {
               )}
             </div>
           ) : (
-            <div className="games-table">
-              <div className="table-header">
-                <div className="col col-title">Event</div>
-                <div className="col col-details">Venue & Date</div>
-                <div className="col col-format">Format</div>
-                <div className="col col-fee">Fee</div>
-                <div className="col col-players">Players</div>
-                <div className="col col-actions">Actions</div>
-              </div>
-              <div className="table-body">
-                {filteredUpcoming.map(game => (
-                  <div key={game._id} className="table-row">
-                    <div className="col col-title">
-                      <div className="game-title-col">
-                        <div className="title-main">{game.title}</div>
-                        <div className="status-inline">
-                          <span className={`status-label ${game.status}`}>{game.status}</span>
-                        </div>
-                      </div>
-                    </div>
-                    <div className="col col-details">
-                      <div className="venue-info">
-                        <div className="venue-name">{game.turf?.name || 'Unknown'}</div>
-                        <div className="venue-location">{(game.turf as any)?.address?.city || ''}</div>
-                        <div className="date-time">
-                          {new Date(game.scheduledAt).toLocaleDateString('en-IN', { timeZone: 'Asia/Kolkata' })} · {new Date(game.scheduledAt).toLocaleTimeString('en-IN', { timeZone: 'Asia/Kolkata', hour: '2-digit', minute: '2-digit' })}
-                        </div>
-                        {game.reportingMinsBeforeGame > 0 && (
-                          <div className="date-time" style={{ color: '#7a7a7a', fontSize: 10.5, marginTop: 3 }}>
-                            Report {(() => {
-                              const d = new Date(new Date(game.scheduledAt).getTime() - game.reportingMinsBeforeGame * 60000);
-                              return d.toLocaleTimeString('en-IN', { timeZone: 'Asia/Kolkata', hour: '2-digit', minute: '2-digit' });
-                            })()}
-                            {game.endsAt && ` · Ends ${new Date(game.endsAt).toLocaleTimeString('en-IN', { timeZone: 'Asia/Kolkata', hour: '2-digit', minute: '2-digit' })}`}
-                          </div>
-                        )}
-                        {(game.lifecycle?.firstCheckAt || game.lifecycle?.secondCheckAt) && (() => {
-                          const gDay = new Date(game.scheduledAt).toLocaleDateString('en-IN', { timeZone: 'Asia/Kolkata' });
-                          const fmt = (v: any) => {
-                            const dt = new Date(v);
-                            const t = dt.toLocaleTimeString('en-IN', { timeZone: 'Asia/Kolkata', hour: '2-digit', minute: '2-digit' });
-                            return dt.toLocaleDateString('en-IN', { timeZone: 'Asia/Kolkata' }) === gDay
-                              ? t
-                              : `${dt.toLocaleDateString('en-IN', { timeZone: 'Asia/Kolkata', day: '2-digit', month: 'short' })}, ${t}`;
-                          };
-                          const pill = (label: string, v: any) => v ? (
-                            <span key={label} style={{ display: 'inline-flex', alignItems: 'center', gap: 5, fontSize: 10.5, fontWeight: 600, color: '#b7d16a', background: 'rgba(200,255,62,0.06)', border: '1px solid rgba(200,255,62,0.18)', borderRadius: 6, padding: '2px 7px', whiteSpace: 'nowrap' }}>
-                              <span style={{ color: '#87984f', fontWeight: 700 }}>{label}</span>{fmt(v)}
-                            </span>
-                          ) : null;
-                          return (
-                            <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 5, marginTop: 6 }} title="Automatic confirmation check-in times">
-                              <span style={{ fontSize: 10, color: '#666', marginRight: 1 }}>⏱</span>
-                              {pill('1st', game.lifecycle?.firstCheckAt)}
-                              {pill('2nd', game.lifecycle?.secondCheckAt)}
-                            </div>
-                          );
-                        })()}
-                        {game.organiserIsPlaying && (
-                          <div style={{ display: 'inline-flex', alignItems: 'center', gap: 4, fontSize: 10, color: '#c8ff3e', fontWeight: 600, marginTop: 6 }}>⚽ You are playing</div>
-                        )}
-                      </div>
-                    </div>
-                    <div className="col col-format">
-                      <span className="format-badge">{game.format}</span>
-                      {game.allowSizeChange && (
-                        <div style={{ fontSize: 10, color: '#888', marginTop: 3 }} title="Format change allowed">⇄ flexible</div>
-                      )}
-                    </div>
-                    <div className="col col-fee">
-                      <div className="fee-value">₹{game.feeInPaise ? game.feeInPaise / 100 : 0}</div>
-                    </div>
-                    <div className="col col-players">
-                      {(() => {
-                        const total = filledCount(game);
-                        return (
-                          <div className="players-info">
-                            <div className="players-count">{total}/{game.totalSlots}</div>
-                          </div>
-                        );
-                      })()}
-                    </div>
-                    <div className="col col-actions">
-                      <div className="action-buttons">
-                        <button
-                          className="btn-action btn-players"
-                          onClick={() => { setSelectedGame(game); setShowPlayersModal(true); }}
-                          title="View Players"
-                        >
-                          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
-                            <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/>
-                            <path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/>
-                          </svg>
-                          <span className="btn-label">Players</span>
-                        </button>
-                        <button
-                          className="btn-action btn-edit"
-                          onClick={() => { setSelectedGame(game); setShowEditModal(true); }}
-                          title="Edit Event"
-                        >
-                          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
-                            <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/>
-                            <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/>
-                          </svg>
-                          <span className="btn-label">Edit</span>
-                        </button>
-                        {['open','tentative'].includes(game.status) && (
-                          <button
-                            className="btn-action btn-confirm"
-                            onClick={() => handleConfirmGame(game._id)}
-                            title="Confirm Game"
-                          >
-                            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-                              <polyline points="20 6 9 17 4 12"/>
-                            </svg>
-                            <span className="btn-label">Confirm</span>
-                          </button>
-                        )}
-                        {['open','tentative','confirmed'].includes(game.status) && game.alternateFormats?.length > 0 && !game.lifecycle?.switchedAt && (
-                          <button
-                            className="btn-action btn-edit"
-                            onClick={() => requestSwitchFormat(game)}
-                            title={`Switch to alternate format${game.alternateFormats[0]?.format ? ` (${game.alternateFormats[0].format})` : ""}`}
-                          >
-                            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
-                              <polyline points="17 1 21 5 17 9"/><path d="M3 11V9a4 4 0 0 1 4-4h14"/><polyline points="7 23 3 19 7 15"/><path d="M21 13v2a4 4 0 0 1-4 4H3"/>
-                            </svg>
-                            <span className="btn-label">Switch</span>
-                          </button>
-                        )}
-                        {/* SOS: open/tentative + confirmed — a confirmed game still accepts
-                            registrations, and the post-switch shortfall prompt offers SOS */}
-                        {['open','tentative','confirmed'].includes(game.status) && (
-                          <button
-                            className="btn-action btn-edit"
-                            onClick={() => requestSendSos(game)}
-                            title="Send SOS to venue regulars"
-                          >
-                            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
-                              <path d="M3 11l18-5v12L3 14v-3z"/><path d="M11.6 16.8a3 3 0 1 1-5.8-1.6"/>
-                            </svg>
-                            <span className="btn-label">SOS</span>
-                          </button>
-                        )}
-                        {game.organiserIsPlaying && (
-                          <button
-                            className="btn-action btn-withdraw"
-                            onClick={() => handleOrganiserWithdraw(game._id)}
-                            title="Withdraw from game"
-                          >
-                            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
-                              <polyline points="9 14 4 9 9 4"/><path d="M20 20v-7a4 4 0 0 0-4-4H4"/>
-                            </svg>
-                            <span className="btn-label">Withdraw</span>
-                          </button>
-                        )}
-                        {!['cancelled', 'completed'].includes(game.status) && new Date(game.scheduledAt).getTime() <= Date.now() && (
-                          <button
-                            className="btn-action btn-complete"
-                            onClick={() => { setPostGameTarget(game); setShowPostGameModal(true); }}
-                            title="Complete Game & Rate Players"
-                          >
-                            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
-                              <path d="M4 15s1-1 4-1 5 2 8 2 4-1 4-1V3s-1 1-4 1-5-2-8-2-4 1-4 1z"/>
-                              <line x1="4" y1="22" x2="4" y2="15"/>
-                            </svg>
-                            <span className="btn-label">Complete</span>
-                          </button>
-                        )}
-                        <button
-                          className="btn-action btn-cancel"
-                          onClick={() => openCancelModal(game)}
-                          title="Cancel Event"
-                        >
-                          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-                            <line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>
-                          </svg>
-                          <span className="btn-label">Cancel</span>
-                        </button>
-                      </div>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </div>
+            <div className="games-list">
+              {filteredUpcoming.map((game) => (
+                <GameCard
+                key={game._id}
+                game={game}
+                isMenuOpen={openMenuGameId === game._id}
+                onToggleMenu={() => setOpenMenuGameId(openMenuGameId === game._id ? null : game._id)}
+                onPlayers={() => {
+                  setSelectedGame(game);
+                  setShowPlayersModal(true);
+                }}
+                onEdit={() => {
+                  setSelectedGame(game);
+                  setShowEditModal(true);
+                }}
+                onConfirm={() => handleConfirmGame(game._id)}
+                onSwitch={() => requestSwitchFormat(game)}
+                onSOS={() => requestSendSos(game)}
+                onWithdraw={() => handleOrganiserWithdraw(game._id)}
+                onComplete={() => {
+                  setPostGameTarget(game);
+                  setShowPostGameModal(true);
+                }}
+                onCancel={() => openCancelModal(game)}
+              />
+              ))}
+          </div>
           )
         ) : (
           filteredPast.length === 0 ? (
@@ -946,141 +803,29 @@ export default function OrganizerDashboard() {
               )}
             </div>
           ) : (
-            <div className="games-table">
-              <div className="table-header">
-                <div className="col col-title">Event</div>
-                <div className="col col-details">Venue & Date</div>
-                <div className="col col-format">Format</div>
-                <div className="col col-fee">Fee</div>
-                <div className="col col-players">Attended</div>
-                <div className="col col-postgame">Post-Game</div>
-                <div className="col col-actions">Actions</div>
-              </div>
-              <div className="table-body">
-                {filteredPast.map(game => (
-                  <div key={game._id} className="table-row">
-                    <div className="col col-title">
-                      <div className="game-title-col">
-                        <div className="title-main">{game.title}</div>
-                        <div className="status-inline">
-                          <span className={`status-label ${game.status}`}>{game.status}</span>
-                        </div>
-                      </div>
-                    </div>
-                    <div className="col col-details">
-                      <div className="venue-info">
-                        <div className="venue-name">{game.turf?.name || 'Unknown'}</div>
-                        <div className="venue-location">{(game.turf as any)?.address?.city || ''}</div>
-                        <div className="date-time">
-                          {new Date(game.scheduledAt).toLocaleDateString('en-IN', { timeZone: 'Asia/Kolkata' })}
-                        </div>
-                      </div>
-                    </div>
-                    <div className="col col-format">
-                      <span className="format-badge">{game.format}</span>
-                      {game.allowSizeChange && (
-                        <div style={{ fontSize: 10, color: '#888', marginTop: 3 }} title="Format change allowed">⇄ flexible</div>
-                      )}
-                    </div>
-                    <div className="col col-fee">
-                      <div className="fee-value">₹{game.feeInPaise ? game.feeInPaise / 100 : 0}</div>
-                    </div>
-                    <div className="col col-players">
-                      <div className="players-count">
-                        {getTotalPlayers(game)}
-                      </div>
-                    </div>
-                    <div className="col col-postgame">
-                      {game.status === 'completed' ? (
-                        <div className="postgame-stats">
-                          <div className="postgame-stat">
-                            <span className="postgame-label">Present:</span>
-                            <span className="postgame-value">
-                              {game.registrations?.filter((r: any) => r.attended === 'present').length || 0}
-                            </span>
-                          </div>
-                          <div className="postgame-stat">
-                            <span className="postgame-label">Ratings:</span>
-                            <span className="postgame-value">
-                              {game.playerRatingsCount || 0}
-                            </span>
-                          </div>
-                          <div className="postgame-stat">
-                            <span className="postgame-label">Feedback:</span>
-                            <span className="postgame-value">
-                              {game.feedbackCount || 0}
-                            </span>
-                          </div>
-                        </div>
-                      ) : game.status === 'cancelled' ? (
-                        <div className="postgame-cancelled">
-                          <span>Cancelled</span>
-                        </div>
-                      ) : (
-                        <div className="postgame-pending">
-                          <span>Pending</span>
-                        </div>
-                      )}
-                    </div>
-                    <div className="col col-actions">
-                      <div className="action-buttons">
-                        <button
-                          className="btn-action btn-players"
-                          onClick={() => { setSelectedGame(game); setShowPlayersModal(true); }}
-                          title="View Players"
-                        >
-                          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
-                            <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/>
-                            <path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/>
-                          </svg>
-                          <span className="btn-label">Players</span>
-                        </button>
-                        {game.status !== 'completed' && game.status !== 'cancelled' && (
-                          <button
-                            className="btn-action btn-complete"
-                            onClick={() => { setPostGameTarget(game); setShowPostGameModal(true); }}
-                            title="Complete Game & Rate Players"
-                          >
-                            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
-                              <path d="M4 15s1-1 4-1 5 2 8 2 4-1 4-1V3s-1 1-4 1-5-2-8-2-4 1-4 1z"/>
-                              <line x1="4" y1="22" x2="4" y2="15"/>
-                            </svg>
-                            <span className="btn-label">Complete</span>
-                          </button>
-                        )}
-                        {game.status === 'completed' && !game.attendanceMarked && (
-                          <button
-                            className="btn-action btn-attendance"
-                            onClick={() => { setPostGameTarget(game); setShowPostGameModal(true); }}
-                            title="Mark Attendance & Rate Players"
-                          >
-                            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
-                              <path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/>
-                            </svg>
-                            <span className="btn-label">Attendance</span>
-                          </button>
-                        )}
-                        {game.status === 'completed' && game.attendanceMarked && (
-                          <button
-                            className="btn-action btn-ratings"
-                            onClick={() => { setPostGameTarget(game); setShowPostGameModal(true); }}
-                            title="View / Edit Ratings"
-                          >
-                            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
-                              <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/>
-                            </svg>
-                            <span className="btn-label">Ratings</span>
-                          </button>
-                        )}
-                      </div>
-                    </div>
-                  </div>
-                ))}
-              </div>
+            <div className="games-list">
+              {filteredPast.map((game) => (
+                <GameCard
+                  key={game._id}
+                  game={game}
+                  variant="past"
+                  isMenuOpen={openMenuGameId === game._id}
+                  onToggleMenu={() => setOpenMenuGameId(openMenuGameId === game._id ? null : game._id)}
+                  onPlayers={() => {
+                    setSelectedGame(game);
+                    setShowPlayersModal(true);
+                  }}
+                  onComplete={() => {
+                    setPostGameTarget(game);
+                    setShowPostGameModal(true);
+                  }}
+                />
+              ))}
             </div>
           )
         )}
-      </div>
+     
+      {/* </div> */}
 
       {/* Modals */}
       {showEditModal && selectedGame && (
