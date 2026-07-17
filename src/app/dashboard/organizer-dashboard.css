@@ -119,7 +119,7 @@
     border: 1px solid var(--border);
 }
 .btn-primary {
-  background: #c8ff3e;
+  background: #c8ff3e !important;
   color: #000;
   border: none;
   border-radius: 8px;

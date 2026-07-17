@@ -630,7 +630,7 @@ export default function OrganizerDashboard() {
             Manage your events, track players, and monitor revenue
           </p>
         </div>
-        <button className="btn-primary btn-lg" onClick={() => router.push(`/dashboard/organizer/${organiserId}/create-event`)}>
+        <button className="btn-primary " onClick={() => router.push(`/dashboard/organizer/${organiserId}/create-event`)}>
           <span className="btn-icon">+ </span>Create New Event
         </button>
       </div>
@@ -1020,7 +1020,7 @@ export default function OrganizerDashboard() {
               ) : (
                 <>
                   <h3>No upcoming events</h3>
-                  <p>Create your first event to get started</p>
+                  <p>Create your first event to get started</p> 
                   <button className="btn-primary" onClick={() => router.push(`/dashboard/organizer/${organiserId}/create-event`)}>
                     <span>+ </span>Create Event
                   </button>
