@@ -50,6 +50,23 @@ export const checkInIsoFromParts = (checkDate: string, checkTime: string): strin
   return isNaN(d.getTime()) ? null : d.toISOString();
 };
 
+// Do a picked value and a stored value mean the same instant, to the minute?
+//
+// The date/time pickers only ever express whole minutes, while a stored instant
+// can carry seconds and milliseconds (anything created through the API or a seed
+// script does). Comparing them exactly would report a change every time such a
+// game was opened and saved untouched — which, for the kickoff, means telling
+// every registered player their game moved when it did not. Both empty counts as
+// unchanged: a game with no check-ins configured stays that way.
+export const sameMinute = (picked?: string | null, stored?: string | null): boolean => {
+  if (!picked && !stored) return true;
+  if (!picked || !stored) return false;
+  const a = new Date(picked).getTime();
+  const b = new Date(stored).getTime();
+  if (isNaN(a) || isNaN(b)) return false;
+  return Math.floor(a / 60000) === Math.floor(b / 60000);
+};
+
 // IST calendar date (YYYY-MM-DD) from a stored ISO instant — to restore a saved
 // check-in date back into the date picker.
 export const istYMD = (iso?: string | null): string => {
@@ -58,13 +75,19 @@ export const istYMD = (iso?: string | null): string => {
   return isNaN(d.getTime()) ? "" : d.toLocaleDateString("en-CA", { timeZone: "Asia/Kolkata" });
 };
 
-// IST time-of-day ("HH:mm", quarter-hour rounded) from a stored ISO instant —
-// to restore a saved check-in time back into the time picker when editing.
+// IST time-of-day ("HH:mm") from a stored ISO instant — to restore a saved
+// check-in or kickoff time back into the time picker when editing.
+//
+// Returns the EXACT stored minute. This used to snap to the nearest quarter hour
+// to match the picker's options, which silently rewrote any off-grid value the
+// moment the form was saved — and it wrapped wrong at the top of the hour, so
+// 18:53 came back as 18:00 and dragged the time 53 minutes BACKWARDS. Anything
+// off-grid is offered as its own option in the picker instead (see timeOptions).
 export const istHHmm = (iso?: string | null): string => {
   if (!iso) return "";
   const d = new Date(iso);
   if (isNaN(d.getTime())) return "";
-  const hm = d.toLocaleTimeString("en-GB", { timeZone: "Asia/Kolkata", hour: "2-digit", minute: "2-digit", hour12: false });
-  const [hh, mm] = hm.split(":");
-  return `${hh}:${String((Math.round(Number(mm) / 15) * 15) % 60).padStart(2, "0")}`;
+  return d.toLocaleTimeString("en-GB", {
+    timeZone: "Asia/Kolkata", hour: "2-digit", minute: "2-digit", hour12: false,
+  });
 };

@@ -56,6 +56,7 @@ export function CreateEventForm({ lastEvent, onClose, onCreate, onSuccess }: Cre
   const [errors, setErrors] = useState<Record<string, string>>({});
 
   const [title, setTitle] = useState(lastEvent?.title ?? "");
+  const [visibility, setVisibility] = useState<"public" | "private">(lastEvent?.visibility === "private" ? "private" : "public");
   const [turf, setTurf] = useState(lastEvent?.turf?._id || (typeof lastEvent?.turf === "string" ? lastEvent.turf : ""));
   const [date, setDate] = useState("");
   const initialTime = lastEvent ? (() => { const hm = new Date(lastEvent.scheduledAt).toLocaleTimeString("en-GB", { timeZone: "Asia/Kolkata", hour: "2-digit", minute: "2-digit", hour12: false }); const [hh, mm] = hm.split(":"); return `${hh}:${Number(mm) >= 30 ? "30" : "00"}`; })() : "18:00";
@@ -227,6 +228,7 @@ export function CreateEventForm({ lastEvent, onClose, onCreate, onSuccess }: Cre
       const payload: any = {
         title: title.trim(),
         sport: "football",
+        visibility,
         format,
         turf,
         scheduledAt: scheduledAt.toISOString(),
@@ -296,6 +298,46 @@ export function CreateEventForm({ lastEvent, onClose, onCreate, onSuccess }: Cre
 
         <div className="form-section">
           <h3 className="section-title">Event Details</h3>
+
+          <div className="form-group">
+            <label className="form-label">
+              <span className="label-text">Visibility</span>
+            </label>
+            <div style={{ display: "flex", gap: 10 }}>
+              {(["public", "private"] as const).map((v) => (
+                <button
+                  type="button"
+                  key={v}
+                  onClick={() => setVisibility(v)}
+                  style={{
+                    flex: 1,
+                    padding: "12px 14px",
+                    borderRadius: 10,
+                    border: visibility === v ? "1.5px solid #c8ff3e" : "1.5px solid #2a2a2a",
+                    background: visibility === v ? "rgba(200,255,62,0.12)" : "#141414",
+                    color: visibility === v ? "#c8ff3e" : "#bbb",
+                    cursor: "pointer",
+                    textAlign: "left",
+                  }}
+                >
+                  <div style={{ fontWeight: 700, fontSize: 14 }}>
+                    {v === "public" ? "🌍 Public" : "🔒 Private"}
+                  </div>
+                  <div style={{ fontSize: 11.5, color: "#888", marginTop: 3 }}>
+                    {v === "public"
+                      ? "Listed for everyone to browse & join."
+                      : "Hidden — invite players by WhatsApp."}
+                  </div>
+                </button>
+              ))}
+            </div>
+            {visibility === "private" && (
+              <div className="field-hint" style={{ marginTop: 8, color: "#c8ff3e" }}>
+                After creating, open this game from your dashboard to invite players.
+              </div>
+            )}
+          </div>
+
           <div className="form-group">
             <label className="form-label">
               <span className="label-text">Event Name</span>

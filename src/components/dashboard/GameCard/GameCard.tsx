@@ -1,25 +1,8 @@
 "use client";
 
-import { useLayoutEffect, useRef, useState } from "react";
+import { useLayoutEffect, useMemo, useRef, useState } from "react";
 import "./GameCard.css";
-import {
-  Calendar,
-  Star,
-  Clock,
-  MapPin,
-  Users,
-  Trophy,
-  CheckCircle2,
-  Timer,
-  ChevronDown,
-  Pencil,
-  RefreshCw,
-  TriangleAlert,
-  Undo2,
-  CircleCheck,
-  CircleX,
-  CircleCheckBig,
-} from "lucide-react";
+import {Lock,Calendar,Star,Clock,MapPin,Users,Trophy,CheckCircle2,Timer,ChevronDown,Pencil,RefreshCw,TriangleAlert,Undo2,CircleCheck,CircleX,CircleCheckBig, UserPlus,} from "lucide-react";
 import { filledCount } from "@/utils/playerCount";
 
 interface GameCardProps {
@@ -35,6 +18,7 @@ interface GameCardProps {
   onCancel?: () => void;
   onSOS?: () => void;
   onSwitch?: () => void;
+  onInvite?: () => void;
 }
 
 const getStatusConfig = (status: string) => {
@@ -93,29 +77,19 @@ const formatTime = (d: Date) =>
     })
     .toUpperCase();
 
-function GameCard({
-  game,
-  variant = "upcoming",
-  isMenuOpen,
-  onToggleMenu,
-  onPlayers,
-  onEdit,
-  onConfirm,
-  onWithdraw,
-  onCancel,
-  onSwitch,
-  onSOS,
-  onComplete,
+function GameCard({game,variant = "upcoming",isMenuOpen,onToggleMenu,onPlayers,onEdit,onConfirm,onWithdraw,onCancel,onSwitch,onSOS,onComplete,onInvite,
 }: GameCardProps) {
   const status = getStatusConfig(game.status);
   const isPast = variant === "past";
-  const presentCount =
-    game.registrations?.filter((r: any) => r.attended === "present").length ||
-    0;
+  const presentCount =game.registrations?.filter((r: any) => r.attended === "present").length || 0; 
 
-  const gDay = new Date(game.scheduledAt).toLocaleDateString("en-IN", {
-    timeZone: "Asia/Kolkata",
-  });
+  const isPrivate = game.visibility === "private"; 
+   
+
+
+   const pendingCount = isPrivate? (game.invitations || []).filter((i: any) => i.status === "invited").length: 0;
+
+  const gDay = new Date(game.scheduledAt).toLocaleDateString("en-IN", { timeZone: "Asia/Kolkata"});
   const fmt = (value: string | Date) => {
     const dt = new Date(value);
 
@@ -187,7 +161,8 @@ function GameCard({
 
         <div className="game-details">
           <div className="title-row">
-            <h3>{game.title}</h3>
+            <h3>{game.title} </h3>
+            {isPrivate && <Lock size={17} />}
           </div>
 
           <div className="detail-row">
@@ -351,6 +326,21 @@ function GameCard({
                     Edit Event
                   </button>
                 )}
+
+                {isPrivate &&
+                  !["completed", "cancelled"].includes(game.status) && 
+                      <> 
+                      <button
+                        className="invite-item"
+                        onClick={onInvite}
+                        title="Invite players"
+                        style={{ position: "relative" }}
+                      >
+                      <UserPlus size={16} />
+                      Invite{pendingCount > 0 && <span>{pendingCount}</span>}
+                      </button>
+                      </>
+                 }
 
                 {["open", "tentative"].includes(game.status) && onConfirm && (
                   <button

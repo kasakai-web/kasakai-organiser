@@ -29,6 +29,15 @@ export default function OrganizerDashboard() {
   const [showPlayersModal, setShowPlayersModal] = useState(false);
   const [showCancelModal, setShowCancelModal] = useState(false);
   const [sosModal, setSosModal] = useState<null | { gameId: string; gameTitle: string; loading: boolean; sending?: boolean; error?: string; regulars: { name: string; games: number; phone: string }[] }>(null);
+  // Private-game invitations
+  const [inviteGameId, setInviteGameId] = useState<string | null>(null);
+  const [inviteRegulars, setInviteRegulars] = useState<{ id?: string; name: string; phone: string; games: number }[]>([]);
+  const [inviteRegLoading, setInviteRegLoading] = useState(false);
+  const [inviteRows, setInviteRows] = useState<{ name: string; phone?: string; playerId?: string }[]>([]);
+  const [inviteName, setInviteName] = useState("");
+  const [invitePhone, setInvitePhone] = useState("");
+  const [inviteSending, setInviteSending] = useState(false);
+  const [inviteActionId, setInviteActionId] = useState<string | null>(null);
   const [showPostGameModal, setShowPostGameModal] = useState(false);
   const [postGameTarget, setPostGameTarget] = useState<any>(null);
   const [cancelTargetGame, setCancelTargetGame] = useState<any>(null);
@@ -345,6 +354,100 @@ export default function OrganizerDashboard() {
     setSosModal(null);
   };
 
+  // ── Private-game invitations ───────────────────────────────────────────────
+  const openInviteModal = (game: any) => {
+    setInviteGameId(game._id);
+    setInviteRows([]);
+    setInviteName("");
+    setInvitePhone("");
+    setInviteRegulars([]);
+    setInviteRegLoading(true);
+    const { token } = getSession();
+    if (!token) { clearSession(); router.replace("/login?role=organiser"); return; }
+    fetch(buildApiUrl(`/api/v1/games/organisers/${game._id}/regulars`), { headers: { Authorization: `Bearer ${token}` } })
+      .then((r) => r.json())
+      .then((d) => { if (d?.success) setInviteRegulars(d.data?.regulars || []); })
+      .catch(() => {})
+      .finally(() => setInviteRegLoading(false));
+  };
+
+  const addManualInvitee = () => {
+    const name = inviteName.trim();
+    const phone = invitePhone.replace(/\D/g, "");
+    if (!name || phone.length < 10) { showToast("error", "Enter a name and a valid phone number"); return; }
+    if (inviteRows.some((r) => r.phone === phone)) { showToast("error", "That number is already in the list"); return; }
+    setInviteRows((rows) => [...rows, { name, phone }]);
+    setInviteName(""); setInvitePhone("");
+  };
+
+  const addRegularInvitee = (reg: { id?: string; name: string }) => {
+    if (!reg.id || inviteRows.some((r) => r.playerId === reg.id)) return;
+    setInviteRows((rows) => [...rows, { name: reg.name, playerId: reg.id }]);
+  };
+
+  const removeInviteRow = (idx: number) => setInviteRows((rows) => rows.filter((_, i) => i !== idx));
+
+  const submitInvites = async () => {
+    if (!inviteGameId || inviteRows.length === 0) return;
+    const { token } = getSession();
+    if (!token) { clearSession(); router.replace("/login?role=organiser"); return; }
+    setInviteSending(true);
+    try {
+      const invitees  = inviteRows.filter((r) => r.phone).map((r) => ({ name: r.name, phone: r.phone }));
+      const playerIds = inviteRows.filter((r) => r.playerId).map((r) => r.playerId);
+      const res = await fetch(buildApiUrl(`/api/v1/games/organisers/${inviteGameId}/invite`), {
+        method: "POST",
+        headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+        body: JSON.stringify({ invitees, playerIds }),
+      });
+      const data = await res.json();
+      if (!res.ok || !data.success) { showToast("error", data.message || "Failed to send invites"); return; }
+      const wa = data.whatsapp;
+      if (wa && wa.failed > 0) {
+        showToast("error", "Saved, but WhatsApp failed", `${wa.sent} sent, ${wa.failed} not delivered. Copy the link to share manually.`);
+      } else {
+        showToast("success", "Invites sent", data.message);
+      }
+      setInviteRows([]);
+      await fetchGames({ silent: true });
+    } catch {
+      showToast("error", "Failed to send invites. Please try again.");
+    } finally {
+      setInviteSending(false);
+    }
+  };
+
+  const respondToInvite = async (inviteId: string, action: "approve" | "reject") => {
+    if (!inviteGameId) return;
+    const { token } = getSession();
+    if (!token) { clearSession(); router.replace("/login?role=organiser"); return; }
+    setInviteActionId(inviteId + action);
+    try {
+      const res = await fetch(buildApiUrl(`/api/v1/games/organisers/${inviteGameId}/invitations/${inviteId}/${action}`), {
+        method: "POST",
+        headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+      });
+      const data = await res.json();
+      if (!res.ok || !data.success) { showToast("error", data.message || `Failed to ${action}`); return; }
+      showToast("success", action === "approve" ? "Player approved" : "Request rejected", data.message);
+      await fetchGames({ silent: true });
+    } catch {
+      showToast("error", `Failed to ${action}. Please try again.`);
+    } finally {
+      setInviteActionId(null);
+    }
+  };
+
+  const copyInviteLink = async (token: string) => {
+    const link = `https://www.kasakai.in/join/${token}`;
+    try {
+      await navigator.clipboard.writeText(link);
+      showToast("success", "Link copied", link);
+    } catch {
+      showToast("error", "Couldn't copy link", link);
+    }
+  };
+
   const handleOrganiserWithdraw = async (gameId: string) => {
     const doWithdraw = async () => {
       const { token } = getSession();
@@ -614,6 +717,178 @@ export default function OrganizerDashboard() {
         </div>
       )}
 
+      {/* Private-game invite manager */}
+      {inviteGameId && (() => {
+        const inviteGame = games.find((g) => g._id === inviteGameId);
+        if (!inviteGame) return null;
+        const invitations = (inviteGame.invitations || []) as any[];
+        const pending = invitations.filter((i) => i.status === 'pending');
+        const sent = invitations.filter((i) => i.status !== 'pending');
+        const closeInvite = () => { setInviteGameId(null); setInviteRows([]); };
+        const nameOf = (inv: any) => inv.player?.name || inv.inviteeName || 'Player';
+        const badge = (status: string) => {
+          const map: Record<string, { label: string; color: string; bg: string; border: string }> = {
+            invited:         { label: 'Invited',           color: '#9aa',     bg: 'rgba(255,255,255,0.05)', border: '#333' },
+            pending:         { label: 'Awaiting approval', color: '#f59e0b',  bg: 'rgba(245,158,11,0.1)',   border: 'rgba(245,158,11,0.3)' },
+            accepted:        { label: 'Accepted',          color: '#c8ff3e',  bg: 'rgba(200,255,62,0.1)',   border: 'rgba(200,255,62,0.25)' },
+            approved_unpaid: { label: 'Awaiting payment',  color: '#60a5fa',  bg: 'rgba(96,165,250,0.1)',   border: 'rgba(96,165,250,0.3)' },
+            rejected:        { label: 'Rejected',          color: '#f87171',  bg: 'rgba(248,113,113,0.1)',  border: 'rgba(248,113,113,0.3)' },
+          };
+          const b = map[status] || map.invited;
+          return <span style={{ flexShrink: 0, fontSize: 10.5, fontWeight: 700, color: b.color, background: b.bg, border: `1px solid ${b.border}`, borderRadius: 20, padding: '2px 9px' }}>{b.label}</span>;
+        };
+        const invitedByText = (inv: any) => inv.invitedByRole === 'player'
+          ? `invited by ${inv.invitedByName || 'a player'}`
+          : 'invited by you';
+        return (
+          <div className="modal-overlay" onClick={closeInvite}>
+            <div onClick={(e) => e.stopPropagation()} style={{ width: "100%", maxWidth: 520, background: "#111214", border: "1px solid #2a2a2a", borderRadius: 16, padding: 22, color: "#fff", maxHeight: "88vh", overflowY: "auto" }}>
+              <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 4 }}>
+                <h2 style={{ margin: 0, fontSize: 18, fontWeight: 800 }}>🔒 Invite players</h2>
+                <button onClick={closeInvite} style={{ background: "none", border: "none", color: "#888", fontSize: 20, cursor: "pointer", lineHeight: 1 }}>✕</button>
+              </div>
+              <p style={{ fontSize: 13, color: "#9aa", margin: "0 0 14px", lineHeight: 1.5 }}>
+                Invite players to <b style={{ color: "#ddd" }}>{inviteGame.title}</b>. They get a WhatsApp link to confirm their spot.
+              </p>
+
+              {/* ── Add invites ── */}
+              <div style={{ fontSize: 12, fontWeight: 700, color: "#c8ff3e", textTransform: "uppercase", letterSpacing: 0.4, marginBottom: 8 }}>Add invites</div>
+
+              {inviteRegLoading ? (
+                <div style={{ fontSize: 12, color: "#888", marginBottom: 10 }}>Loading venue regulars…</div>
+              ) : inviteRegulars.length > 0 && (
+                <div style={{ marginBottom: 12 }}>
+                  <div style={{ fontSize: 11, color: "#777", marginBottom: 6 }}>Venue regulars — tap to add</div>
+                  <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
+                    {inviteRegulars.map((r) => {
+                      const added = !!r.id && inviteRows.some((x) => x.playerId === r.id);
+                      return (
+                        <button
+                          key={r.id || r.name}
+                          type="button"
+                          disabled={added}
+                          onClick={() => addRegularInvitee(r)}
+                          style={{ fontSize: 12, fontWeight: 600, color: added ? "#666" : "#ddd", background: added ? "#1a1a1a" : "#1c1f16", border: `1px solid ${added ? "#333" : "rgba(200,255,62,0.25)"}`, borderRadius: 20, padding: "5px 11px", cursor: added ? "default" : "pointer" }}
+                        >
+                          {added ? "✓ " : "+ "}{r.name} <span style={{ color: "#888" }}>· {r.games}g</span>
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
+
+              <div style={{ display: "flex", gap: 8, marginBottom: 10 }}>
+                <input
+                  value={inviteName}
+                  onChange={(e) => setInviteName(e.target.value)}
+                  placeholder="Name"
+                  style={{ flex: 1, minWidth: 0, padding: "10px 12px", borderRadius: 9, border: "1px solid #2a2a2a", background: "#141414", color: "#fff", fontSize: 13 }}
+                />
+                <input
+                  value={invitePhone}
+                  onChange={(e) => setInvitePhone(e.target.value)}
+                  placeholder="Phone"
+                  inputMode="tel"
+                  onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); addManualInvitee(); } }}
+                  style={{ width: 130, padding: "10px 12px", borderRadius: 9, border: "1px solid #2a2a2a", background: "#141414", color: "#fff", fontSize: 13 }}
+                />
+                <button type="button" onClick={addManualInvitee} style={{ flexShrink: 0, padding: "0 14px", borderRadius: 9, border: "1px solid rgba(200,255,62,0.3)", background: "rgba(200,255,62,0.08)", color: "#c8ff3e", fontWeight: 700, cursor: "pointer" }}>Add</button>
+              </div>
+
+              {inviteRows.length > 0 && (
+                <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginBottom: 12 }}>
+                  {inviteRows.map((r, i) => (
+                    <span key={i} style={{ display: "inline-flex", alignItems: "center", gap: 6, fontSize: 12, fontWeight: 600, color: "#eee", background: "#1c1c1c", border: "1px solid #333", borderRadius: 20, padding: "4px 6px 4px 11px" }}>
+                      {r.name}{r.phone ? ` · ${r.phone}` : ""}
+                      <button onClick={() => removeInviteRow(i)} style={{ background: "none", border: "none", color: "#888", cursor: "pointer", fontSize: 14, lineHeight: 1 }}>✕</button>
+                    </span>
+                  ))}
+                </div>
+              )}
+
+              <button
+                disabled={inviteRows.length === 0 || inviteSending}
+                onClick={submitInvites}
+                style={{ width: "100%", padding: 11, borderRadius: 9, border: "none", fontWeight: 800, marginBottom: 20,
+                  background: inviteRows.length === 0 ? "#2a2a2a" : "#c8ff3e",
+                  color: inviteRows.length === 0 ? "#888" : "#000",
+                  cursor: inviteRows.length === 0 || inviteSending ? "not-allowed" : "pointer", opacity: inviteSending ? 0.7 : 1 }}
+              >
+                {inviteSending ? "Sending…" : inviteRows.length === 0 ? "Add someone to invite" : `Send ${inviteRows.length} invite${inviteRows.length !== 1 ? "s" : ""}`}
+              </button>
+
+              {/* ── Invitations ── */}
+              <div style={{ fontSize: 12, fontWeight: 700, color: "#c8ff3e", textTransform: "uppercase", letterSpacing: 0.4, marginBottom: 8 }}>
+                Invitations {invitations.length > 0 && <span style={{ color: "#777" }}>({invitations.length})</span>}
+              </div>
+
+              {pending.length > 0 && (
+                <div style={{ marginBottom: 12 }}>
+                  <div style={{ fontSize: 11, color: "#f59e0b", marginBottom: 6, fontWeight: 700 }}>Requests to approve</div>
+                  <div style={{ border: "1px solid #262626", borderRadius: 10 }}>
+                    {pending.map((inv, i) => (
+                      <div key={inv._id} style={{ display: "flex", alignItems: "center", gap: 10, padding: "10px 12px", borderBottom: i < pending.length - 1 ? "1px solid #1c1c1c" : "none" }}>
+                        <div style={{ minWidth: 0, flex: 1 }}>
+                          <div style={{ fontSize: 14, fontWeight: 600, color: "#eee" }}>{nameOf(inv)}</div>
+                          <div style={{ fontSize: 11, color: "#777" }}>{invitedByText(inv)}</div>
+                        </div>
+                        <button
+                          onClick={() => copyInviteLink(inv.token)}
+                          title="Copy invite link"
+                          style={{ flexShrink: 0, padding: "6px 9px", borderRadius: 8, border: "1px solid #333", background: "transparent", color: "#bbb", fontSize: 13, cursor: "pointer" }}
+                        >🔗</button>
+                        <button
+                          disabled={!!inviteActionId}
+                          onClick={() => respondToInvite(inv._id, "reject")}
+                          style={{ flexShrink: 0, padding: "6px 12px", borderRadius: 8, border: "1px solid rgba(248,113,113,0.35)", background: "transparent", color: "#f87171", fontWeight: 700, fontSize: 12, cursor: "pointer" }}
+                        >
+                          {inviteActionId === inv._id + "reject" ? "…" : "Reject"}
+                        </button>
+                        <button
+                          disabled={!!inviteActionId}
+                          onClick={() => respondToInvite(inv._id, "approve")}
+                          style={{ flexShrink: 0, padding: "6px 14px", borderRadius: 8, border: "none", background: "#c8ff3e", color: "#000", fontWeight: 800, fontSize: 12, cursor: "pointer" }}
+                        >
+                          {inviteActionId === inv._id + "approve" ? "…" : "Approve"}
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {sent.length > 0 ? (
+                <div style={{ border: "1px solid #262626", borderRadius: 10 }}>
+                  {sent.map((inv, i) => (
+                    <div key={inv._id} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10, padding: "10px 12px", borderBottom: i < sent.length - 1 ? "1px solid #1c1c1c" : "none" }}>
+                      <div style={{ minWidth: 0 }}>
+                        <div style={{ fontSize: 14, fontWeight: 600, color: "#eee" }}>{nameOf(inv)}</div>
+                        <div style={{ fontSize: 11, color: "#777" }}>{invitedByText(inv)}</div>
+                      </div>
+                      <div style={{ display: "flex", alignItems: "center", gap: 8, flexShrink: 0 }}>
+                        {['invited', 'approved_unpaid'].includes(inv.status) && (
+                          <button
+                            onClick={() => copyInviteLink(inv.token)}
+                            title="Copy invite link"
+                            style={{ flexShrink: 0, padding: "5px 8px", borderRadius: 8, border: "1px solid #333", background: "transparent", color: "#bbb", fontSize: 12.5, cursor: "pointer" }}
+                          >🔗</button>
+                        )}
+                        {badge(inv.status)}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              ) : pending.length === 0 && (
+                <div style={{ padding: 16, textAlign: "center", color: "#999", fontSize: 13, background: "rgba(255,255,255,0.03)", borderRadius: 10, border: "1px solid #222" }}>
+                  No invitations yet — add players above to get started.
+                </div>
+              )}
+            </div>
+          </div>
+        );
+      })()}
+
       {fetchError && (
         <div style={{
           marginBottom: 14,
@@ -776,7 +1051,8 @@ export default function OrganizerDashboard() {
                   setPostGameTarget(game);
                   setShowPostGameModal(true);
                 }}
-                onCancel={() => openCancelModal(game)}
+                onCancel={() => openCancelModal(game)} 
+                onInvite={()=>openInviteModal(game)}
               />
               ))}
           </div>
