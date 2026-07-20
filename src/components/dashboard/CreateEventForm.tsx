@@ -57,6 +57,7 @@ export function CreateEventForm({ lastEvent, onClose, onCreate, onSuccess }: Cre
 
   const [title, setTitle] = useState(lastEvent?.title ?? "");
   const [visibility, setVisibility] = useState<"public" | "private">(lastEvent?.visibility === "private" ? "private" : "public");
+  const [requiresApproval, setRequiresApproval] = useState<boolean>(lastEvent?.requiresApproval === true);
   const [turf, setTurf] = useState(lastEvent?.turf?._id || (typeof lastEvent?.turf === "string" ? lastEvent.turf : ""));
   const [date, setDate] = useState("");
   const initialTime = lastEvent ? (() => { const hm = new Date(lastEvent.scheduledAt).toLocaleTimeString("en-GB", { timeZone: "Asia/Kolkata", hour: "2-digit", minute: "2-digit", hour12: false }); const [hh, mm] = hm.split(":"); return `${hh}:${Number(mm) >= 30 ? "30" : "00"}`; })() : "18:00";
@@ -229,6 +230,7 @@ export function CreateEventForm({ lastEvent, onClose, onCreate, onSuccess }: Cre
         title: title.trim(),
         sport: "football",
         visibility,
+        requiresApproval,
         format,
         turf,
         scheduledAt: scheduledAt.toISOString(),
@@ -333,9 +335,68 @@ export function CreateEventForm({ lastEvent, onClose, onCreate, onSuccess }: Cre
             </div>
             {visibility === "private" && (
               <div className="field-hint" style={{ marginTop: 8, color: "#c8ff3e" }}>
-                After creating, open this game from your dashboard to invite players.
+                After creating, open this game from your dashboard to invite players and copy the shareable invite link.
               </div>
             )}
+          </div>
+
+          <div className="form-group">
+            <label className="form-label">
+              <span className="label-text">Registration approval</span>
+            </label>
+            <button
+              type="button"
+              onClick={() => setRequiresApproval((v) => !v)}
+              style={{
+                width: "100%",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "space-between",
+                gap: 12,
+                padding: "12px 14px",
+                borderRadius: 10,
+                border: requiresApproval ? "1.5px solid #c8ff3e" : "1.5px solid #2a2a2a",
+                background: requiresApproval ? "rgba(200,255,62,0.12)" : "#141414",
+                cursor: "pointer",
+                textAlign: "left",
+              }}
+            >
+              <span>
+                <span style={{ display: "block", fontWeight: 700, fontSize: 14, color: requiresApproval ? "#c8ff3e" : "#ddd" }}>
+                  {requiresApproval ? "✅ Approval required" : "⚡ Instant join"}
+                </span>
+                <span style={{ display: "block", fontSize: 11.5, color: "#888", marginTop: 3 }}>
+                  {requiresApproval
+                    ? "Players send a join request — you approve or reject. Players you invite directly still skip approval."
+                    : "Players join instantly (subject to available slots)."}
+                </span>
+              </span>
+              <span
+                aria-hidden
+                style={{
+                  flexShrink: 0,
+                  width: 42,
+                  height: 24,
+                  borderRadius: 999,
+                  background: requiresApproval ? "#c8ff3e" : "#333",
+                  position: "relative",
+                  transition: "background .15s",
+                }}
+              >
+                <span
+                  style={{
+                    position: "absolute",
+                    top: 3,
+                    left: requiresApproval ? 21 : 3,
+                    width: 18,
+                    height: 18,
+                    borderRadius: "50%",
+                    background: "#0a0a0a",
+                    transition: "left .15s",
+                  }}
+                />
+              </span>
+            </button>
           </div>
 
           <div className="form-group">

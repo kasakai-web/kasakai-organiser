@@ -83,11 +83,14 @@ function GameCard({game,variant = "upcoming",isMenuOpen,onToggleMenu,onPlayers,o
   const isPast = variant === "past";
   const presentCount =game.registrations?.filter((r: any) => r.attended === "present").length || 0; 
 
-  const isPrivate = game.visibility === "private"; 
-   
+  const isPrivate = game.visibility === "private";
 
-
-   const pendingCount = isPrivate? (game.invitations || []).filter((i: any) => i.status === "invited").length: 0;
+  // Actionable join requests awaiting the organiser's decision (public & private).
+  const pendingCount = (game.invitations || []).filter((i: any) => i.status === "pending").length;
+  const isClosed = ["completed", "cancelled"].includes(game.status);
+  // Show the invite/requests entry when it's a private game (invite + manage link)
+  // or whenever there are requests to act on.
+  const showInvite = (isPrivate || pendingCount > 0) && !isClosed;
 
   const gDay = new Date(game.scheduledAt).toLocaleDateString("en-IN", { timeZone: "Asia/Kolkata"});
   const fmt = (value: string | Date) => {
@@ -327,17 +330,16 @@ function GameCard({game,variant = "upcoming",isMenuOpen,onToggleMenu,onPlayers,o
                   </button>
                 )}
 
-                {isPrivate &&
-                  !["completed", "cancelled"].includes(game.status) && 
-                      <> 
+                {showInvite &&
+                      <>
                       <button
                         className="invite-item"
                         onClick={onInvite}
-                        title="Invite players"
+                        title={isPrivate ? "Invite players & manage requests" : "Review join requests"}
                         style={{ position: "relative" }}
                       >
                       <UserPlus size={16} />
-                      Invite{pendingCount > 0 && <span>{pendingCount}</span>}
+                      {isPrivate ? "Invite" : "Requests"}{pendingCount > 0 && <span>{pendingCount}</span>}
                       </button>
                       </>
                  }

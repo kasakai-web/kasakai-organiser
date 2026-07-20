@@ -126,6 +126,13 @@ export function EditEventModal({
   const [title, setTitle] = useState(initialData.title ?? "");
   const [turf, setTurf] = useState(initialData.turf?._id || "");
   const [status, setStatus] = useState(initialData.status ?? "open");
+  const [requiresApproval, setRequiresApproval] = useState(Boolean(initialData.requiresApproval));
+
+  // How many join requests are currently awaiting a decision — used to warn the
+  // organiser that turning approval OFF will auto-approve them up to capacity.
+  const pendingRequestsCount = (initialData.invitations || []).filter(
+    (i: any) => ["pending", "approved_unpaid"].includes(i.status)
+  ).length;
   const [format, setFormat] = useState<Format>((initialData.format as Format) ?? "5v5");
   const [totalSlots, setTotalSlots] = useState(initialData.totalSlots ?? slotsFromFormat(initialData.format ?? "5v5"));
   const [feeInRs, setFeeInRs] = useState(initialData.feeInPaise ? initialData.feeInPaise / 100 : 0);
@@ -425,6 +432,7 @@ export function EditEventModal({
         durationMins: Number(durationMins),
         minPlayers: Number(minPlayers),
         reportingMinsBeforeGame: Number(reportingMins),
+        requiresApproval,
         lifecycle,
       };
       // IST-anchored, and only when the organiser actually moved it — the backend
@@ -546,6 +554,27 @@ export function EditEventModal({
                   <option value={status}>{status.charAt(0).toUpperCase() + status.slice(1)} (use its own action)</option>
                 )}
               </select>
+            </Field>
+            <Field label="Registration approval">
+              <label style={{ display: "flex", alignItems: "center", gap: 10, cursor: "pointer" }}>
+                <input type="checkbox" checked={requiresApproval}
+                  onChange={(e) => setRequiresApproval(e.target.checked)}
+                  style={{ width: 17, height: 17, accentColor: "#c8ff3e", flexShrink: 0 }} />
+                <span style={{ fontSize: 13, color: "#ddd" }}>Require my approval before players join</span>
+              </label>
+              <div style={{ fontSize: 11, color: "#666", marginTop: 4 }}>
+                {requiresApproval
+                  ? "Players send a join request you approve or reject. Players you invite directly still skip approval."
+                  : "Players join instantly (subject to available slots)."}
+              </div>
+              {initialData.requiresApproval && !requiresApproval && pendingRequestsCount > 0 && (
+                <div style={{
+                  marginTop: 8, padding: "9px 12px", borderRadius: 8, fontSize: 12, lineHeight: 1.5,
+                  background: "rgba(233,179,56,0.08)", border: "1px solid rgba(233,179,56,0.3)", color: "#e9b338",
+                }}>
+                  ⚠️ Turning approval off will auto-approve your {pendingRequestsCount} pending request{pendingRequestsCount !== 1 ? "s" : ""} in order — filling open slots and charging each their fee. Any that don&apos;t fit stay pending.
+                </div>
+              )}
             </Field>
           </Section>
 
