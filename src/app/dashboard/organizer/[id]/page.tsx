@@ -13,7 +13,7 @@ import { activeRegCount, filledCount } from "@/utils/playerCount";
 import { useAuthGuard } from "@/hooks/useAuthGuard";
 import { useAutoRefresh } from "@/hooks/useAutoRefresh";
 import "../../organizer-dashboard.css"; 
-import GameCard from "@/components/dashboard/GameCard/GameCard"; 
+import GameCard from "@/components/dashboard/GameCard/GameCard";
 
 
 export default function OrganizerDashboard() {
@@ -106,7 +106,7 @@ export default function OrganizerDashboard() {
     const silent = options?.silent === true;
     if (isFetchingGamesRef.current) return;
     isFetchingGamesRef.current = true;
-    try {
+    try { 
       if (!silent) setLoading(true);
       if (!silent) setFetchError(null);
       const { token } = getSession();
