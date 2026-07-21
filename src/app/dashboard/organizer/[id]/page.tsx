@@ -13,7 +13,8 @@ import { activeRegCount, filledCount } from "@/utils/playerCount";
 import { useAuthGuard } from "@/hooks/useAuthGuard";
 import { useAutoRefresh } from "@/hooks/useAutoRefresh";
 import "../../organizer-dashboard.css"; 
-import GameCard from "@/components/dashboard/GameCard/GameCard"; 
+import GameCard from "@/components/dashboard/GameCard/GameCard";
+import CoOrganiserModal from "@/components/dashboard/CoOrganiserModal";
 
 
 export default function OrganizerDashboard() {
@@ -47,6 +48,7 @@ export default function OrganizerDashboard() {
   const [maxJoinsInput, setMaxJoinsInput] = useState<string>("");
   const [showPostGameModal, setShowPostGameModal] = useState(false);
   const [postGameTarget, setPostGameTarget] = useState<any>(null);
+  const [coOrgGame, setCoOrgGame] = useState<any>(null);
   const [cancelTargetGame, setCancelTargetGame] = useState<any>(null);
   const [cancelMessage, setCancelMessage] = useState("");
   const [cancellingId, setCancellingId] = useState<string | null>(null);
@@ -1229,8 +1231,9 @@ export default function OrganizerDashboard() {
                   setPostGameTarget(game);
                   setShowPostGameModal(true);
                 }}
-                onCancel={() => openCancelModal(game)} 
+                onCancel={() => openCancelModal(game)}
                 onInvite={()=>openInviteModal(game)}
+                onManageCoOrgs={() => { setCoOrgGame(game); setOpenMenuGameId(null); }}
               />
               ))}
           </div>
@@ -1294,6 +1297,16 @@ export default function OrganizerDashboard() {
             fetchGames({ silent: true });
           }}
           onParticipationChange={() => fetchGames({ silent: true })}
+        />
+      )}
+
+      {coOrgGame && (
+        <CoOrganiserModal
+          gameId={coOrgGame._id}
+          gameTitle={coOrgGame.title}
+          initialCoOrganisers={coOrgGame.coOrganisers || []}
+          onClose={() => setCoOrgGame(null)}
+          onChanged={() => fetchGames({ silent: true })}
         />
       )}
 
