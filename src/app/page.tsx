@@ -1,13 +1,25 @@
 "use client";
 
 import Link from "next/link";
-import { useState } from "react";
+import { useEffect, useState } from "react";
+import { getSession } from "@/utils/api";
 import "./home.css";
 
 export default function Home() {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  const [isLoggedIn, setIsLoggedIn] = useState(false);
 
   const closeMobileMenu = () => setMobileMenuOpen(false);
+
+  useEffect(() => {
+    const syncSession = () => setIsLoggedIn(Boolean(getSession().token));
+    syncSession();
+
+    window.addEventListener("kk-auth-changed", syncSession);
+    return () => window.removeEventListener("kk-auth-changed", syncSession);
+  }, []);
+
+  const dashboardHref = "/dashboard";
 
   return (
     <div className="organiser-home">
@@ -32,7 +44,9 @@ export default function Home() {
           </div>
 
           <div className="nav-actions">
-            <Link href="/login" className="btn-login">Login</Link>
+            <Link href={isLoggedIn ? dashboardHref : "/login"} className="btn-login">
+              {isLoggedIn ? "Dashboard" : "Login"}
+            </Link>
             <button
               className="mobile-menu-btn"
               type="button"
@@ -52,8 +66,12 @@ export default function Home() {
             <a href="#features" onClick={closeMobileMenu}>Features</a>
             <a href="#workflow" onClick={closeMobileMenu}>Workflow</a>
             <a href="#contact" onClick={closeMobileMenu}>Contact</a>
-            <Link href="/login" className="mobile-menu-login" onClick={closeMobileMenu}>
-              Login
+            <Link
+              href={isLoggedIn ? dashboardHref : "/login"}
+              className="mobile-menu-login"
+              onClick={closeMobileMenu}
+            >
+              {isLoggedIn ? "Dashboard" : "Login"}
             </Link>
           </div>
         )}
@@ -69,7 +87,9 @@ export default function Home() {
             </p>
 
             <div className="hero-actions">
-              <Link href="/login" className="btn-primary">Open Dashboard</Link>
+              <Link href={isLoggedIn ? dashboardHref : "/login"} className="btn-primary">
+                {isLoggedIn ? "Open Dashboard" : "Login to Get Started"}
+              </Link>
               <a href="#workflow" className="btn-secondary" onClick={closeMobileMenu}>See Workflow</a>
             </div>
 
@@ -204,7 +224,9 @@ export default function Home() {
             <p>Ready to run your next game?</p>
             <h2>Open the organiser dashboard and manage everything from one place.</h2>
           </div>
-          <Link href="/login" className="btn-primary">Login to Continue</Link>
+          <Link href={isLoggedIn ? dashboardHref : "/login"} className="btn-primary">
+            {isLoggedIn ? "Go to Dashboard" : "Login to Continue"}
+          </Link>
         </section>
       </main>
     </div>
