@@ -41,7 +41,7 @@ export default function OrganizerDashboard() {
   const [inviteActionId, setInviteActionId] = useState<string | null>(null);
   // Player-search typeahead (debounced) inside the invite modal
   const [inviteSearch, setInviteSearch] = useState("");
-  const [searchResults, setSearchResults] = useState<{ _id: string; name: string; phone?: string; profileImage?: string; totalGamesPlayed?: number }[]>([]);
+  const [searchResults, setSearchResults] = useState<{ _id: string; name: string; phone?: string; email?: string; profileImage?: string; totalGamesPlayed?: number }[]>([]);
   const [searchLoading, setSearchLoading] = useState(false);
   // Shared invite-link management
   const [linkBusy, setLinkBusy] = useState(false);
@@ -839,7 +839,7 @@ export default function OrganizerDashboard() {
                 <input
                   value={inviteSearch}
                   onChange={(e) => setInviteSearch(e.target.value)}
-                  placeholder="🔍 Search players by name or phone…"
+                  placeholder="🔍 Search players by name, email or phone…"
                   style={{ width: "100%", padding: "10px 12px", borderRadius: 9, border: "1px solid #2a2a2a", background: "#141414", color: "#fff", fontSize: 13, boxSizing: "border-box" }}
                 />
                 {(searchLoading || searchResults.length > 0) && inviteSearch.trim().length >= 2 && (
@@ -863,7 +863,9 @@ export default function OrganizerDashboard() {
                           </span>
                           <span style={{ minWidth: 0, flex: 1 }}>
                             <span style={{ display: "block", fontSize: 13, fontWeight: 600, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{p.name}</span>
-                            <span style={{ display: "block", fontSize: 11, color: "#777" }}>{p.phone || ""}{typeof p.totalGamesPlayed === "number" ? ` · ${p.totalGamesPlayed}g` : ""}</span>
+                            <span style={{ display: "block", fontSize: 11, color: "#777", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+                            {[p.phone, p.email].filter(Boolean).join(" · ")}{typeof p.totalGamesPlayed === "number" ? ` · ${p.totalGamesPlayed}g` : ""}
+                          </span>
                           </span>
                           <span style={{ flexShrink: 0, fontSize: 12, color: added ? "#666" : "#c8ff3e", fontWeight: 700 }}>{added ? "✓ Added" : "+ Add"}</span>
                         </button>
