@@ -19,6 +19,7 @@ interface GameCardProps {
   onSOS?: () => void;
   onSwitch?: () => void;
   onInvite?: () => void;
+  onManageCoOrgs?: () => void;
 }
 
 const getStatusConfig = (status: string) => {
@@ -77,17 +78,26 @@ const formatTime = (d: Date) =>
     })
     .toUpperCase();
 
-function GameCard({game,variant = "upcoming",isMenuOpen,onToggleMenu,onPlayers,onEdit,onConfirm,onWithdraw,onCancel,onSwitch,onSOS,onComplete,onInvite,
+function GameCard({game,variant = "upcoming",isMenuOpen,onToggleMenu,onPlayers,onEdit,onConfirm,onWithdraw,onCancel,onSwitch,onSOS,onComplete,onInvite,onManageCoOrgs,
 }: GameCardProps) {
   const status = getStatusConfig(game.status);
   const isPast = variant === "past";
+
+  // Caller's role on this game. Missing → treat as owner (own games / legacy).
+  const role: "owner" | "edit" | "view" = game.myRole || "owner";
+  const isOwner = role === "owner";
+  const canEditGame = role === "owner" || role === "edit"; // may perform mutating actions
+  const isViewer = role === "view";
   const presentCount =game.registrations?.filter((r: any) => r.attended === "present").length || 0; 
 
-  const isPrivate = game.visibility === "private"; 
-   
+  const isPrivate = game.visibility === "private";
 
-
-   const pendingCount = isPrivate? (game.invitations || []).filter((i: any) => i.status === "invited").length: 0;
+  // Actionable join requests awaiting the organiser's decision (public & private).
+  const pendingCount = (game.invitations || []).filter((i: any) => i.status === "pending").length;
+  const isClosed = ["completed", "cancelled"].includes(game.status);
+  // Show the invite/requests entry when it's a private game (invite + manage link)
+  // or whenever there are requests to act on.
+  const showInvite = (isPrivate || pendingCount > 0) && !isClosed;
 
   const gDay = new Date(game.scheduledAt).toLocaleDateString("en-IN", { timeZone: "Asia/Kolkata"});
   const fmt = (value: string | Date) => {
@@ -163,6 +173,18 @@ function GameCard({game,variant = "upcoming",isMenuOpen,onToggleMenu,onPlayers,o
           <div className="title-row">
             <h3>{game.title} </h3>
             {isPrivate && <Lock size={17} />}
+            {!isOwner && (
+              <span
+                className={`co-org-badge ${role}`}
+                title={
+                  isViewer
+                    ? "You are a co-organiser with view (read-only) access"
+                    : "You are a co-organiser with edit access"
+                }
+              >
+                Co-organiser · {isViewer ? "View" : "Edit"}
+              </span>
+            )}
           </div>
 
           <div className="detail-row">
@@ -285,7 +307,7 @@ function GameCard({game,variant = "upcoming",isMenuOpen,onToggleMenu,onPlayers,o
 
             {isPast ? (
               <>
-                {!["completed", "cancelled"].includes(game.status) && (
+                {canEditGame && !["completed", "cancelled"].includes(game.status) && (
                   <button
                     onClick={onComplete}
                     className="complete-event"
@@ -296,7 +318,7 @@ function GameCard({game,variant = "upcoming",isMenuOpen,onToggleMenu,onPlayers,o
                   </button>
                 )}
 
-                {game.status === "completed" && !game.attendanceMarked && (
+                {canEditGame && game.status === "completed" && !game.attendanceMarked && (
                   <button onClick={onComplete}>
                     <CircleCheck size={16} />
                     Mark Attendance
@@ -316,7 +338,7 @@ function GameCard({game,variant = "upcoming",isMenuOpen,onToggleMenu,onPlayers,o
               </>
             ) : (
               <>
-                {onEdit && (
+                {canEditGame && onEdit && (
                   <button
                     onClick={onEdit}
                     title="Edit Event"
@@ -327,22 +349,21 @@ function GameCard({game,variant = "upcoming",isMenuOpen,onToggleMenu,onPlayers,o
                   </button>
                 )}
 
-                {isPrivate &&
-                  !["completed", "cancelled"].includes(game.status) && 
-                      <> 
+                {canEditGame && showInvite &&
+                      <>
                       <button
                         className="invite-item"
                         onClick={onInvite}
-                        title="Invite players"
+                        title={isPrivate ? "Invite players & manage requests" : "Review join requests"}
                         style={{ position: "relative" }}
                       >
                       <UserPlus size={16} />
-                      Invite{pendingCount > 0 && <span>{pendingCount}</span>}
+                      {isPrivate ? "Invite" : "Requests"}{pendingCount > 0 && <span>{pendingCount}</span>}
                       </button>
                       </>
                  }
 
-                {["open", "tentative"].includes(game.status) && onConfirm && (
+                {canEditGame && ["open", "tentative"].includes(game.status) && onConfirm && (
                   <button
                     className="confirm-item"
                     onClick={onConfirm}
@@ -353,7 +374,8 @@ function GameCard({game,variant = "upcoming",isMenuOpen,onToggleMenu,onPlayers,o
                   </button>
                 )}
 
-                {["open", "tentative", "confirmed"].includes(game.status) &&
+                {canEditGame &&
+                  ["open", "tentative", "confirmed"].includes(game.status) &&
                   game.alternateFormats?.length > 0 &&
                   !game.lifecycle?.switchedAt &&
                   onSwitch && (
@@ -363,7 +385,8 @@ function GameCard({game,variant = "upcoming",isMenuOpen,onToggleMenu,onPlayers,o
                     </button>
                   )}
 
-                {["open", "tentative", "confirmed"].includes(game.status) &&
+                {canEditGame &&
+                  ["open", "tentative", "confirmed"].includes(game.status) &&
                   onSOS && (
                     <button
                       className="sos-item"
@@ -375,7 +398,7 @@ function GameCard({game,variant = "upcoming",isMenuOpen,onToggleMenu,onPlayers,o
                     </button>
                   )}
 
-                {game.organiserIsPlaying && onWithdraw && (
+                {canEditGame && game.organiserIsPlaying && onWithdraw && (
                   <button
                     className="withdraw-item"
                     onClick={onWithdraw}
@@ -386,7 +409,8 @@ function GameCard({game,variant = "upcoming",isMenuOpen,onToggleMenu,onPlayers,o
                   </button>
                 )}
 
-                {!["cancelled", "completed"].includes(game.status) &&
+                {canEditGame &&
+                  !["cancelled", "completed"].includes(game.status) &&
                   new Date(game.scheduledAt) <= new Date() && (
                     <button onClick={onComplete}>
                       <CircleCheck size={16} />
@@ -394,7 +418,20 @@ function GameCard({game,variant = "upcoming",isMenuOpen,onToggleMenu,onPlayers,o
                     </button>
                   )}
 
-                {onCancel && (
+                {/* Co-organiser management — owner only */}
+                {isOwner && onManageCoOrgs && (
+                  <button
+                    className="co-org-item"
+                    onClick={onManageCoOrgs}
+                    title="Manage co-organisers"
+                  >
+                    <UserPlus size={16} />
+                    Co-organisers
+                    {game.coOrganisers?.length > 0 && <span>{game.coOrganisers.length}</span>}
+                  </button>
+                )}
+
+                {isOwner && onCancel && (
                   <button
                     className="danger-item"
                     onClick={onCancel}
