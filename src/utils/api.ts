@@ -23,6 +23,16 @@ export const buildApiUrl = (path: string): string => {
   return `${base}${normalizedPath}`;
 };
 
+// Resolve a stored image reference to a loadable URL.
+// New uploads are absolute R2 URLs (https://pub-….r2.dev/…) — returned as-is.
+// Legacy "/uploads/…" values are prefixed with the backend origin.
+export const resolveImageUrl = (img?: string | null): string => {
+  if (!img) return "";
+  if (/^(https?:|data:|blob:)/i.test(img)) return img;
+  const origin = API_BASE_URL.replace(/\/api\/v1\/?$/i, "");
+  return img.startsWith("/") ? `${origin}${img}` : `${origin}/${img}`;
+};
+
 export const getSession = () => {
   if (!isBrowser()) {
     return { token: null, role: null, userId: null };

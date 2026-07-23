@@ -8,7 +8,7 @@ import { PostGameModal } from "@/components/dashboard/PostGameModal";
 import { LifecycleAlertModal } from "@/components/dashboard/LifecycleAlertModal";
 import { ConfirmationModal } from "@/components/ui/ConfirmationModal";
 import { Toast, useToast } from "@/components/ui/Toast";
-import { buildApiUrl, clearSession, getSession } from "@/utils/api";
+import { buildApiUrl, clearSession, getSession, resolveImageUrl } from "@/utils/api";
 import { activeRegCount, filledCount } from "@/utils/playerCount";
 import { useAuthGuard } from "@/hooks/useAuthGuard";
 import { useAutoRefresh } from "@/hooks/useAutoRefresh";
@@ -859,7 +859,7 @@ export default function OrganizerDashboard() {
                           style={{ width: "100%", display: "flex", alignItems: "center", gap: 10, padding: "9px 12px", background: "transparent", border: "none", borderBottom: "1px solid #202020", color: added ? "#666" : "#eee", cursor: added ? "default" : "pointer", textAlign: "left" }}
                         >
                           <span style={{ flexShrink: 0, width: 28, height: 28, borderRadius: "50%", background: "#242424", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 12, fontWeight: 700, color: "#c8ff3e", overflow: "hidden" }}>
-                            {p.profileImage ? <img src={p.profileImage} alt="" style={{ width: "100%", height: "100%", objectFit: "cover" }} /> : (p.name?.[0] || "?").toUpperCase()}
+                            {p.profileImage ? <img src={resolveImageUrl(p.profileImage)} alt="" style={{ width: "100%", height: "100%", objectFit: "cover" }} /> : (p.name?.[0] || "?").toUpperCase()}
                           </span>
                           <span style={{ minWidth: 0, flex: 1 }}>
                             <span style={{ display: "block", fontSize: 13, fontWeight: 600, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{p.name}</span>

@@ -3,14 +3,13 @@
 import React, { useEffect, useRef, useState, useCallback } from "react";
 import { useParams, useRouter } from "next/navigation";
 import "../../../organizer-dashboard.css";
-import { buildApiUrl, clearSession, getSession, fetchWithRetry } from "@/utils/api";
+import { buildApiUrl, clearSession, getSession, fetchWithRetry, resolveImageUrl } from "@/utils/api";
 import { useAuthGuard } from "@/hooks/useAuthGuard";
 import { useAutoRefresh } from "@/hooks/useAutoRefresh";
 import { NavBtn } from "@/components/ui/NavBtn";
 import { SuccessPopup } from "@/components/ui/SuccessPopup";
 import { ConfirmationModal } from "@/components/ui/ConfirmationModal";
 
-const API_BASE_URL = (process.env.NEXT_PUBLIC_API_BASE_URL || "http://localhost:5000/api/v1").replace(/\/api\/v1\/?$/, "");
 
 type OrganiserProfile = {
   name: string;
@@ -194,7 +193,7 @@ export default function OrganiserProfilePage() {
       }
 
       const o = data.data || {};
-      const imageUrl = o.profileImage ? `${API_BASE_URL}${o.profileImage}` : null;
+      const imageUrl = o.profileImage ? resolveImageUrl(o.profileImage) : null;
       setImagePreview(imageUrl);
       if (imageUrl) {
         localStorage.setItem("userProfileImage", imageUrl);
@@ -271,11 +270,11 @@ export default function OrganiserProfilePage() {
       const data = await parseApiResponse(res);
       if (!res.ok || !data.success) {
         setError(data.message || "Failed to upload image");
-        setImagePreview(profile.profileImage ? `${API_BASE_URL}${profile.profileImage}` : null);
+        setImagePreview(profile.profileImage ? resolveImageUrl(profile.profileImage) : null);
         return;
       }
       const newImagePath = data.data?.profileImage;
-      const newImageUrl = newImagePath ? `${API_BASE_URL}${newImagePath}` : null;
+      const newImageUrl = newImagePath ? resolveImageUrl(newImagePath) : null;
       setProfile((prev) => ({ ...prev, profileImage: newImagePath }));
       setImagePreview(newImageUrl);
       if (newImageUrl) {
@@ -289,7 +288,7 @@ export default function OrganiserProfilePage() {
       window.dispatchEvent(new CustomEvent("organiser-profile-updated", { detail: { profileImage: newImageUrl || "" } }));
     } catch {
       setError("Failed to upload image");
-      setImagePreview(profile.profileImage ? `${API_BASE_URL}${profile.profileImage}` : null);
+      setImagePreview(profile.profileImage ? resolveImageUrl(profile.profileImage) : null);
     } finally {
       setImageUploading(false);
       if (imageInputRef.current) imageInputRef.current.value = "";
