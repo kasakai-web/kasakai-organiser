@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { buildApiUrl, getSession } from "@/utils/api";
+import { buildApiUrl, getSession, resolveImageUrl } from "@/utils/api";
 
 interface Organiser {
   _id: string;
@@ -147,7 +147,7 @@ export default function CoOrganiserModal({
   const avatar = (o: Organiser | null) => (
     <span style={{ flexShrink: 0, width: 32, height: 32, borderRadius: "50%", background: "#242424", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 13, fontWeight: 700, color: ACCENT, overflow: "hidden" }}>
       {o?.profileImage ? (
-        <img src={o.profileImage} alt="" style={{ width: "100%", height: "100%", objectFit: "cover" }} />
+        <img src={resolveImageUrl(o.profileImage)} alt="" style={{ width: "100%", height: "100%", objectFit: "cover" }} />
       ) : (
         (o?.name?.[0] || "?").toUpperCase()
       )}
