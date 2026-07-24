@@ -8,12 +8,13 @@ import { PostGameModal } from "@/components/dashboard/PostGameModal";
 import { LifecycleAlertModal } from "@/components/dashboard/LifecycleAlertModal";
 import { ConfirmationModal } from "@/components/ui/ConfirmationModal";
 import { Toast, useToast } from "@/components/ui/Toast";
-import { buildApiUrl, clearSession, getSession } from "@/utils/api";
+import { buildApiUrl, clearSession, getSession, resolveImageUrl } from "@/utils/api";
 import { activeRegCount, filledCount } from "@/utils/playerCount";
 import { useAuthGuard } from "@/hooks/useAuthGuard";
 import { useAutoRefresh } from "@/hooks/useAutoRefresh";
 import "../../organizer-dashboard.css"; 
 import GameCard from "@/components/dashboard/GameCard/GameCard";
+import CoOrganiserModal from "@/components/dashboard/CoOrganiserModal";
 
 
 export default function OrganizerDashboard() {
@@ -38,8 +39,16 @@ export default function OrganizerDashboard() {
   const [invitePhone, setInvitePhone] = useState("");
   const [inviteSending, setInviteSending] = useState(false);
   const [inviteActionId, setInviteActionId] = useState<string | null>(null);
+  // Player-search typeahead (debounced) inside the invite modal
+  const [inviteSearch, setInviteSearch] = useState("");
+  const [searchResults, setSearchResults] = useState<{ _id: string; name: string; phone?: string; email?: string; profileImage?: string; totalGamesPlayed?: number }[]>([]);
+  const [searchLoading, setSearchLoading] = useState(false);
+  // Shared invite-link management
+  const [linkBusy, setLinkBusy] = useState(false);
+  const [maxJoinsInput, setMaxJoinsInput] = useState<string>("");
   const [showPostGameModal, setShowPostGameModal] = useState(false);
   const [postGameTarget, setPostGameTarget] = useState<any>(null);
+  const [coOrgGame, setCoOrgGame] = useState<any>(null);
   const [cancelTargetGame, setCancelTargetGame] = useState<any>(null);
   const [cancelMessage, setCancelMessage] = useState("");
   const [cancellingId, setCancellingId] = useState<string | null>(null);
@@ -360,7 +369,12 @@ export default function OrganizerDashboard() {
     setInviteRows([]);
     setInviteName("");
     setInvitePhone("");
+    setInviteSearch("");
+    setSearchResults([]);
+    setMaxJoinsInput(game.inviteLinkMaxJoins != null ? String(game.inviteLinkMaxJoins) : "");
     setInviteRegulars([]);
+    // Regulars suggestions + invite form only apply to private games.
+    if (game.visibility !== "private") { setInviteRegLoading(false); return; }
     setInviteRegLoading(true);
     const { token } = getSession();
     if (!token) { clearSession(); router.replace("/login?role=organiser"); return; }
@@ -369,6 +383,61 @@ export default function OrganizerDashboard() {
       .then((d) => { if (d?.success) setInviteRegulars(d.data?.regulars || []); })
       .catch(() => {})
       .finally(() => setInviteRegLoading(false));
+  };
+
+  // Debounced (300ms) player search for the invite typeahead. Aborts the in-flight
+  // request on each keystroke so only the latest query's results ever land.
+  useEffect(() => {
+    const q = inviteSearch.trim();
+    if (!inviteGameId || q.length < 2) { setSearchResults([]); setSearchLoading(false); return; }
+    setSearchLoading(true);
+    const ctrl = new AbortController();
+    const t = setTimeout(async () => {
+      try {
+        const { token } = getSession();
+        const res = await fetch(buildApiUrl(`/api/v1/organisers/search-players?q=${encodeURIComponent(q)}`), {
+          headers: { Authorization: `Bearer ${token}` },
+          signal: ctrl.signal,
+        });
+        const data = await res.json();
+        setSearchResults(res.ok && data?.success ? (data.data || []) : []);
+      } catch (e) {
+        if ((e as any)?.name !== "AbortError") setSearchResults([]);
+      } finally {
+        setSearchLoading(false);
+      }
+    }, 300);
+    return () => { clearTimeout(t); ctrl.abort(); };
+  }, [inviteSearch, inviteGameId]);
+
+  const addSearchInvitee = (p: { _id: string; name: string }) => {
+    if (inviteRows.some((r) => r.playerId === p._id)) return;
+    setInviteRows((rows) => [...rows, { name: p.name, playerId: p._id }]);
+    setInviteSearch("");
+    setSearchResults([]);
+  };
+
+  // Manage the shared invite link — toggle on/off, set/clear the cap, or regenerate.
+  const manageLink = async (patch: { enabled?: boolean; maxJoins?: number | null; regenerate?: boolean }) => {
+    if (!inviteGameId) return;
+    const { token } = getSession();
+    if (!token) { clearSession(); router.replace("/login?role=organiser"); return; }
+    setLinkBusy(true);
+    try {
+      const res = await fetch(buildApiUrl(`/api/v1/games/organisers/${inviteGameId}/invite-link`), {
+        method: "PATCH",
+        headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+        body: JSON.stringify(patch),
+      });
+      const data = await res.json();
+      if (!res.ok || !data.success) { showToast("error", data.message || "Failed to update link"); return; }
+      showToast("success", "Invite link updated");
+      await fetchGames({ silent: true });
+    } catch {
+      showToast("error", "Failed to update link. Please try again.");
+    } finally {
+      setLinkBusy(false);
+    }
   };
 
   const addManualInvitee = () => {
@@ -721,9 +790,18 @@ export default function OrganizerDashboard() {
       {inviteGameId && (() => {
         const inviteGame = games.find((g) => g._id === inviteGameId);
         if (!inviteGame) return null;
+        const isPrivateInvite = inviteGame.visibility === 'private';
         const invitations = (inviteGame.invitations || []) as any[];
-        const pending = invitations.filter((i) => i.status === 'pending');
-        const sent = invitations.filter((i) => i.status !== 'pending');
+        // The approval queue shows live requests: those awaiting a decision ('pending')
+        // AND those already approved but waiting on the player's wallet top-up
+        // ('approved_unpaid') — so an approved-but-unpaid request never silently vanishes.
+        const pending = invitations.filter((i) => ['pending', 'approved_unpaid'].includes(i.status));
+        // Only personal invites (with a token) belong in the "invitations" list;
+        // self-service requests live only in the approval queue above.
+        const sent = invitations.filter((i) => !['pending', 'approved_unpaid'].includes(i.status) && i.invitedByRole !== 'self');
+        const linkJoins = invitations.filter(
+          (i) => i.via === 'invite_link' && ['pending', 'accepted', 'approved_unpaid'].includes(i.status)
+        ).length;
         const closeInvite = () => { setInviteGameId(null); setInviteRows([]); };
         const nameOf = (inv: any) => inv.player?.name || inv.inviteeName || 'Player';
         const badge = (status: string) => {
@@ -737,22 +815,68 @@ export default function OrganizerDashboard() {
           const b = map[status] || map.invited;
           return <span style={{ flexShrink: 0, fontSize: 10.5, fontWeight: 700, color: b.color, background: b.bg, border: `1px solid ${b.border}`, borderRadius: 20, padding: '2px 9px' }}>{b.label}</span>;
         };
-        const invitedByText = (inv: any) => inv.invitedByRole === 'player'
-          ? `invited by ${inv.invitedByName || 'a player'}`
-          : 'invited by you';
+        const invitedByText = (inv: any) => inv.invitedByRole === 'self'
+          ? (inv.via === 'invite_link' ? 'requested via invite link' : 'requested to join')
+          : inv.invitedByRole === 'player'
+            ? `invited by ${inv.invitedByName || 'a player'}`
+            : 'invited by you';
         return (
           <div className="modal-overlay" onClick={closeInvite}>
             <div onClick={(e) => e.stopPropagation()} style={{ width: "100%", maxWidth: 520, background: "#111214", border: "1px solid #2a2a2a", borderRadius: 16, padding: 22, color: "#fff", maxHeight: "88vh", overflowY: "auto" }}>
               <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 4 }}>
-                <h2 style={{ margin: 0, fontSize: 18, fontWeight: 800 }}>🔒 Invite players</h2>
+                <h2 style={{ margin: 0, fontSize: 18, fontWeight: 800 }}>{isPrivateInvite ? "🔒 Invites & requests" : "🙋 Join requests"}</h2>
                 <button onClick={closeInvite} style={{ background: "none", border: "none", color: "#888", fontSize: 20, cursor: "pointer", lineHeight: 1 }}>✕</button>
               </div>
               <p style={{ fontSize: 13, color: "#9aa", margin: "0 0 14px", lineHeight: 1.5 }}>
-                Invite players to <b style={{ color: "#ddd" }}>{inviteGame.title}</b>. They get a WhatsApp link to confirm their spot.
+                {isPrivateInvite
+                  ? <>Invite players to <b style={{ color: "#ddd" }}>{inviteGame.title}</b>, or share the invite link. Approve requests below.</>
+                  : <>Players you approve join <b style={{ color: "#ddd" }}>{inviteGame.title}</b> and are charged their fee. Players you invite directly skip approval.</>}
               </p>
 
+              {isPrivateInvite && <>
               {/* ── Add invites ── */}
               <div style={{ fontSize: 12, fontWeight: 700, color: "#c8ff3e", textTransform: "uppercase", letterSpacing: 0.4, marginBottom: 8 }}>Add invites</div>
+
+              {/* Player search typeahead (300ms debounce) */}
+              <div style={{ position: "relative", marginBottom: 12 }}>
+                <input
+                  value={inviteSearch}
+                  onChange={(e) => setInviteSearch(e.target.value)}
+                  placeholder="🔍 Search players by name, email or phone…"
+                  style={{ width: "100%", padding: "10px 12px", borderRadius: 9, border: "1px solid #2a2a2a", background: "#141414", color: "#fff", fontSize: 13, boxSizing: "border-box" }}
+                />
+                {(searchLoading || searchResults.length > 0) && inviteSearch.trim().length >= 2 && (
+                  <div style={{ position: "absolute", zIndex: 5, top: "calc(100% + 4px)", left: 0, right: 0, background: "#161616", border: "1px solid #2a2a2a", borderRadius: 10, maxHeight: 240, overflowY: "auto", boxShadow: "0 8px 24px rgba(0,0,0,0.5)" }}>
+                    {searchLoading && searchResults.length === 0 ? (
+                      <div style={{ padding: "10px 12px", fontSize: 12, color: "#888" }}>Searching…</div>
+                    ) : searchResults.length === 0 ? (
+                      <div style={{ padding: "10px 12px", fontSize: 12, color: "#888" }}>No players found</div>
+                    ) : searchResults.map((p) => {
+                      const added = inviteRows.some((x) => x.playerId === p._id);
+                      return (
+                        <button
+                          key={p._id}
+                          type="button"
+                          disabled={added}
+                          onClick={() => addSearchInvitee(p)}
+                          style={{ width: "100%", display: "flex", alignItems: "center", gap: 10, padding: "9px 12px", background: "transparent", border: "none", borderBottom: "1px solid #202020", color: added ? "#666" : "#eee", cursor: added ? "default" : "pointer", textAlign: "left" }}
+                        >
+                          <span style={{ flexShrink: 0, width: 28, height: 28, borderRadius: "50%", background: "#242424", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 12, fontWeight: 700, color: "#c8ff3e", overflow: "hidden" }}>
+                            {p.profileImage ? <img src={resolveImageUrl(p.profileImage)} alt="" style={{ width: "100%", height: "100%", objectFit: "cover" }} /> : (p.name?.[0] || "?").toUpperCase()}
+                          </span>
+                          <span style={{ minWidth: 0, flex: 1 }}>
+                            <span style={{ display: "block", fontSize: 13, fontWeight: 600, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{p.name}</span>
+                            <span style={{ display: "block", fontSize: 11, color: "#777", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+                            {[p.phone, p.email].filter(Boolean).join(" · ")}{typeof p.totalGamesPlayed === "number" ? ` · ${p.totalGamesPlayed}g` : ""}
+                          </span>
+                          </span>
+                          <span style={{ flexShrink: 0, fontSize: 12, color: added ? "#666" : "#c8ff3e", fontWeight: 700 }}>{added ? "✓ Added" : "+ Add"}</span>
+                        </button>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
 
               {inviteRegLoading ? (
                 <div style={{ fontSize: 12, color: "#888", marginBottom: 10 }}>Loading venue regulars…</div>
@@ -818,26 +942,94 @@ export default function OrganizerDashboard() {
                 {inviteSending ? "Sending…" : inviteRows.length === 0 ? "Add someone to invite" : `Send ${inviteRows.length} invite${inviteRows.length !== 1 ? "s" : ""}`}
               </button>
 
-              {/* ── Invitations ── */}
-              <div style={{ fontSize: 12, fontWeight: 700, color: "#c8ff3e", textTransform: "uppercase", letterSpacing: 0.4, marginBottom: 8 }}>
-                Invitations {invitations.length > 0 && <span style={{ color: "#777" }}>({invitations.length})</span>}
-              </div>
+              {/* ── Shared invite link ── */}
+              <div style={{ fontSize: 12, fontWeight: 700, color: "#c8ff3e", textTransform: "uppercase", letterSpacing: 0.4, marginBottom: 8 }}>Shared invite link</div>
+              {inviteGame.inviteLinkToken ? (
+                <div style={{ border: "1px solid #262626", borderRadius: 10, padding: 12, marginBottom: 20 }}>
+                  <div style={{ display: "flex", gap: 8, alignItems: "center", marginBottom: 10 }}>
+                    <input
+                      readOnly
+                      value={`https://www.kasakai.in/join/${inviteGame.inviteLinkToken}`}
+                      onFocus={(e) => e.currentTarget.select()}
+                      style={{ flex: 1, minWidth: 0, padding: "9px 11px", borderRadius: 8, border: "1px solid #2a2a2a", background: "#0e0e0e", color: inviteGame.inviteLinkEnabled === false ? "#666" : "#bbb", fontSize: 12 }}
+                    />
+                    <button type="button" onClick={() => copyInviteLink(inviteGame.inviteLinkToken)}
+                      style={{ flexShrink: 0, padding: "9px 12px", borderRadius: 8, border: "1px solid rgba(200,255,62,0.3)", background: "rgba(200,255,62,0.08)", color: "#c8ff3e", fontWeight: 700, fontSize: 12, cursor: "pointer" }}>Copy</button>
+                  </div>
+                  <div style={{ display: "flex", flexWrap: "wrap", gap: 8, alignItems: "center" }}>
+                    <button type="button" disabled={linkBusy}
+                      onClick={() => manageLink({ enabled: !(inviteGame.inviteLinkEnabled !== false) })}
+                      style={{ padding: "6px 12px", borderRadius: 8, border: "1px solid #333", background: "transparent", color: inviteGame.inviteLinkEnabled === false ? "#c8ff3e" : "#f87171", fontWeight: 700, fontSize: 12, cursor: linkBusy ? "not-allowed" : "pointer" }}>
+                      {inviteGame.inviteLinkEnabled === false ? "Enable link" : "Disable link"}
+                    </button>
+                    <button type="button" disabled={linkBusy}
+                      onClick={() => manageLink({ regenerate: true })}
+                      style={{ padding: "6px 12px", borderRadius: 8, border: "1px solid #333", background: "transparent", color: "#bbb", fontWeight: 700, fontSize: 12, cursor: linkBusy ? "not-allowed" : "pointer" }}>
+                      ↻ Regenerate
+                    </button>
+                    <span style={{ display: "inline-flex", alignItems: "center", gap: 6, marginLeft: "auto" }}>
+                      <input
+                        type="number" min={1} placeholder="No limit" value={maxJoinsInput}
+                        onChange={(e) => setMaxJoinsInput(e.target.value)}
+                        style={{ width: 92, padding: "6px 9px", borderRadius: 8, border: "1px solid #2a2a2a", background: "#141414", color: "#fff", fontSize: 12 }}
+                      />
+                      <button type="button" disabled={linkBusy}
+                        onClick={() => manageLink({ maxJoins: maxJoinsInput.trim() === "" ? null : Number(maxJoinsInput) })}
+                        style={{ padding: "6px 12px", borderRadius: 8, border: "1px solid #333", background: "transparent", color: "#bbb", fontWeight: 700, fontSize: 12, cursor: linkBusy ? "not-allowed" : "pointer" }}>
+                        Set cap
+                      </button>
+                    </span>
+                  </div>
+                  <div style={{ fontSize: 11, color: "#777", marginTop: 8 }}>
+                    {inviteGame.inviteLinkEnabled === false
+                      ? "Link is off — nobody can join through it."
+                      : inviteGame.requiresApproval
+                        ? "Anyone with this link sends a join request for your approval."
+                        : "Anyone with this link joins instantly (subject to slots)."}
+                    {inviteGame.inviteLinkMaxJoins != null && ` · ${linkJoins}/${inviteGame.inviteLinkMaxJoins} link joins used`}
+                  </div>
+                </div>
+              ) : (
+                <div style={{ padding: 12, marginBottom: 20, fontSize: 12, color: "#888", background: "rgba(255,255,255,0.03)", borderRadius: 10, border: "1px solid #222" }}>
+                  No link yet — <button type="button" disabled={linkBusy} onClick={() => manageLink({ regenerate: true })} style={{ background: "none", border: "none", color: "#c8ff3e", fontWeight: 700, cursor: "pointer", padding: 0 }}>generate one</button> to share.
+                </div>
+              )}
+              </>}
 
+              {/* ── Requests to approve (public & private) ── */}
               {pending.length > 0 && (
                 <div style={{ marginBottom: 12 }}>
                   <div style={{ fontSize: 11, color: "#f59e0b", marginBottom: 6, fontWeight: 700 }}>Requests to approve</div>
                   <div style={{ border: "1px solid #262626", borderRadius: 10 }}>
-                    {pending.map((inv, i) => (
+                    {pending.map((inv, i) => {
+                      // 'approved_unpaid' = already approved, waiting on the player's top-up.
+                      const awaitingPayment = inv.status === 'approved_unpaid';
+                      // canAfford===false means the player can't currently cover the fee, so
+                      // approving would only strand them — the backend annotates this per request.
+                      const cantAfford = !awaitingPayment && inv.canAfford === false;
+                      const approveBlocked = awaitingPayment || cantAfford;
+                      const shortfall = Math.round((inv.walletShortfallPaise || 0) / 100);
+                      return (
                       <div key={inv._id} style={{ display: "flex", alignItems: "center", gap: 10, padding: "10px 12px", borderBottom: i < pending.length - 1 ? "1px solid #1c1c1c" : "none" }}>
                         <div style={{ minWidth: 0, flex: 1 }}>
                           <div style={{ fontSize: 14, fontWeight: 600, color: "#eee" }}>{nameOf(inv)}</div>
-                          <div style={{ fontSize: 11, color: "#777" }}>{invitedByText(inv)}</div>
+                          <div style={{ fontSize: 11, color: approveBlocked ? "#f59e0b" : "#777" }}>
+                            {awaitingPayment
+                              ? "Approved — waiting for the player to top up their wallet"
+                              : cantAfford
+                                ? (shortfall > 0
+                                    ? `Low wallet balance — short by ₹${shortfall}. Can't approve until they recharge.`
+                                    : "Insufficient wallet balance — can't approve until they recharge.")
+                                : invitedByText(inv)}
+                          </div>
                         </div>
-                        <button
-                          onClick={() => copyInviteLink(inv.token)}
-                          title="Copy invite link"
-                          style={{ flexShrink: 0, padding: "6px 9px", borderRadius: 8, border: "1px solid #333", background: "transparent", color: "#bbb", fontSize: 13, cursor: "pointer" }}
-                        >🔗</button>
+                        {inv.token && (
+                          <button
+                            onClick={() => copyInviteLink(inv.token)}
+                            title="Copy invite link"
+                            style={{ flexShrink: 0, padding: "6px 9px", borderRadius: 8, border: "1px solid #333", background: "transparent", color: "#bbb", fontSize: 13, cursor: "pointer" }}
+                          >🔗</button>
+                        )}
                         <button
                           disabled={!!inviteActionId}
                           onClick={() => respondToInvite(inv._id, "reject")}
@@ -845,43 +1037,63 @@ export default function OrganizerDashboard() {
                         >
                           {inviteActionId === inv._id + "reject" ? "…" : "Reject"}
                         </button>
-                        <button
-                          disabled={!!inviteActionId}
-                          onClick={() => respondToInvite(inv._id, "approve")}
-                          style={{ flexShrink: 0, padding: "6px 14px", borderRadius: 8, border: "none", background: "#c8ff3e", color: "#000", fontWeight: 800, fontSize: 12, cursor: "pointer" }}
-                        >
-                          {inviteActionId === inv._id + "approve" ? "…" : "Approve"}
-                        </button>
+                        {approveBlocked ? (
+                          <button
+                            disabled
+                            title={awaitingPayment ? "Waiting for the player to top up their wallet" : "The player must recharge before you can approve"}
+                            style={{ flexShrink: 0, padding: "6px 14px", borderRadius: 8, border: "1px solid #333", background: "transparent", color: "#666", fontWeight: 700, fontSize: 12, cursor: "not-allowed" }}
+                          >
+                            {awaitingPayment ? "Awaiting payment" : "Can't approve"}
+                          </button>
+                        ) : (
+                          <button
+                            disabled={!!inviteActionId}
+                            onClick={() => respondToInvite(inv._id, "approve")}
+                            style={{ flexShrink: 0, padding: "6px 14px", borderRadius: 8, border: "none", background: "#c8ff3e", color: "#000", fontWeight: 800, fontSize: 12, cursor: "pointer" }}
+                          >
+                            {inviteActionId === inv._id + "approve" ? "…" : "Approve"}
+                          </button>
+                        )}
                       </div>
-                    ))}
+                      );
+                    })}
                   </div>
                 </div>
               )}
 
-              {sent.length > 0 ? (
-                <div style={{ border: "1px solid #262626", borderRadius: 10 }}>
-                  {sent.map((inv, i) => (
-                    <div key={inv._id} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10, padding: "10px 12px", borderBottom: i < sent.length - 1 ? "1px solid #1c1c1c" : "none" }}>
-                      <div style={{ minWidth: 0 }}>
-                        <div style={{ fontSize: 14, fontWeight: 600, color: "#eee" }}>{nameOf(inv)}</div>
-                        <div style={{ fontSize: 11, color: "#777" }}>{invitedByText(inv)}</div>
+              {isPrivateInvite && sent.length > 0 && (
+                <>
+                  <div style={{ fontSize: 12, fontWeight: 700, color: "#c8ff3e", textTransform: "uppercase", letterSpacing: 0.4, margin: "4px 0 8px" }}>
+                    Invitations <span style={{ color: "#777" }}>({sent.length})</span>
+                  </div>
+                  <div style={{ border: "1px solid #262626", borderRadius: 10 }}>
+                    {sent.map((inv, i) => (
+                      <div key={inv._id} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10, padding: "10px 12px", borderBottom: i < sent.length - 1 ? "1px solid #1c1c1c" : "none" }}>
+                        <div style={{ minWidth: 0 }}>
+                          <div style={{ fontSize: 14, fontWeight: 600, color: "#eee" }}>{nameOf(inv)}</div>
+                          <div style={{ fontSize: 11, color: "#777" }}>{invitedByText(inv)}</div>
+                        </div>
+                        <div style={{ display: "flex", alignItems: "center", gap: 8, flexShrink: 0 }}>
+                          {inv.token && ['invited', 'approved_unpaid'].includes(inv.status) && (
+                            <button
+                              onClick={() => copyInviteLink(inv.token)}
+                              title="Copy invite link"
+                              style={{ flexShrink: 0, padding: "5px 8px", borderRadius: 8, border: "1px solid #333", background: "transparent", color: "#bbb", fontSize: 12.5, cursor: "pointer" }}
+                            >🔗</button>
+                          )}
+                          {badge(inv.status)}
+                        </div>
                       </div>
-                      <div style={{ display: "flex", alignItems: "center", gap: 8, flexShrink: 0 }}>
-                        {['invited', 'approved_unpaid'].includes(inv.status) && (
-                          <button
-                            onClick={() => copyInviteLink(inv.token)}
-                            title="Copy invite link"
-                            style={{ flexShrink: 0, padding: "5px 8px", borderRadius: 8, border: "1px solid #333", background: "transparent", color: "#bbb", fontSize: 12.5, cursor: "pointer" }}
-                          >🔗</button>
-                        )}
-                        {badge(inv.status)}
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              ) : pending.length === 0 && (
+                    ))}
+                  </div>
+                </>
+              )}
+
+              {pending.length === 0 && (!isPrivateInvite || sent.length === 0) && (
                 <div style={{ padding: 16, textAlign: "center", color: "#999", fontSize: 13, background: "rgba(255,255,255,0.03)", borderRadius: 10, border: "1px solid #222" }}>
-                  No invitations yet — add players above to get started.
+                  {isPrivateInvite
+                    ? "No invitations yet — add players above to get started."
+                    : "No join requests yet. Requests appear here for you to approve or reject."}
                 </div>
               )}
             </div>
@@ -1051,8 +1263,9 @@ export default function OrganizerDashboard() {
                   setPostGameTarget(game);
                   setShowPostGameModal(true);
                 }}
-                onCancel={() => openCancelModal(game)} 
+                onCancel={() => openCancelModal(game)}
                 onInvite={()=>openInviteModal(game)}
+                onManageCoOrgs={() => { setCoOrgGame(game); setOpenMenuGameId(null); }}
               />
               ))}
           </div>
@@ -1116,6 +1329,16 @@ export default function OrganizerDashboard() {
             fetchGames({ silent: true });
           }}
           onParticipationChange={() => fetchGames({ silent: true })}
+        />
+      )}
+
+      {coOrgGame && (
+        <CoOrganiserModal
+          gameId={coOrgGame._id}
+          gameTitle={coOrgGame.title}
+          initialCoOrganisers={coOrgGame.coOrganisers || []}
+          onClose={() => setCoOrgGame(null)}
+          onChanged={() => fetchGames({ silent: true })}
         />
       )}
 

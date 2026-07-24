@@ -1,9 +1,10 @@
 "use client";
 
 import { useState, useEffect, useRef } from "react";
-import "./CreateEventForm.css"; 
+import "./CreateEventForm.css";
 import { buildApiUrl, getSession } from "@/utils/api";
 import { checkInDate, defaultCheckTimes, checkInIsoFromParts } from "@/utils/checkins";
+import { saveTemplate } from "@/utils/templates";
 
 const TIME_SLOT_OPTIONS = Array.from({ length: 96 }, (_, idx) => {
   const hours = Math.floor(idx / 4);
@@ -45,26 +46,30 @@ interface Turf { _id: string; name: string; location?: { city?: string }; }
 
 export interface CreateEventFormProps {
   lastEvent?: any;
+  presetDate?: string; // YYYY-MM-DD to seed the date field (used by "Customize from template")
   onClose?: () => void;
   onCreate?: (eventData: any) => void;
   onSuccess?: () => void;
 }
 
-export function CreateEventForm({ lastEvent, onClose, onCreate, onSuccess }: CreateEventFormProps) {
+export function CreateEventForm({ lastEvent, presetDate, onClose, onCreate, onSuccess }: CreateEventFormProps) {
   const [turfs, setTurfs] = useState<Turf[]>([]);
   const [loading, setLoading] = useState(false);
   const [errors, setErrors] = useState<Record<string, string>>({});
 
   const [title, setTitle] = useState(lastEvent?.title ?? "");
   const [visibility, setVisibility] = useState<"public" | "private">(lastEvent?.visibility === "private" ? "private" : "public");
+  const [requiresApproval, setRequiresApproval] = useState<boolean>(lastEvent?.requiresApproval === true);
   const [turf, setTurf] = useState(lastEvent?.turf?._id || (typeof lastEvent?.turf === "string" ? lastEvent.turf : ""));
-  const [date, setDate] = useState("");
+  const [date, setDate] = useState(presetDate ?? "");
   const initialTime = lastEvent ? (() => { const hm = new Date(lastEvent.scheduledAt).toLocaleTimeString("en-GB", { timeZone: "Asia/Kolkata", hour: "2-digit", minute: "2-digit", hour12: false }); const [hh, mm] = hm.split(":"); return `${hh}:${Number(mm) >= 30 ? "30" : "00"}`; })() : "18:00";
   const [time, setTime] = useState(initialTime);
   const initialFormat = (lastEvent?.format as Format) ?? "5v5";
   const [format, setFormat] = useState<Format>(initialFormat);
   const [durationMins, setDuration] = useState(lastEvent?.durationMins ?? 60);
   const [feeInRs, setFeeInRs] = useState(lastEvent?.feeInPaise ? String(lastEvent.feeInPaise / 100) : "");
+  const [backoutFeeInRs, setBackoutFeeInRs] = useState(lastEvent?.backoutFeeInPaise ? String(lastEvent.backoutFeeInPaise / 100) : "");
+  const [cutoffHours, setCutoffHours] = useState<number>(lastEvent?.cutoffHoursBeforeGame ?? 2);
   const [reportingMins, setReporting] = useState(lastEvent?.reportingMinsBeforeGame ?? 30);
   const [minPlayers, setMinPlayers] = useState<string>(
     lastEvent?.minPlayers ? String(lastEvent.minPlayers) : String(Math.ceil(slotsFromFormat(initialFormat) / 2))
@@ -97,6 +102,12 @@ export function CreateEventForm({ lastEvent, onClose, onCreate, onSuccess }: Cre
   const [guestPrefPosition, setGuestPrefPosition] = useState("Any");
   const [guestPrefTeam, setGuestPrefTeam] = useState("No Preference");
   const organiserGuestCount = organiserGuests.length;
+
+  // "Save as template" mini-modal
+  const [tmplModalOpen, setTmplModalOpen] = useState(false);
+  const [tmplName, setTmplName] = useState(lastEvent?.title ?? "");
+  const [tmplSaving, setTmplSaving] = useState(false);
+  const [tmplMsg, setTmplMsg] = useState<string | null>(null);
 
   const reportingTime = subtractMins(time, date, reportingMins);
   const endTime = addMins(time, date, Number(durationMins));
@@ -223,18 +234,20 @@ export function CreateEventForm({ lastEvent, onClose, onCreate, onSuccess }: Cre
       const { token } = getSession();
       if (!token) { setErrors({ submit: "Please login as organiser first" }); return; }
       const scheduledAt = new Date(`${date}T${time}:00+05:30`);
-      const cutoffAt = new Date(scheduledAt.getTime() - 2 * 60 * 60 * 1000);
+      const cutoffAt = new Date(scheduledAt.getTime() - Number(cutoffHours) * 60 * 60 * 1000);
       const slots = Number(maxPlayers) || slotsFromFormat(format);
       const payload: any = {
         title: title.trim(),
         sport: "football",
         visibility,
+        requiresApproval,
         format,
         turf,
         scheduledAt: scheduledAt.toISOString(),
         durationMins: Number(durationMins),
         cutoffAt: cutoffAt.toISOString(),
         feeInRs: Number(feeInRs),
+        backoutFeeInPaise: backoutFeeInRs === "" ? 0 : Math.round(Number(backoutFeeInRs) * 100),
         totalSlots: slots,
         minPlayers: Number(minPlayers) || slots,
         reportingMinsBeforeGame: Number(reportingMins),
@@ -273,6 +286,46 @@ export function CreateEventForm({ lastEvent, onClose, onCreate, onSuccess }: Cre
       setErrors({ submit: err.message || "An error occurred" });
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handleSaveTemplate = async () => {
+    if (!tmplName.trim()) { setTmplMsg("Please enter a template name."); return; }
+    if (!turf) { setTmplMsg("Pick a turf before saving a template."); return; }
+    setTmplSaving(true);
+    setTmplMsg(null);
+    try {
+      await saveTemplate({
+        name: tmplName.trim(),
+        title: title.trim() || null,
+        visibility,
+        requiresApproval,
+        turf,
+        format,
+        defaultTimeOfDay: time,
+        durationMins: Number(durationMins),
+        reportingMinsBeforeGame: Number(reportingMins),
+        cutoffHoursBeforeGame: Number(cutoffHours),
+        feeInRs: feeInRs === "" ? 0 : Number(feeInRs),
+        backoutFeeInRs: backoutFeeInRs === "" ? 0 : Number(backoutFeeInRs),
+        minPlayers: Number(minPlayers) || 0,
+        totalSlots: Number(maxPlayers) || slotsFromFormat(format),
+        allowSizeChange,
+        organiserIsPlaying,
+        automationEnabled,
+        firstCheckTime,
+        secondCheckTime,
+        alternateFormats: allowSizeChange ? [{
+          format: altFormat, turf: altTurf || turf,
+          minPlayers: Number(altMin), maxPlayers: Number(altMax), feeInRs: Number(altFee),
+        }] : [],
+      });
+      setTmplMsg("✅ Template saved!");
+      setTimeout(() => { setTmplModalOpen(false); setTmplMsg(null); }, 1200);
+    } catch (err: any) {
+      setTmplMsg(err?.message || "Couldn't save template.");
+    } finally {
+      setTmplSaving(false);
     }
   };
 
@@ -333,9 +386,68 @@ export function CreateEventForm({ lastEvent, onClose, onCreate, onSuccess }: Cre
             </div>
             {visibility === "private" && (
               <div className="field-hint" style={{ marginTop: 8, color: "#c8ff3e" }}>
-                After creating, open this game from your dashboard to invite players.
+                After creating, open this game from your dashboard to invite players and copy the shareable invite link.
               </div>
             )}
+          </div>
+
+          <div className="form-group">
+            <label className="form-label">
+              <span className="label-text">Registration approval</span>
+            </label>
+            <button
+              type="button"
+              onClick={() => setRequiresApproval((v) => !v)}
+              style={{
+                width: "100%",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "space-between",
+                gap: 12,
+                padding: "12px 14px",
+                borderRadius: 10,
+                border: requiresApproval ? "1.5px solid #c8ff3e" : "1.5px solid #2a2a2a",
+                background: requiresApproval ? "rgba(200,255,62,0.12)" : "#141414",
+                cursor: "pointer",
+                textAlign: "left",
+              }}
+            >
+              <span>
+                <span style={{ display: "block", fontWeight: 700, fontSize: 14, color: requiresApproval ? "#c8ff3e" : "#ddd" }}>
+                  {requiresApproval ? "✅ Approval required" : "⚡ Instant join"}
+                </span>
+                <span style={{ display: "block", fontSize: 11.5, color: "#888", marginTop: 3 }}>
+                  {requiresApproval
+                    ? "Players send a join request — you approve or reject. Players you invite directly still skip approval."
+                    : "Players join instantly (subject to available slots)."}
+                </span>
+              </span>
+              <span
+                aria-hidden
+                style={{
+                  flexShrink: 0,
+                  width: 42,
+                  height: 24,
+                  borderRadius: 999,
+                  background: requiresApproval ? "#c8ff3e" : "#333",
+                  position: "relative",
+                  transition: "background .15s",
+                }}
+              >
+                <span
+                  style={{
+                    position: "absolute",
+                    top: 3,
+                    left: requiresApproval ? 21 : 3,
+                    width: 18,
+                    height: 18,
+                    borderRadius: "50%",
+                    background: "#0a0a0a",
+                    transition: "left .15s",
+                  }}
+                />
+              </span>
+            </button>
           </div>
 
           <div className="form-group">
@@ -528,6 +640,41 @@ export function CreateEventForm({ lastEvent, onClose, onCreate, onSuccess }: Cre
               </div>
               {errors.minMax && <div className="field-error">{errors.minMax}</div>}
               <div className="field-hint">Must be ≥ {slotsFromFormat(format)} (format slots)</div>
+            </div>
+          </div>
+
+          <div className="form-row">
+            <div className="form-group">
+              <label className="form-label"><span className="label-text">Backout Fee</span></label>
+              <div className="input-with-prefix">
+                <span className="input-prefix">₹</span>
+                <input
+                  type="number" min="0" step="1" placeholder="0"
+                  value={backoutFeeInRs}
+                  onChange={(e) => setBackoutFeeInRs(e.target.value)}
+                  className="form-input"
+                />
+              </div>
+              <div className="field-hint">Charged if a player backs out after the cutoff. Leave 0 for none.</div>
+            </div>
+
+            <div className="form-group">
+              <label className="form-label"><span className="label-text">Registration Cutoff</span></label>
+              <div className="stepper-row">
+                <button type="button" className="stepper-btn"
+                  onClick={() => setCutoffHours((v) => Math.max(0, v - 1))}
+                  disabled={cutoffHours <= 0}
+                >−</button>
+                <input
+                  type="number" min="0" step="1"
+                  value={cutoffHours}
+                  onChange={(e) => setCutoffHours(Math.max(0, Number(e.target.value) || 0))}
+                  className="form-input stepper-input"
+                />
+                <span className="stepper-unit">hrs</span>
+                <button type="button" className="stepper-btn" onClick={() => setCutoffHours((v) => v + 1)}>+</button>
+              </div>
+              <div className="field-hint">Registration closes this many hours before kick-off.</div>
             </div>
           </div>
         </div>
@@ -788,6 +935,15 @@ export function CreateEventForm({ lastEvent, onClose, onCreate, onSuccess }: Cre
               Cancel
             </button>
           )}
+          <button
+            type="button"
+            className="btn btn-secondary"
+            onClick={() => { setTmplName(title.trim()); setTmplMsg(null); setTmplModalOpen(true); }}
+            disabled={loading}
+            title="Save these settings as a reusable template"
+          >
+            💾 Save as template
+          </button>
           <button type="submit" className="btn btn-primary " disabled={loading}>
             {loading ? <><span className="btn-spinner">⏳</span> Creating…</> : <><span className="btn-icon">✓</span> Create Event</>}
           </button>
@@ -851,6 +1007,44 @@ export function CreateEventForm({ lastEvent, onClose, onCreate, onSuccess }: Cre
                 setGuestPrefOpen(false);
               }} style={{ flex: 2, padding: "10px", borderRadius: 7, background: "#c8ff3e", color: "#000", fontSize: 14, fontWeight: 700, border: "none", cursor: "pointer" }}>
                 Add Guest
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {tmplModalOpen && (
+        <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.75)", zIndex: 9999, display: "flex", alignItems: "center", justifyContent: "center", padding: 16 }}
+          onClick={() => !tmplSaving && setTmplModalOpen(false)}>
+          <div style={{ background: "#0f0f1e", border: "1px solid #333", borderRadius: 12, padding: "24px 20px", width: "100%", maxWidth: 380 }}
+            onClick={(e) => e.stopPropagation()}>
+            <h3 style={{ color: "#c8ff3e", margin: "0 0 4px", fontSize: 17 }}>Save as template</h3>
+            <p style={{ color: "#666", fontSize: 12, margin: "0 0 18px" }}>
+              Reuse these settings later — spin up a game in one tap from the Templates page.
+            </p>
+
+            <label style={{ color: "#aaa", fontSize: 11, display: "block", marginBottom: 6, textTransform: "uppercase", letterSpacing: "0.08em" }}>
+              Template name
+            </label>
+            <input type="text" value={tmplName} onChange={(e) => setTmplName(e.target.value)} autoFocus
+              placeholder="e.g. Friday Night 6v6" maxLength={60}
+              style={{ width: "100%", background: "#1a1a2e", border: "1px solid #444", borderRadius: 7, padding: "9px 12px", color: "white", fontSize: 14, outline: "none", boxSizing: "border-box" }}
+              onKeyDown={(e) => { if (e.key === "Enter") handleSaveTemplate(); }} />
+
+            {tmplMsg && (
+              <div style={{ marginTop: 12, fontSize: 13, color: tmplMsg.startsWith("✅") ? "#7bd88f" : "#f87171" }}>
+                {tmplMsg}
+              </div>
+            )}
+
+            <div style={{ display: "flex", gap: 8, marginTop: 20 }}>
+              <button type="button" onClick={() => setTmplModalOpen(false)} disabled={tmplSaving}
+                style={{ flex: 1, padding: "10px", borderRadius: 7, background: "transparent", border: "1px solid #444", color: "#888", fontSize: 14, cursor: "pointer" }}>
+                Cancel
+              </button>
+              <button type="button" onClick={handleSaveTemplate} disabled={tmplSaving}
+                style={{ flex: 2, padding: "10px", borderRadius: 7, background: "#c8ff3e", color: "#000", fontSize: 14, fontWeight: 700, border: "none", cursor: tmplSaving ? "not-allowed" : "pointer", opacity: tmplSaving ? 0.7 : 1 }}>
+                {tmplSaving ? "Saving…" : "Save template"}
               </button>
             </div>
           </div>

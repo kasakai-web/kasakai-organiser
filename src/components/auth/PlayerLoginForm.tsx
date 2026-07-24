@@ -3,7 +3,7 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { validatePhone, validatePassword } from "@/utils/auth";
-import { buildApiUrl } from "@/utils/api";
+import { buildApiUrl, resolveImageUrl } from "@/utils/api";
 
 interface PlayerLoginFormProps {
   onSignupClick: () => void;
@@ -54,8 +54,7 @@ export function PlayerLoginForm({ onSignupClick, onForgotClick }: PlayerLoginFor
       localStorage.setItem("userId", user._id || user.id); // API returns 'id' field
       localStorage.setItem("userName", user.name || "User");
       if (user.profileImage) {
-        const apiBase = (process.env.NEXT_PUBLIC_API_BASE_URL || "http://localhost:5000/api/v1").replace(/\/api\/v1\/?$/, "");
-        localStorage.setItem("userProfileImage", `${apiBase}${user.profileImage}`);
+        localStorage.setItem("userProfileImage", resolveImageUrl(user.profileImage));
       } else {
         localStorage.removeItem("userProfileImage");
       }
@@ -76,8 +75,7 @@ export function PlayerLoginForm({ onSignupClick, onForgotClick }: PlayerLoginFor
           if (imgRes.ok) {
             const imgData = await imgRes.json();
             if (imgData.data?.profileImage) {
-              const apiBase = (process.env.NEXT_PUBLIC_API_BASE_URL || "http://localhost:5000/api/v1").replace(/\/api\/v1\/?$/, "");
-              localStorage.setItem("userProfileImage", `${apiBase}${imgData.data.profileImage}`);
+              localStorage.setItem("userProfileImage", resolveImageUrl(imgData.data.profileImage));
             }
           }
         } catch {
