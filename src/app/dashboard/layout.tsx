@@ -174,6 +174,10 @@ export default function DashboardLayout({
   }, [resolveProfileImageUrl]);
 
   useEffect(() => {
+    if (pathname.includes("/dashboard/organizer/") && pathname.endsWith("/templates")) {
+      setActiveSection("templates");
+      return;
+    }
     if (pathname.includes("/dashboard/organizer/") && pathname.endsWith("/notifications")) {
       setActiveSection("notifications");
       return;
@@ -315,6 +319,16 @@ export default function DashboardLayout({
               }}
             >
               <span className="sidebar-icon">🗂</span>My Games
+            </button>
+            <button
+              className={`sidebar-link ${activeSection === 'templates' ? 'active' : ''}`}
+              onClick={() => {
+                setActiveSection("templates");
+                setSidebarOpen(false);
+                if (userId) router.push(`/dashboard/organizer/${userId}/templates`);
+              }}
+            >
+              <span className="sidebar-icon">📋</span>Templates
             </button>
             <button
               className={`sidebar-link ${activeSection === 'performance' ? 'active' : ''}`}

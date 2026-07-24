@@ -10,9 +10,24 @@ export default function CreateEventPage() {
   const router = useRouter();
   const routeParams = useParams<{ id?: string | string[] }>();
   const organiserId = Array.isArray(routeParams?.id) ? routeParams.id[0] : routeParams?.id;
-  const [lastEvent] = useState<any>(() => {
-    const saved = typeof window !== "undefined" ? localStorage.getItem("lastEvent") : null;
-    return saved ? JSON.parse(saved) : null;
+  // Prefer a template prefill (arriving from a template's "Customize"), else fall
+  // back to the "prefill from last event" convenience. The template prefill is
+  // one-shot — consumed and cleared so a later plain visit isn't hijacked.
+  const [{ lastEvent, presetDate }] = useState<{ lastEvent: any; presetDate?: string }>(() => {
+    if (typeof window === "undefined") return { lastEvent: null };
+    const tmpl = sessionStorage.getItem("kk-template-prefill");
+    if (tmpl) {
+      const date = sessionStorage.getItem("kk-template-presetdate") || undefined;
+      sessionStorage.removeItem("kk-template-prefill");
+      sessionStorage.removeItem("kk-template-presetdate");
+      try {
+        return { lastEvent: JSON.parse(tmpl), presetDate: date };
+      } catch {
+        /* fall through to lastEvent */
+      }
+    }
+    const saved = localStorage.getItem("lastEvent");
+    return { lastEvent: saved ? JSON.parse(saved) : null };
   });
 
   useAuthGuard({
@@ -34,7 +49,8 @@ export default function CreateEventPage() {
           </div>
         </div>
         <CreateEventForm
-         lastEvent={lastEvent}   
+         lastEvent={lastEvent}
+         presetDate={presetDate}
          onClose={()=>{router.push(`/dashboard/organizer/${organiserId}`)}}
          onCreate={() => { sessionStorage.setItem("kk-game-created", "1"); }}
          onSuccess={handleSuccess}/>

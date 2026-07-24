@@ -1,0 +1,131 @@
+.tmpl-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+  gap: 16px;
+  margin-top: 8px;
+}
+
+.tmpl-card {
+  background: linear-gradient(160deg, #17170f 0%, #121212 100%);
+  border: 1px solid #262626;
+  border-radius: 16px;
+  padding: 18px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.tmpl-card-title {
+  font-size: 17px;
+  font-weight: 800;
+  color: #f4f4f5;
+  margin: 0;
+  word-break: break-word;
+}
+
+.tmpl-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.tmpl-chip {
+  font-size: 11.5px;
+  font-weight: 600;
+  padding: 3px 9px;
+  border-radius: 999px;
+  background: rgba(200, 255, 62, 0.1);
+  color: #c8ff3e;
+  border: 1px solid rgba(200, 255, 62, 0.22);
+}
+
+.tmpl-chip.muted {
+  background: rgba(255, 255, 255, 0.05);
+  color: #9a9a9a;
+  border-color: rgba(255, 255, 255, 0.08);
+}
+
+.tmpl-chip.rec {
+  background: rgba(96, 165, 250, 0.12);
+  color: #7cb2ff;
+  border-color: rgba(96, 165, 250, 0.28);
+}
+
+.tmpl-quick-label {
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: #7a7a7a;
+  font-weight: 700;
+}
+
+.tmpl-quick-row {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.tmpl-day-btn {
+  flex: 1;
+  min-width: 78px;
+  padding: 9px 8px;
+  border-radius: 10px;
+  border: 1px solid rgba(200, 255, 62, 0.3);
+  background: rgba(200, 255, 62, 0.08);
+  color: #c8ff3e;
+  font-weight: 700;
+  font-size: 13px;
+  cursor: pointer;
+  transition: background 0.15s, transform 0.1s;
+}
+.tmpl-day-btn:hover { background: rgba(200, 255, 62, 0.16); }
+.tmpl-day-btn:active { transform: translateY(1px); }
+.tmpl-day-btn small { display: block; font-size: 10.5px; color: #8fae4e; font-weight: 600; margin-top: 2px; }
+
+.tmpl-actions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  border-top: 1px solid rgba(255, 255, 255, 0.06);
+  padding-top: 12px;
+}
+
+.tmpl-action-btn {
+  flex: 1;
+  min-width: 70px;
+  padding: 8px;
+  border-radius: 9px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  background: rgba(255, 255, 255, 0.04);
+  color: #d0d0d0;
+  font-size: 12.5px;
+  font-weight: 600;
+  cursor: pointer;
+}
+.tmpl-action-btn:hover { background: rgba(255, 255, 255, 0.08); }
+.tmpl-action-btn.danger { color: #f87171; border-color: rgba(220, 38, 38, 0.28); background: rgba(220, 38, 38, 0.06); }
+.tmpl-action-btn.primary { color: #c8ff3e; border-color: rgba(200, 255, 62, 0.3); background: rgba(200, 255, 62, 0.08); }
+
+.tmpl-date-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.tmpl-date-row input[type="date"] {
+  flex: 1;
+  background: #141414;
+  border: 1px solid #2a2a2a;
+  border-radius: 10px;
+  color: #ddd;
+  padding: 8px 10px;
+  font-size: 13px;
+  font-family: inherit;
+}
+
+.tmpl-empty {
+  text-align: center;
+  padding: 60px 20px;
+  border: 1px dashed #2c2c2c;
+  border-radius: 16px;
+  color: #888;
+}

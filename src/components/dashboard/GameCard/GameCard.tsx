@@ -94,10 +94,13 @@ function GameCard({game,variant = "upcoming",isMenuOpen,onToggleMenu,onPlayers,o
 
   // Actionable join requests awaiting the organiser's decision (public & private).
   const pendingCount = (game.invitations || []).filter((i: any) => i.status === "pending").length;
+  // Approved-but-unpaid requests aren't actionable yet (waiting on the player's top-up)
+  // but must stay reachable so they never vanish — they count toward showing the entry.
+  const liveRequestCount = (game.invitations || []).filter((i: any) => ["pending", "approved_unpaid"].includes(i.status)).length;
   const isClosed = ["completed", "cancelled"].includes(game.status);
   // Show the invite/requests entry when it's a private game (invite + manage link)
-  // or whenever there are requests to act on.
-  const showInvite = (isPrivate || pendingCount > 0) && !isClosed;
+  // or whenever there are live requests to act on / follow up.
+  const showInvite = (isPrivate || liveRequestCount > 0) && !isClosed;
 
   const gDay = new Date(game.scheduledAt).toLocaleDateString("en-IN", { timeZone: "Asia/Kolkata"});
   const fmt = (value: string | Date) => {

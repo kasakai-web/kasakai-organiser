@@ -792,10 +792,13 @@ export default function OrganizerDashboard() {
         if (!inviteGame) return null;
         const isPrivateInvite = inviteGame.visibility === 'private';
         const invitations = (inviteGame.invitations || []) as any[];
-        const pending = invitations.filter((i) => i.status === 'pending');
+        // The approval queue shows live requests: those awaiting a decision ('pending')
+        // AND those already approved but waiting on the player's wallet top-up
+        // ('approved_unpaid') — so an approved-but-unpaid request never silently vanishes.
+        const pending = invitations.filter((i) => ['pending', 'approved_unpaid'].includes(i.status));
         // Only personal invites (with a token) belong in the "invitations" list;
         // self-service requests live only in the approval queue above.
-        const sent = invitations.filter((i) => i.status !== 'pending' && i.invitedByRole !== 'self');
+        const sent = invitations.filter((i) => !['pending', 'approved_unpaid'].includes(i.status) && i.invitedByRole !== 'self');
         const linkJoins = invitations.filter(
           (i) => i.via === 'invite_link' && ['pending', 'accepted', 'approved_unpaid'].includes(i.status)
         ).length;
@@ -998,11 +1001,27 @@ export default function OrganizerDashboard() {
                 <div style={{ marginBottom: 12 }}>
                   <div style={{ fontSize: 11, color: "#f59e0b", marginBottom: 6, fontWeight: 700 }}>Requests to approve</div>
                   <div style={{ border: "1px solid #262626", borderRadius: 10 }}>
-                    {pending.map((inv, i) => (
+                    {pending.map((inv, i) => {
+                      // 'approved_unpaid' = already approved, waiting on the player's top-up.
+                      const awaitingPayment = inv.status === 'approved_unpaid';
+                      // canAfford===false means the player can't currently cover the fee, so
+                      // approving would only strand them — the backend annotates this per request.
+                      const cantAfford = !awaitingPayment && inv.canAfford === false;
+                      const approveBlocked = awaitingPayment || cantAfford;
+                      const shortfall = Math.round((inv.walletShortfallPaise || 0) / 100);
+                      return (
                       <div key={inv._id} style={{ display: "flex", alignItems: "center", gap: 10, padding: "10px 12px", borderBottom: i < pending.length - 1 ? "1px solid #1c1c1c" : "none" }}>
                         <div style={{ minWidth: 0, flex: 1 }}>
                           <div style={{ fontSize: 14, fontWeight: 600, color: "#eee" }}>{nameOf(inv)}</div>
-                          <div style={{ fontSize: 11, color: "#777" }}>{invitedByText(inv)}</div>
+                          <div style={{ fontSize: 11, color: approveBlocked ? "#f59e0b" : "#777" }}>
+                            {awaitingPayment
+                              ? "Approved — waiting for the player to top up their wallet"
+                              : cantAfford
+                                ? (shortfall > 0
+                                    ? `Low wallet balance — short by ₹${shortfall}. Can't approve until they recharge.`
+                                    : "Insufficient wallet balance — can't approve until they recharge.")
+                                : invitedByText(inv)}
+                          </div>
                         </div>
                         {inv.token && (
                           <button
@@ -1018,15 +1037,26 @@ export default function OrganizerDashboard() {
                         >
                           {inviteActionId === inv._id + "reject" ? "…" : "Reject"}
                         </button>
-                        <button
-                          disabled={!!inviteActionId}
-                          onClick={() => respondToInvite(inv._id, "approve")}
-                          style={{ flexShrink: 0, padding: "6px 14px", borderRadius: 8, border: "none", background: "#c8ff3e", color: "#000", fontWeight: 800, fontSize: 12, cursor: "pointer" }}
-                        >
-                          {inviteActionId === inv._id + "approve" ? "…" : "Approve"}
-                        </button>
+                        {approveBlocked ? (
+                          <button
+                            disabled
+                            title={awaitingPayment ? "Waiting for the player to top up their wallet" : "The player must recharge before you can approve"}
+                            style={{ flexShrink: 0, padding: "6px 14px", borderRadius: 8, border: "1px solid #333", background: "transparent", color: "#666", fontWeight: 700, fontSize: 12, cursor: "not-allowed" }}
+                          >
+                            {awaitingPayment ? "Awaiting payment" : "Can't approve"}
+                          </button>
+                        ) : (
+                          <button
+                            disabled={!!inviteActionId}
+                            onClick={() => respondToInvite(inv._id, "approve")}
+                            style={{ flexShrink: 0, padding: "6px 14px", borderRadius: 8, border: "none", background: "#c8ff3e", color: "#000", fontWeight: 800, fontSize: 12, cursor: "pointer" }}
+                          >
+                            {inviteActionId === inv._id + "approve" ? "…" : "Approve"}
+                          </button>
+                        )}
                       </div>
-                    ))}
+                      );
+                    })}
                   </div>
                 </div>
               )}
