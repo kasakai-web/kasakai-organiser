@@ -803,7 +803,9 @@ export default function OrganizerDashboard() {
           (i) => i.via === 'invite_link' && ['pending', 'accepted', 'approved_unpaid'].includes(i.status)
         ).length;
         const closeInvite = () => { setInviteGameId(null); setInviteRows([]); };
-        const nameOf = (inv: any) => inv.player?.name || inv.inviteeName || 'Player';
+        const nameOf = (inv: any) => inv.isGuest
+          ? (inv.plusOneName || 'Guest')
+          : (inv.player?.name || inv.inviteeName || 'Player');
         const badge = (status: string) => {
           const map: Record<string, { label: string; color: string; bg: string; border: string }> = {
             invited:         { label: 'Invited',           color: '#9aa',     bg: 'rgba(255,255,255,0.05)', border: '#333' },
@@ -815,11 +817,13 @@ export default function OrganizerDashboard() {
           const b = map[status] || map.invited;
           return <span style={{ flexShrink: 0, fontSize: 10.5, fontWeight: 700, color: b.color, background: b.bg, border: `1px solid ${b.border}`, borderRadius: 20, padding: '2px 9px' }}>{b.label}</span>;
         };
-        const invitedByText = (inv: any) => inv.invitedByRole === 'self'
-          ? (inv.via === 'invite_link' ? 'requested via invite link' : 'requested to join')
-          : inv.invitedByRole === 'player'
-            ? `invited by ${inv.invitedByName || 'a player'}`
-            : 'invited by you';
+        const invitedByText = (inv: any) => inv.isGuest
+          ? `+1 guest of ${inv.invitedByName || inv.player?.name || 'a player'}`
+          : inv.invitedByRole === 'self'
+            ? (inv.via === 'invite_link' ? 'requested via invite link' : 'requested to join')
+            : inv.invitedByRole === 'player'
+              ? `invited by ${inv.invitedByName || 'a player'}`
+              : 'invited by you';
         return (
           <div className="modal-overlay" onClick={closeInvite}>
             <div onClick={(e) => e.stopPropagation()} style={{ width: "100%", maxWidth: 520, background: "#111214", border: "1px solid #2a2a2a", borderRadius: 16, padding: 22, color: "#fff", maxHeight: "88vh", overflowY: "auto" }}>
