@@ -4,7 +4,7 @@ import { useState, useEffect, useRef } from "react";
 import "./CreateEventForm.css";
 import { buildApiUrl, getSession } from "@/utils/api";
 import { checkInDate, defaultCheckTimes, checkInIsoFromParts } from "@/utils/checkins";
-import { saveTemplate } from "@/utils/templates";
+import { saveTemplate, listTemplates, prettyTime, type Template } from "@/utils/templates";
 
 const TIME_SLOT_OPTIONS = Array.from({ length: 96 }, (_, idx) => {
   const hours = Math.floor(idx / 4);
@@ -43,6 +43,9 @@ const prettyDate = (dateStr: string): string => {
 };
 
 interface Turf { _id: string; name: string; location?: { city?: string }; }
+
+const templateTurfId = (t?: Template["turf"]): string =>
+  !t ? "" : typeof t === "string" ? t : t._id || "";
 
 export interface CreateEventFormProps {
   lastEvent?: any;
@@ -103,6 +106,14 @@ export function CreateEventForm({ lastEvent, presetDate, onClose, onCreate, onSu
   const [guestPrefTeam, setGuestPrefTeam] = useState("No Preference");
   const organiserGuestCount = organiserGuests.length;
 
+  // "Start from a template" picker — the organiser's saved templates, in the same
+  // search-and-pick shape as the invite player typeahead.
+  const [templates, setTemplates] = useState<Template[]>([]);
+  const [pickedTemplateId, setPickedTemplateId] = useState("");
+  const [tmplPickerOpen, setTmplPickerOpen] = useState(false);
+  const [tmplQuery, setTmplQuery] = useState("");
+  const tmplPickerRef = useRef<HTMLDivElement>(null);
+
   // "Save as template" mini-modal
   const [tmplModalOpen, setTmplModalOpen] = useState(false);
   const [tmplName, setTmplName] = useState(lastEvent?.title ?? "");
@@ -121,7 +132,25 @@ export function CreateEventForm({ lastEvent, presetDate, onClose, onCreate, onSu
   const organiserSlot = organiserIsPlaying ? 1 : 0;
   const reservedSlots = organiserSlot + organiserGuestCount;
   const openSlots = Math.max(0, hardCap - reservedSlots);
-  const maxGuests = Math.max(0, hardCap - organiserSlot); 
+  const maxGuests = Math.max(0, hardCap - organiserSlot);
+
+  const pickedTemplate = templates.find((t) => t._id === pickedTemplateId) || null;
+  const tmplTurfName = (t: Template) => (typeof t.turf === "object" ? t.turf?.name : "") || "";
+  // One-line summary of what a template will fill in.
+  const templateMeta = (t: Template) =>
+    [
+      tmplTurfName(t),
+      t.format,
+      prettyTime(t.defaultTimeOfDay),
+      t.feeInPaise ? `₹${(t.feeInPaise / 100).toLocaleString("en-IN")}` : "",
+    ].filter(Boolean).join(" · ");
+  const tmplMatches = tmplQuery.trim()
+    ? templates.filter((t) =>
+        `${t.name} ${t.title || ""} ${tmplTurfName(t)} ${t.format || ""}`
+          .toLowerCase()
+          .includes(tmplQuery.trim().toLowerCase())
+      )
+    : templates;
 
 
   useEffect(() => {
@@ -133,6 +162,26 @@ export function CreateEventForm({ lastEvent, presetDate, onClose, onCreate, onSu
           setTurfs(d.data);
           if (!turf && d.data.length > 0) setTurf(d.data[0]._id);
         }
+      })
+      .catch(console.error);
+  }, []);
+
+  useEffect(() => {
+    if (!tmplPickerOpen) return;
+    const onDown = (e: MouseEvent) => {
+      if (tmplPickerRef.current && !tmplPickerRef.current.contains(e.target as Node)) setTmplPickerOpen(false);
+    };
+    document.addEventListener("mousedown", onDown);
+    return () => document.removeEventListener("mousedown", onDown);
+  }, [tmplPickerOpen]);
+
+  useEffect(() => {
+    // Saved templates for the "Start from a template" picker. A failure here is
+    // never fatal — the picker just stays hidden and the form works as before.
+    listTemplates()
+      .then((list) => {
+        // Most-used first, so the regular fixture sits at the top.
+        setTemplates([...list].sort((a, b) => (b.usage?.useCount || 0) - (a.usage?.useCount || 0)));
       })
       .catch(console.error);
   }, []);
@@ -167,6 +216,74 @@ export function CreateEventForm({ lastEvent, presetDate, onClose, onCreate, onSu
     setAltMin((prev) => prev || String(Math.ceil(slots / 2)));
     setAltMax((prev) => prev || String(slots));
   }, [allowSizeChange,format,turf]);
+
+  // Pour a saved template into the form. Everything stays editable afterwards and
+  // the template itself is untouched — this is a prefill, not a link.
+  const applyTemplate = (templateId: string) => {
+    setPickedTemplateId(templateId);
+
+    // "Start blank" — leave whatever has already been typed in alone.
+    const t = templates.find((x) => x._id === templateId);
+    if (!t) return;
+
+    const turfId = templateTurfId(t.turf);
+    const turfRef = typeof t.turf === "object" ? t.turf : null;
+    // A template can point at a turf the list call didn't return — keep it
+    // selectable so the venue doesn't silently fall back to blank.
+    if (turfId && turfRef) {
+      setTurfs((prev) =>
+        prev.some((x) => x._id === turfId)
+          ? prev
+          : [...prev, { _id: turfId, name: turfRef.name || "Saved venue", location: { city: turfRef.location?.city } }]
+      );
+    }
+
+    setTitle(t.title || t.name);
+    setVisibility(t.visibility === "private" ? "private" : "public");
+    setRequiresApproval(!!t.requiresApproval);
+    if (turfId) setTurf(turfId);
+    if (t.format) setFormat(t.format);
+    if (t.defaultTimeOfDay) setTime(t.defaultTimeOfDay);
+    setDuration(t.durationMins ?? 60);
+    setReporting(t.reportingMinsBeforeGame ?? 30);
+    setCutoffHours(t.cutoffHoursBeforeGame ?? 2);
+    setFeeInRs(t.feeInPaise ? String(t.feeInPaise / 100) : "");
+    setBackoutFeeInRs(t.backoutFeeInPaise ? String(t.backoutFeeInPaise / 100) : "");
+    setOrganiserPlaying(!!t.organiserIsPlaying);
+    setAutomationEnabled(!!t.automationEnabled);
+
+    // The format effect re-runs on a format change and clamps these — flagging min
+    // as edited keeps the template's number instead of the half-of-slots default.
+    const slots = slotsFromFormat(t.format || format);
+    if (t.minPlayers) {
+      minPlayersEdited.current = true;
+      setMinPlayers(String(t.minPlayers));
+    } else {
+      minPlayersEdited.current = false;
+      setMinPlayers(String(Math.ceil(slots / 2)));
+    }
+    setMaxPlayers(String(t.totalSlots || slots));
+
+    setAllowSizeChange(!!t.allowSizeChange);
+    const alt = t.alternateFormats?.[0];
+    if (t.allowSizeChange && alt) {
+      // Real alternate values — stop the defaults effect from overwriting them.
+      altDefaultsSet.current = true;
+      if (alt.format) setAltFormat(alt.format);
+      setAltTurf(templateTurfId(alt.turf) || turfId);
+      setAltMin(alt.minPlayers ? String(alt.minPlayers) : "");
+      setAltMax(alt.maxPlayers ? String(alt.maxPlayers) : "");
+      setAltFee(alt.feeInPaise ? String(alt.feeInPaise / 100) : "");
+    } else {
+      // Let the effect derive sensible alternate defaults from the new format.
+      altDefaultsSet.current = false;
+    }
+
+    // Check-in times are deliberately left to the form: they're derived from the
+    // kickoff time (same as the Customize-from-template path), and their DATES
+    // only resolve once a date is picked.
+    setErrors({});
+  };
 
   const handleCreate = async () => {
     const newErrors: Record<string, string> = {};
@@ -346,6 +463,87 @@ export function CreateEventForm({ lastEvent, presetDate, onClose, onCreate, onSu
           <div className="form-error-banner">
             <span className="error-icon">⚠️</span>
             <span>{errors.submit}</span>
+          </div>
+        )}
+
+        {templates.length > 0 && (
+          <div
+            className="form-section"
+            style={{
+              background: "rgba(200,255,62,0.06)",
+              border: "1px solid rgba(200,255,62,0.25)",
+              borderRadius: 12,
+              padding: 16,
+              gap: 0, // spacing is handled per-element below, not by the section gap
+            }}
+          >
+            <div style={{ fontSize: 12, fontWeight: 700, color: "#c8ff3e", textTransform: "uppercase", letterSpacing: 0.4, marginBottom: 8 }}>
+              Start from a template
+            </div>
+
+            {/* Template typeahead — same shape as the invite player search */}
+            <div ref={tmplPickerRef} style={{ position: "relative" }}>
+              <input
+                value={tmplQuery}
+                onChange={(e) => { setTmplQuery(e.target.value); setTmplPickerOpen(true); }}
+                onFocus={() => setTmplPickerOpen(true)}
+                onKeyDown={(e) => {
+                  if (e.key === "Escape") { setTmplPickerOpen(false); return; }
+                  if (e.key === "Enter") {
+                    e.preventDefault();
+                    if (tmplMatches[0]) { applyTemplate(tmplMatches[0]._id); setTmplPickerOpen(false); setTmplQuery(""); }
+                  }
+                }}
+                placeholder="🔍 Search your templates by name, venue or format…"
+                style={{ width: "100%", padding: "10px 12px", borderRadius: 9, border: "1px solid #2a2a2a", background: "#141414", color: "#fff", fontSize: 13, boxSizing: "border-box" }}
+              />
+              {tmplPickerOpen && (
+                <div style={{ position: "absolute", zIndex: 5, top: "calc(100% + 4px)", left: 0, right: 0, background: "#161616", border: "1px solid #2a2a2a", borderRadius: 10, maxHeight: 240, overflowY: "auto", boxShadow: "0 8px 24px rgba(0,0,0,0.5)" }}>
+                  {tmplMatches.length === 0 ? (
+                    <div style={{ padding: "10px 12px", fontSize: 12, color: "#888" }}>No templates match “{tmplQuery.trim()}”</div>
+                  ) : tmplMatches.map((t) => {
+                    const picked = t._id === pickedTemplateId;
+                    return (
+                      <button
+                        key={t._id}
+                        type="button"
+                        onClick={() => { applyTemplate(t._id); setTmplPickerOpen(false); setTmplQuery(""); }}
+                        style={{ width: "100%", display: "flex", alignItems: "center", gap: 10, padding: "9px 12px", background: "transparent", border: "none", borderBottom: "1px solid #202020", color: "#eee", cursor: "pointer", textAlign: "left" }}
+                      >
+                        <span style={{ flexShrink: 0, width: 28, height: 28, borderRadius: "50%", background: "#242424", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 12, fontWeight: 700, color: "#c8ff3e" }}>
+                          {(t.name?.[0] || "T").toUpperCase()}
+                        </span>
+                        <span style={{ minWidth: 0, flex: 1 }}>
+                          <span style={{ display: "block", fontSize: 13, fontWeight: 600, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{t.name}</span>
+                          <span style={{ display: "block", fontSize: 11, color: "#777", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+                            {templateMeta(t) || "No details saved"}
+                          </span>
+                        </span>
+                        <span style={{ flexShrink: 0, fontSize: 12, color: "#c8ff3e", fontWeight: 700 }}>{picked ? "✓ Used" : "Use"}</span>
+                      </button>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+
+            {pickedTemplate && (
+              <span style={{ display: "inline-flex", alignSelf: "flex-start", alignItems: "center", gap: 6, fontSize: 12, fontWeight: 600, color: "#c8ff3e", background: "rgba(200,255,62,0.08)", border: "1px solid rgba(200,255,62,0.3)", borderRadius: 20, padding: "4px 6px 4px 11px", marginTop: 10 }}>
+                Filled from {pickedTemplate.name}
+                <button
+                  type="button"
+                  title="Clear the template tag — your entries below are kept"
+                  onClick={() => setPickedTemplateId("")}
+                  style={{ background: "none", border: "none", color: "#888", cursor: "pointer", fontSize: 14, lineHeight: 1 }}
+                >✕</button>
+              </span>
+            )}
+
+            <div className="field-hint" style={{ marginTop: 8 }}>
+              {pickedTemplate
+                ? "Everything below is filled in — pick a date and change whatever you like. Your template stays as it is."
+                : "Reuse a saved setup instead of filling everything in by hand."}
+            </div>
           </div>
         )}
 
