@@ -178,6 +178,10 @@ export default function DashboardLayout({
       setActiveSection("templates");
       return;
     }
+    if (pathname.includes("/dashboard/organizer/") && pathname.endsWith("/recurring")) {
+      setActiveSection("recurring");
+      return;
+    }
     if (pathname.includes("/dashboard/organizer/") && pathname.endsWith("/notifications")) {
       setActiveSection("notifications");
       return;
@@ -329,6 +333,16 @@ export default function DashboardLayout({
               }}
             >
               <span className="sidebar-icon">📋</span>Templates
+            </button>
+            <button
+              className={`sidebar-link ${activeSection === 'recurring' ? 'active' : ''}`}
+              onClick={() => {
+                setActiveSection("recurring");
+                setSidebarOpen(false);
+                if (userId) router.push(`/dashboard/organizer/${userId}/recurring`);
+              }}
+            >
+              <span className="sidebar-icon">🔁</span>Recurring
             </button>
             <button
               className={`sidebar-link ${activeSection === 'performance' ? 'active' : ''}`}

@@ -1,6 +1,9 @@
 // Shared client helpers for organiser game templates: types, the REST calls, the
-// interval-scheduling math (today / tomorrow / day-after → a real kickoff), and
-// the mapping that lets a template prefill the existing CreateEventForm.
+// day-offset math (today / tomorrow / day-after → a real kickoff), and the
+// mapping that lets a template prefill the existing CreateEventForm.
+//
+// Templates are a one-tap blueprint and nothing more — they do not schedule
+// anything. Repeating games live in utils/recurring.ts.
 
 import { buildApiUrl, getSession } from "@/utils/api";
 import { shiftDate } from "@/utils/checkins";
@@ -13,14 +16,6 @@ export interface TemplateAltFormat {
   minPlayers?: number;
   maxPlayers?: number;
   feeInPaise?: number;
-}
-
-export interface TemplateRecurrence {
-  enabled: boolean;
-  weekdays: number[]; // 0=Sun … 6=Sat (IST)
-  leadDays: number;
-  paused: boolean;
-  lastRunAt?: string | null;
 }
 
 export interface Template {
@@ -45,7 +40,6 @@ export interface Template {
   automationEnabled?: boolean;
   firstCheckTime?: string | null;
   secondCheckTime?: string | null;
-  recurrence?: TemplateRecurrence;
   usage?: { useCount?: number; lastUsedAt?: string | null };
   createdAt?: string;
 }

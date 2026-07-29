@@ -2,14 +2,16 @@
 
 // Create / edit a reusable game template. Mirrors the field set of
 // CreateEventForm (and reuses its CSS) but carries NO fixed date — it stores a
-// default time-of-day plus an optional recurring schedule. A template made here
-// is what the Templates page turns into a real game (instantly, or via the
-// prefilled create form, or automatically by the recurrence job).
+// default time-of-day. A template made here is what the Templates page turns
+// into a real game, either instantly or via the prefilled create form.
+//
+// Templates schedule nothing. A template can SEED a recurring schedule, but the
+// schedule then owns its own copy of these settings — see the Recurring page.
 
 import { useState, useEffect, useRef } from "react";
 import "./CreateEventForm.css";
 import { buildApiUrl, getSession } from "@/utils/api";
-import { saveTemplate, updateTemplate, WEEKDAY_LABELS, type Template, type Format } from "@/utils/templates";
+import { saveTemplate, updateTemplate, type Template, type Format } from "@/utils/templates";
 
 const TIME_SLOT_OPTIONS = Array.from({ length: 96 }, (_, idx) => {
   const hours = Math.floor(idx / 4);
@@ -77,10 +79,6 @@ export function TemplateForm({ template, onClose, onSaved }: TemplateFormProps) 
   const [firstCheckTime, setFirstCheckTime] = useState(template?.firstCheckTime ?? "14:00");
   const [secondCheckTime, setSecondCheckTime] = useState(template?.secondCheckTime ?? "16:00");
 
-  const [recEnabled, setRecEnabled] = useState(template?.recurrence?.enabled ?? false);
-  const [recWeekdays, setRecWeekdays] = useState<number[]>(template?.recurrence?.weekdays ?? []);
-  const [recLeadDays, setRecLeadDays] = useState(template?.recurrence?.leadDays ?? 3);
-
   useEffect(() => {
     const { token } = getSession();
     fetch(buildApiUrl("/api/v1/turfs"), token ? { headers: { Authorization: `Bearer ${token}` } } : undefined)
@@ -102,9 +100,6 @@ export function TemplateForm({ template, onClose, onSaved }: TemplateFormProps) 
     else setMinPlayers((prev) => String(Math.min(Number(prev), slots)));
   }, [format]);
 
-  const toggleWeekday = (d: number) =>
-    setRecWeekdays((prev) => (prev.includes(d) ? prev.filter((x) => x !== d) : [...prev, d].sort()));
-
   const handleSubmit = async () => {
     const e: Record<string, string> = {};
     if (!name.trim()) e.name = "Template name is required";
@@ -124,7 +119,6 @@ export function TemplateForm({ template, onClose, onSaved }: TemplateFormProps) 
       else if (altFee === "" || Number(altFee) < 0) e.alt = "Alternate fee is required";
       else if (feeInRs !== "" && Number(altFee) >= Number(feeInRs)) e.alt = `Alternate fee must be less than the main fee (₹${feeInRs})`;
     }
-    if (recEnabled && recWeekdays.length === 0) e.rec = "Pick at least one day for the recurring schedule";
     if (customChecks && firstCheckTime >= secondCheckTime) e.checks = "Second check-in must be after the first";
     if (Object.keys(e).length > 0) { setErrors(e); return; }
 
@@ -153,7 +147,6 @@ export function TemplateForm({ template, onClose, onSaved }: TemplateFormProps) 
         alternateFormats: allowSizeChange
           ? [{ format: altFormat, turf: altTurf || turf, minPlayers: Number(altMin), maxPlayers: Number(altMax), feeInRs: Number(altFee) }]
           : [],
-        recurrence: { enabled: recEnabled, weekdays: recWeekdays, leadDays: Number(recLeadDays), paused: false },
       };
       const saved = editing ? await updateTemplate(template!._id, payload) : await saveTemplate(payload);
       onSaved?.(saved);
@@ -172,7 +165,7 @@ export function TemplateForm({ template, onClose, onSaved }: TemplateFormProps) 
         <div className="header-content">
           <div className="header-badge">📋 {editing ? "Edit Template" : "New Template"}</div>
           <h2 className="header-title">{editing ? "Update your game template" : "Save a reusable game template"}</h2>
-          <p className="header-subtitle">Set it up once. Spin up a game any day — today, tomorrow, or on a schedule — in one tap.</p>
+          <p className="header-subtitle">Set it up once, then spin up a game any day in one tap. For games that repeat, create a recurring schedule instead.</p>
         </div>
       </div>
 
@@ -372,40 +365,6 @@ export function TemplateForm({ template, onClose, onSaved }: TemplateFormProps) 
             </div>
           )}
           {errors.checks && <div className="field-error">{errors.checks}</div>}
-        </div>
-
-        <div className="form-section">
-          <h3 className="section-title">Recurring Schedule <span style={{ fontSize: 12, color: "#888", fontWeight: 400 }}>(optional)</span></h3>
-          <label className="toggle-row">
-            <input type="checkbox" checked={recEnabled} onChange={(ev) => setRecEnabled(ev.target.checked)} className="toggle-checkbox" />
-            <span className="toggle-label">Auto-create a game on these days every week</span>
-          </label>
-          {recEnabled && (
-            <>
-              <div className="form-group" style={{ marginTop: 10 }}>
-                <label className="form-label"><span className="label-text">Days</span></label>
-                <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
-                  {WEEKDAY_LABELS.map((label, d) => {
-                    const on = recWeekdays.includes(d);
-                    return (
-                      <button key={d} type="button" onClick={() => toggleWeekday(d)} style={{
-                        padding: "6px 12px", borderRadius: 8, fontSize: 13, fontWeight: 600, cursor: "pointer",
-                        background: on ? "rgba(200,255,62,0.18)" : "rgba(255,255,255,0.04)",
-                        color: on ? "#c8ff3e" : "#888",
-                        border: `1px solid ${on ? "rgba(200,255,62,0.5)" : "rgba(255,255,255,0.08)"}`,
-                      }}>{label}</button>
-                    );
-                  })}
-                </div>
-              </div>
-              <div className="form-group">
-                <label className="form-label"><span className="label-text">Create how many days ahead?</span></label>
-                <input type="number" min={0} max={30} value={recLeadDays} onChange={(ev) => setRecLeadDays(Math.max(0, Number(ev.target.value) || 0))} className="form-input" style={{ maxWidth: 120 }} />
-                <div className="field-hint">Each game is auto-created this many days before kick-off, at {timeOfDay}.</div>
-              </div>
-              {errors.rec && <div className="field-error">{errors.rec}</div>}
-            </>
-          )}
         </div>
 
         <div className="form-actions">

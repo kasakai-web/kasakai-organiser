@@ -9,7 +9,7 @@ import { TemplateForm } from "@/components/dashboard/TemplateForm";
 import {
   listTemplates, deleteTemplate, saveTemplate, createGameFromTemplate,
   dayOffsetToDate, scheduledAtISO, prettyDay, prettyTime, templateToLastEventShape,
-  WEEKDAY_LABELS, type Template,
+  type Template,
 } from "@/utils/templates";
 import "../../../organizer-dashboard.css";
 import "./templates.css";
@@ -123,7 +123,7 @@ export default function TemplatesPage() {
       <div className="dashboard-header-section">
         <div className="header-left">
           <h1 className="dashboard-title">Game Templates</h1>
-          <p className="dashboard-subtitle">Save a game blueprint once — launch it any day in one tap, or on a weekly schedule.</p>
+          <p className="dashboard-subtitle">Save a game blueprint once — launch it any day in one tap. For games that repeat, set up a <strong>Recurring</strong> schedule instead.</p>
         </div>
         <button className="btn-primary" onClick={() => { setEditing(null); setView("new"); }}>
           <span className="btn-icon">+ </span>New Template
@@ -141,10 +141,8 @@ export default function TemplatesPage() {
         </div>
       ) : (
         <div className="tmpl-grid">
-          {templates.map((t) => {
-            const rec = t.recurrence;
-            return (
-              <div key={t._id} className="tmpl-card">
+          {templates.map((t) => (
+            <div key={t._id} className="tmpl-card">
                 <div>
                   <h3 className="tmpl-card-title">{t.name}</h3>
                   <div className="tmpl-meta" style={{ marginTop: 8 }}>
@@ -153,9 +151,6 @@ export default function TemplatesPage() {
                     <span className="tmpl-chip">🕒 {prettyTime(t.defaultTimeOfDay)}</span>
                     {turfName(t.turf) && <span className="tmpl-chip muted">📍 {turfName(t.turf)}</span>}
                     <span className="tmpl-chip muted">{t.visibility === "private" ? "🔒 Private" : "🌍 Public"}</span>
-                    {rec?.enabled && rec.weekdays?.length > 0 && (
-                      <span className="tmpl-chip rec">🔁 {rec.weekdays.map((d) => WEEKDAY_LABELS[d]).join(", ")}</span>
-                    )}
                   </div>
                 </div>
 
@@ -188,9 +183,8 @@ export default function TemplatesPage() {
                   <button className="tmpl-action-btn" onClick={() => duplicate(t)}>Duplicate</button>
                   <button className="tmpl-action-btn danger" onClick={() => setConfirmDelete(t)}>Delete</button>
                 </div>
-              </div>
-            );
-          })}
+            </div>
+          ))}
         </div>
       )}
 
@@ -252,8 +246,5 @@ function templateToPayload(t: Template): Record<string, unknown> {
       maxPlayers: af.maxPlayers,
       feeInPaise: af.feeInPaise ?? 0,
     })),
-    recurrence: t.recurrence
-      ? { enabled: t.recurrence.enabled, weekdays: t.recurrence.weekdays, leadDays: t.recurrence.leadDays, paused: t.recurrence.paused }
-      : { enabled: false, weekdays: [], leadDays: 3, paused: false },
   };
 }
