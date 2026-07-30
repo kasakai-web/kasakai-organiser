@@ -86,7 +86,9 @@ function GameCard({game,variant = "upcoming",isMenuOpen,onToggleMenu,onPlayers,o
   // Caller's role on this game. Missing → treat as owner (own games / legacy).
   const role: "owner" | "edit" | "view" = game.myRole || "owner";
   const isOwner = role === "owner";
-  const canEditGame = role === "owner" || role === "edit"; // may perform mutating actions
+  // Edit co-organisers have the same powers as the owner — cancelling the game and
+  // managing its co-organisers included. Only the badge distinguishes them.
+  const canEditGame = role === "owner" || role === "edit";
   const isViewer = role === "view";
   const presentCount =game.registrations?.filter((r: any) => r.attended === "present").length || 0; 
 
@@ -182,7 +184,7 @@ function GameCard({game,variant = "upcoming",isMenuOpen,onToggleMenu,onPlayers,o
                 title={
                   isViewer
                     ? "You are a co-organiser with view (read-only) access"
-                    : "You are a co-organiser with edit access"
+                    : "You are a co-organiser with edit access — full control of this game"
                 }
               >
                 Co-organiser · {isViewer ? "View" : "Edit"}
@@ -421,8 +423,8 @@ function GameCard({game,variant = "upcoming",isMenuOpen,onToggleMenu,onPlayers,o
                     </button>
                   )}
 
-                {/* Co-organiser management — owner only */}
-                {isOwner && onManageCoOrgs && (
+                {/* Co-organiser management — owner and edit co-organisers */}
+                {canEditGame && onManageCoOrgs && (
                   <button
                     className="co-org-item"
                     onClick={onManageCoOrgs}
@@ -434,7 +436,7 @@ function GameCard({game,variant = "upcoming",isMenuOpen,onToggleMenu,onPlayers,o
                   </button>
                 )}
 
-                {isOwner && onCancel && (
+                {canEditGame && onCancel && (
                   <button
                     className="danger-item"
                     onClick={onCancel}

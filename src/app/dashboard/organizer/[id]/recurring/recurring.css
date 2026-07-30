@@ -299,6 +299,79 @@
 .rec-scope-option span { font-size: 12px; color: #8a8a8a; line-height: 1.45; }
 .rec-scope-option input:disabled ~ div { opacity: 0.5; }
 
+/* ── Game-name pattern ────────────────────────────────────────────────────── */
+.rec-name-group { gap: 0; }
+
+.rec-name-modes {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-bottom: 10px;
+}
+
+.rec-name-mode {
+  flex: 1 1 210px;
+  text-align: left;
+  padding: 10px 12px;
+  border-radius: 10px;
+  cursor: pointer;
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.rec-name-mode.is-active {
+  background: rgba(200, 255, 62, 0.1);
+  border-color: rgba(200, 255, 62, 0.45);
+}
+
+.rec-name-mode strong { display: block; font-size: 13px; color: #ededed; margin-bottom: 2px; }
+.rec-name-mode span { font-size: 11.5px; color: #8a8a8a; line-height: 1.4; }
+.rec-name-mode.is-active strong { color: #c8ff3e; }
+
+/* The pattern reads as something structured, so it gets a monospace face. */
+.rec-pattern-input {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 12.5px !important;
+}
+
+.rec-token-label {
+  margin: 11px 0 6px;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+  color: #7a7a7a;
+}
+
+.rec-token-row {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.rec-token {
+  padding: 5px 10px;
+  border-radius: 7px;
+  font-size: 11.5px;
+  font-weight: 600;
+  cursor: pointer;
+  background: rgba(255, 255, 255, 0.04);
+  color: #b4b4b4;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.rec-token:hover {
+  background: rgba(200, 255, 62, 0.14);
+  color: #c8ff3e;
+  border-color: rgba(200, 255, 62, 0.4);
+}
+
+.rec-token-preset {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 11px;
+  color: #9a9a9a;
+}
+
 /* ── Preview pane ─────────────────────────────────────────────────────────── */
 .rec-preview {
   position: sticky;
@@ -367,6 +440,16 @@
 }
 
 .rec-preview-when small { font-size: 11px; color: #7a7a7a; }
+
+/* The name the game will actually be created with. */
+.rec-preview-title {
+  margin-top: 2px;
+  font-size: 11.5px;
+  font-style: normal;
+  font-weight: 600;
+  color: #c8ff3e;
+  overflow-wrap: anywhere;
+}
 
 .rec-preview-clash {
   flex: 1 1 100%;
@@ -593,3 +676,30 @@
   justify-content: flex-end;
   margin-top: 16px;
 }
+
+/* ── Per-occurrence editor ────────────────────────────────────────────────── */
+/* Wider than the move/one-off modals: this one carries the full override set,
+   and a 12-field column on a 420px sheet is unreadable. */
+.rec-modal.wide { max-width: 560px; max-height: 88vh; overflow-y: auto; }
+
+.rec-ov-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.rec-ov-field { display: flex; flex-direction: column; gap: 5px; min-width: 0; }
+.rec-ov-field.full { grid-column: 1 / -1; }
+.rec-ov-field .form-input,
+.rec-ov-field .form-select { width: 100%; }
+
+/* A blank field inherits the schedule, so the placeholder is the real value —
+   keep it legible rather than the usual near-invisible grey. */
+.rec-ov-field .form-input::placeholder { color: #5c5c5c; font-style: italic; }
+
+@media (max-width: 520px) {
+  .rec-ov-grid { grid-template-columns: minmax(0, 1fr); }
+}
+
+.rec-ov-note { font-size: 10.5px; color: #6a6a6a; font-style: italic; }
+.rec-ov-field .form-select:disabled { opacity: .5; cursor: not-allowed; }

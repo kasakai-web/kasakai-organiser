@@ -29,7 +29,7 @@ interface Props {
 const ACCENT = "#c8ff3e";
 
 const permInfo: Record<string, { label: string; hint: string }> = {
-  edit: { label: "Edit", hint: "Can manage the game (approve, edit, teams, attendance)" },
+  edit: { label: "Edit", hint: "Full control — same as you (cancel & co-organisers included)" },
   view: { label: "View", hint: "Read-only access" },
 };
 
@@ -166,7 +166,8 @@ export default function CoOrganiserModal({
         </div>
         <p style={{ fontSize: 13, color: "#9aa", margin: "0 0 14px", lineHeight: 1.5 }}>
           Delegate help running <b style={{ color: "#ddd" }}>{gameTitle || "this game"}</b>.{" "}
-          <b style={{ color: "#ddd" }}>Edit</b> co-organisers can run the game but can’t cancel it or manage co-organisers. <b style={{ color: "#ddd" }}>View</b> is read-only.
+          <b style={{ color: "#ddd" }}>Edit</b> gives full control of this game — including cancelling it and
+          adding or removing co-organisers. <b style={{ color: "#ddd" }}>View</b> is read-only.
         </p>
 
         {error && (

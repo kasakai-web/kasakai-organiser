@@ -16,6 +16,7 @@ import { listTemplates, type Template, type Format } from "@/utils/templates";
 import {
   createSeries, updateSeries, previewSchedule,
   WEEKDAYS, WEEKDAYS_LONG, todayIST, prettyDate, prettyClock, turfIdOf,
+  TITLE_TOKENS, TITLE_PATTERN_PRESETS,
   type RecurringSeries, type Freq, type EndMode, type SchedulePreview, type EditScope,
 } from "@/utils/recurring";
 
@@ -80,6 +81,11 @@ export function RecurringSeriesForm({ series, pivotOccurrenceId, onClose, onSave
   const [turfs, setTurfs] = useState<Turf[]>([]);
   const [turf, setTurf] = useState<string>(turfIdOf(d?.turf ?? null));
   const [title, setTitle] = useState(d?.title ?? "");
+  // One name for every game, or a name built per game from its own date and
+  // venue. A stored pattern is what tells us which mode this schedule is in.
+  const [nameMode, setNameMode] = useState<"fixed" | "pattern">(d?.titlePattern ? "pattern" : "fixed");
+  const [titlePattern, setTitlePattern] = useState(d?.titlePattern ?? "");
+  const patternRef = useRef<HTMLInputElement>(null);
   const [visibility, setVisibility] = useState<"public" | "private">(d?.visibility ?? "public");
   const [requiresApproval, setRequiresApproval] = useState(d?.requiresApproval ?? false);
   const [format, setFormat] = useState<Format>((d?.format as Format) ?? "6v6");
@@ -188,6 +194,9 @@ export function RecurringSeriesForm({ series, pivotOccurrenceId, onClose, onSave
     notifyOrganiser: { onCreate: notifyOnCreate, onChange: notifyOnChange, onCancel: notifyOnCancel },
     gameDefaults: {
       title: title.trim() || null,
+      // Sent as null in fixed mode so switching back off a pattern actually
+      // clears it, rather than leaving a pattern that keeps winning.
+      titlePattern: nameMode === "pattern" ? titlePattern.trim() || null : null,
       visibility,
       requiresApproval,
       turf,
@@ -206,7 +215,7 @@ export function RecurringSeriesForm({ series, pivotOccurrenceId, onClose, onSave
     name, freq, interval, weekdays, monthlyMode, dayOfMonth, nth, nthWeekday, timeOfDay,
     startDate, endMode, endDate, maxOccurrences, blackouts, conflictMode, checkVenue,
     checkOrganiser, checkOverlap, horizonDays, leadDays, notifyOnCreate, notifyOnChange,
-    notifyOnCancel, title, visibility, requiresApproval, turf, format, durationMins,
+    notifyOnCancel, title, nameMode, titlePattern, visibility, requiresApproval, turf, format, durationMins,
     reportingMins, cutoffHours, feeInRs, backoutFeeInRs, minPlayers, totalSlots,
     organiserIsPlaying, automationEnabled,
   ]);
@@ -226,6 +235,22 @@ export function RecurringSeriesForm({ series, pivotOccurrenceId, onClose, onSave
     return () => { cancelled = true; clearTimeout(handle); };
   }, [buildPayload, turf, series?._id]);
 
+  // Drop a token in at the caret rather than always appending, so the organiser
+  // can fix the middle of a pattern without retyping the end of it.
+  const insertToken = (token: string) => {
+    const el = patternRef.current;
+    if (!el) { setTitlePattern((prev) => prev + token); return; }
+    const start = el.selectionStart ?? titlePattern.length;
+    const end = el.selectionEnd ?? start;
+    setTitlePattern(titlePattern.slice(0, start) + token + titlePattern.slice(end));
+    // The caret lands after what was just inserted, so chip-chip-chip builds the
+    // pattern left to right instead of stacking everything at one spot.
+    requestAnimationFrame(() => {
+      el.focus();
+      el.setSelectionRange(start + token.length, start + token.length);
+    });
+  };
+
   const toggleWeekday = (day: number) =>
     setWeekdays((prev) => (prev.includes(day) ? prev.filter((x) => x !== day) : [...prev, day].sort((a, b) => a - b)));
 
@@ -240,6 +265,7 @@ export function RecurringSeriesForm({ series, pivotOccurrenceId, onClose, onSave
     if (!name.trim()) e.name = "Give this schedule a name";
     if (!turf) e.turf = "Pick a venue";
     if (freq === "weekly" && weekdays.length === 0) e.rule = "Pick at least one day of the week";
+    if (nameMode === "pattern" && !titlePattern.trim()) e.gameName = "Add at least one detail, or switch to a fixed name";
     if (endMode === "onDate" && (!endDate || endDate < startDate)) e.end = "End date must be on or after the start date";
     if (endMode === "afterCount" && (!maxOccurrences || Number(maxOccurrences) < 1)) e.end = "Enter how many games to create";
     if (feeInRs === "" || isNaN(Number(feeInRs)) || Number(feeInRs) < 0) e.fee = "Enter a valid fee";
@@ -482,9 +508,88 @@ export function RecurringSeriesForm({ series, pivotOccurrenceId, onClose, onSave
               </div>
             </div>
 
-            <div className="form-group">
+            {/* ── Game name ──────────────────────────────────────── */}
+            <div className="form-group rec-name-group">
               <label className="form-label"><span className="label-text">Game name</span></label>
-              <input className="form-input" placeholder={name || "Defaults to the schedule name"} value={title} onChange={(ev) => setTitle(ev.target.value)} />
+
+              <div className="rec-name-modes">
+                <button
+                  type="button"
+                  className={`rec-name-mode ${nameMode === "fixed" ? "is-active" : ""}`}
+                  onClick={() => setNameMode("fixed")}
+                >
+                  <strong>The same for every game</strong>
+                  <span>One name you type once.</span>
+                </button>
+                <button
+                  type="button"
+                  className={`rec-name-mode ${nameMode === "pattern" ? "is-active" : ""}`}
+                  onClick={() => setNameMode("pattern")}
+                >
+                  <strong>Built from each game&apos;s details</strong>
+                  <span>The day, time or venue fills itself in.</span>
+                </button>
+              </div>
+
+              {nameMode === "fixed" ? (
+                <>
+                  <input
+                    className="form-input"
+                    placeholder={name || "Defaults to the schedule name"}
+                    value={title}
+                    onChange={(ev) => setTitle(ev.target.value)}
+                  />
+                  <div className="field-hint">Every game in this schedule gets this exact name.</div>
+                </>
+              ) : (
+                <>
+                  <input
+                    ref={patternRef}
+                    className="form-input rec-pattern-input"
+                    placeholder="{weekday} {daypart} Game | {venueShort}"
+                    value={titlePattern}
+                    onChange={(ev) => setTitlePattern(ev.target.value)}
+                  />
+                  {errors.gameName && <div className="field-error">{errors.gameName}</div>}
+
+                  <div className="rec-token-label">Tap to add — each one fills in per game</div>
+                  <div className="rec-token-row">
+                    {TITLE_TOKENS.map((t) => (
+                      <button
+                        key={t.token}
+                        type="button"
+                        className="rec-token"
+                        title={`${t.label} — e.g. ${t.example}`}
+                        onClick={() => insertToken(t.token)}
+                      >
+                        {t.label}
+                      </button>
+                    ))}
+                  </div>
+
+                  <div className="rec-token-label">Or start from one of these</div>
+                  <div className="rec-token-row">
+                    {TITLE_PATTERN_PRESETS.map((p) => (
+                      <button
+                        key={p.pattern}
+                        type="button"
+                        className="rec-token rec-token-preset"
+                        title={p.pattern}
+                        onClick={() => setTitlePattern(p.pattern)}
+                      >
+                        {p.label}
+                      </button>
+                    ))}
+                  </div>
+
+                  <div className="field-hint">
+                    Anything outside the braces is kept as you typed it. A detail that doesn&apos;t
+                    apply drops out along with its separator, so you never get a name ending in
+                    &ldquo;|&rdquo;. Names are set when each game is created — changing this
+                    won&apos;t rename games that already exist.
+                  </div>
+                </>
+              )}
             </div>
 
             <div className="form-row">
@@ -658,6 +763,8 @@ export function RecurringSeriesForm({ series, pivotOccurrenceId, onClose, onSave
                       <span className="rec-preview-when">
                         {prettyDate(o.date)}
                         <small>{prettyClock(o.scheduledAt)}</small>
+                        {/* Resolved by the same code that will name the real game. */}
+                        {o.resolvedTitle && <em className="rec-preview-title">{o.resolvedTitle}</em>}
                       </span>
                       {o.conflicts.length > 0 && (
                         <span className="rec-preview-clash" title={o.conflicts.map((c) => c.message).join("\n")}>

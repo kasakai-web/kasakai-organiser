@@ -29,6 +29,8 @@ export interface RecurrenceRule {
 
 export interface SeriesGameDefaults {
   title?: string | null;
+  /** Token pattern for the game name — "{weekday} {daypart} Game | {venueShort}". Wins over `title`. */
+  titlePattern?: string | null;
   visibility?: "public" | "private";
   requiresApproval?: boolean;
   turf?: { _id: string; name?: string; location?: { city?: string } } | string | null;
@@ -66,6 +68,24 @@ export interface OccurrenceConflict {
   game?: string | null;
 }
 
+// "Edit this game only". Every field is nullable: null means the occurrence has
+// no opinion and the series' gameDefaults apply. Clearing an override is
+// therefore setting it back to null, not to zero.
+export interface OccurrenceOverrides {
+  title?: string | null;
+  turf?: { _id: string; name?: string } | string | null;
+  format?: Format | null;
+  durationMins?: number | null;
+  reportingMinsBeforeGame?: number | null;
+  cutoffHoursBeforeGame?: number | null;
+  feeInPaise?: number | null;
+  backoutFeeInPaise?: number | null;
+  minPlayers?: number | null;
+  totalSlots?: number | null;
+  visibility?: "public" | "private" | null;
+  organiserIsPlaying?: boolean | null;
+}
+
 export interface SeriesOccurrence {
   _id: string;
   series: string;
@@ -76,6 +96,7 @@ export interface SeriesOccurrence {
   originalScheduledAt: string;
   status: OccurrenceStatus;
   game?: { _id: string; title?: string; status?: string; scheduledAt?: string; totalSlots?: number; registrations?: unknown[] } | string | null;
+  overrides?: OccurrenceOverrides;
   isCustomised?: boolean;
   isRescheduled?: boolean;
   isExtra?: boolean;
@@ -115,6 +136,8 @@ export interface PreviewOccurrence {
   weekday: number;
   scheduledAt: string;
   conflicts: OccurrenceConflict[];
+  /** The name this game will actually be created with — a resolved pattern, or the literal title. */
+  resolvedTitle?: string | null;
 }
 
 export interface SchedulePreview {
@@ -216,6 +239,49 @@ export const describeRule = (s: Pick<RecurringSeries, "rule" | "endMode" | "endD
       : "";
   return `${core}${at}${ends}`;
 };
+
+// ── Game-name patterns ───────────────────────────────────────────────────────
+// The tokens the name picker offers. Resolution and validation live on the
+// backend (utils/titlePattern) — for the same reason rule expansion does: the
+// preview endpoint runs the exact code the generation job runs, so what the
+// organiser sees is what the game gets. This list is only the palette to insert
+// from, and the API rejects anything it doesn't know.
+export interface TitleToken {
+  token: string;
+  label: string;
+  example: string;
+}
+
+export const TITLE_TOKENS: TitleToken[] = [
+  { token: "{weekday}", label: "Weekday", example: "Monday" },
+  { token: "{weekdayShort}", label: "Weekday, short", example: "Mon" },
+  { token: "{daypart}", label: "Part of day", example: "Morning" },
+  { token: "{time}", label: "Kick-off time", example: "7:00 PM" },
+  { token: "{date}", label: "Date", example: "5 Aug 2026" },
+  { token: "{day}", label: "Day of month", example: "5" },
+  { token: "{month}", label: "Month", example: "August" },
+  { token: "{monthShort}", label: "Month, short", example: "Aug" },
+  { token: "{year}", label: "Year", example: "2026" },
+  { token: "{nth}", label: "Nth of month", example: "2nd" },
+  { token: "{venue}", label: "Venue", example: "Lakeside Turf" },
+  { token: "{venueShort}", label: "Venue, short", example: "Lakeside" },
+  { token: "{area}", label: "Venue area", example: "Whitefield" },
+  { token: "{city}", label: "Venue city", example: "Bengaluru" },
+  { token: "{format}", label: "Format", example: "6v6" },
+  { token: "{seq}", label: "Game number", example: "7" },
+  { token: "{total}", label: "Games in total", example: "12" },
+  { token: "{scheduleName}", label: "Schedule name", example: "Sunday League" },
+];
+
+// Ready-made patterns, so the common cases are one click rather than an
+// exercise in typing braces.
+export const TITLE_PATTERN_PRESETS: { label: string; pattern: string }[] = [
+  { label: "Monday Morning Game | Lakeside", pattern: "{weekday} {daypart} Game | {venueShort}" },
+  { label: "Mon 7:00 PM · 6v6 · Lakeside", pattern: "{weekdayShort} {time} · {format} · {venueShort}" },
+  { label: "Sunday League #7", pattern: "{scheduleName} #{seq}" },
+  { label: "Weekend Kickabout — 5 Aug 2026", pattern: "{scheduleName} — {date}" },
+  { label: "Monday Football at Lakeside, Whitefield", pattern: "{weekday} Football at {venueShort}, {area}" },
+];
 
 export const turfIdOf = (t: SeriesGameDefaults["turf"]): string =>
   !t ? "" : typeof t === "string" ? t : t._id;
