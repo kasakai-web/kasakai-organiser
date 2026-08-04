@@ -1,3 +1,4 @@
+import { formatIstTime } from "./formatTime";
 // Builds the WhatsApp-style "Copy List" message for an organiser to share.
 // Pure function (no DOM) so it can be unit-tested.
 
@@ -32,9 +33,7 @@ export function buildPlayerListMessage(input: PlayerListInput): string {
   lines.push("");
   if (venue) lines.push(`📍 Venue: ${venue}`);
   if (scheduledAt) {
-    const t = new Date(scheduledAt).toLocaleTimeString("en-IN", {
-      hour: "2-digit", minute: "2-digit", hour12: true,
-    });
+    const t = formatIstTime(scheduledAt);
     lines.push(`⏱️ Time: ${t}`);
   }
   if (format) lines.push(`⚽ Format: ${format}`);

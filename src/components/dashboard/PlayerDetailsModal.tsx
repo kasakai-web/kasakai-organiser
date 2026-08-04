@@ -3,6 +3,8 @@
 import React, { useRef, useState } from "react";
 
 import { buildApiUrl, getAuthHeaders } from "@/utils/api";
+import { TeamDistributionPanel } from "@/components/dashboard/TeamDistributionPanel";
+import { formatIstTime, formatIstLongDate, upperMeridiem, KASAKAI_SIGNOFF } from "@/utils/formatTime";
 import { ConfirmationModal } from "@/components/ui/ConfirmationModal";
 import { buildPlayerListMessage } from "@/utils/playerListMessage";
 
@@ -254,13 +256,14 @@ export function PlayerDetailsModal({
   const [confirmVisible, setConfirmVisible] = useState(false);
   const [confirmMessage, setConfirmMessage] = useState<string | null>(null);
   const confirmActionRef = useRef<null | (() => Promise<void>)>(null);
- const handleDistribute = async () => {
+ const handleDistribute = async (reshuffleNonce = 0) => {
   try {
     const res = await fetch(
       buildApiUrl(`/api/v1/games/organisers/${gameId}/distribute`),
       {
         method: "POST",
-        headers: getAuthHeaders(),
+        headers: { ...getAuthHeaders(), "Content-Type": "application/json" },
+        body: JSON.stringify({ reshuffleNonce }),
       }
     );
 
@@ -272,9 +275,11 @@ export function PlayerDetailsModal({
     }
 
     setTeams(data.data);
-    showStatus("success", "Teams distributed successfully ⚽");
+    showStatus("success", reshuffleNonce > 0 ? "Teams reshuffled ⚽" : "Teams distributed successfully ⚽");
     onRefresh?.();
-    downloadTeamExcel(data.data);
+    // Only the first run downloads the sheet — reshuffling repeatedly would
+    // otherwise bury the organiser in near-identical spreadsheets.
+    if (reshuffleNonce === 0) downloadTeamExcel(data.data);
 
   } catch (err) {
     console.error("Error distributing teams:", err);
@@ -292,7 +297,7 @@ function downloadTeamExcel(result: {
   playerDetails?: Record<string, string>;
 }) {
   const dateStr = scheduledAt
-    ? new Date(scheduledAt).toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit", hour12: true })
+    ? upperMeridiem(new Date(scheduledAt).toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit", hour12: true }))
     : "N/A";
   const venueName = [venue, location].filter(Boolean).join(", ") || "N/A";
   const rows = Math.max(result.teamA.length, result.teamB.length);
@@ -372,14 +377,19 @@ function downloadTeamExcel(result: {
   const handleCopyTeams = () => {
     if (!teams) return;
     const pd = teams.playerDetails || {};
-    const sA = teams.statsA || {};
-    const sB = teams.statsB || {};
     const lines: string[] = [];
+
+    // v2 decides which side wears which colour AFTER balancing, so team A is not
+    // always red. Hardcoding it here would make the WhatsApp message contradict
+    // the portal — and send half the squad in the wrong shirt.
+    const colours = teams.colours || { A: "red", B: "blue" };
+    const heading = (side: "A" | "B") =>
+      colours[side] === "red" ? "🔴 *Red Team*" : "🔵 *Blue Team*";
 
     lines.push(`⚽ *${gameName}*`);
     if (scheduledAt) {
       const d = new Date(scheduledAt);
-      lines.push(`📅 ${d.toLocaleDateString("en-IN", { weekday: "long", day: "numeric", month: "long", year: "numeric" })} at ${d.toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit", hour12: true })}`);
+      lines.push(`📅 ${formatIstLongDate(d)} at ${formatIstTime(d)}`);
     }
     const venueParts = [venue, location].filter(Boolean);
     if (venueParts.length) lines.push(`📍 ${venueParts.join(", ")}`);
@@ -387,23 +397,24 @@ function downloadTeamExcel(result: {
 
     lines.push("");
     lines.push("─".repeat(28));
-    lines.push(`🔴 *Red Team* (${(teams.teamA || []).length} players)`);
+    lines.push(`${heading("A")} (${(teams.teamA || []).length} players)`);
     (teams.teamA || []).forEach((name: string, i: number) => {
       const detail = pd[name];
       lines.push(`${i + 1}. ${name}${detail ? ` (${detail})` : ""}`);
     });
 
     lines.push("");
-    lines.push(`🔵 *Blue Team* (${(teams.teamB || []).length} players)`);
+    lines.push(`${heading("B")} (${(teams.teamB || []).length} players)`);
     (teams.teamB || []).forEach((name: string, i: number) => {
       const detail = pd[name];
       lines.push(`${i + 1}. ${name}${detail ? ` (${detail})` : ""}`);
     });
 
     lines.push("─".repeat(28));
-    const balancedLine = teams.isBalanced ? "✅ Balanced" : `⚠️ Skill diff: ${teams.skillDifference}`;
-    lines.push(`${balancedLine} | Red skill: ${sA.totalSkill ?? "-"} · Blue skill: ${sB.totalSkill ?? "-"}`);
-    lines.push("_Kasa Kai ⚽_");
+    // Skill totals stay in the portal, not in the group chat — players comparing
+    // their side's number against the other's is an argument nobody needs.
+    lines.push("");
+    lines.push(KASAKAI_SIGNOFF);
 
     navigator.clipboard.writeText(lines.join("\n")).then(() => {
       setCopiedTeams(true);
@@ -520,7 +531,7 @@ function downloadTeamExcel(result: {
               <span className="pdm-btn-label">{copied ? " Copied!" : " Copy List"}</span>
             </button>
             <button
-              onClick={handleDistribute}
+              onClick={() => handleDistribute(0)}
               className="pdm-hdr-btn"
               style={{
                 background: "rgba(59,130,246,0.15)",
@@ -954,11 +965,13 @@ function downloadTeamExcel(result: {
 
           {/* Teams — inside scroll area */}
           {teams && (
-            <div style={{ marginTop: 20, paddingBottom: 8 }}>
-              <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 12 }}>
-                <div style={{ fontSize: 13, fontWeight: 700, color: "#ccc", textTransform: "uppercase", letterSpacing: "0.08em" }}>
-                  ⚽ Teams
-                </div>
+            <TeamDistributionPanel
+              gameId={gameId}
+              teams={teams}
+              onDistribute={handleDistribute}
+              onRefresh={onRefresh}
+              showStatus={showStatus}
+              copySlot={
                 <button
                   onClick={handleCopyTeams}
                   style={{
@@ -980,26 +993,8 @@ function downloadTeamExcel(result: {
                   <span>{copiedTeams ? "✓" : "📋"}</span>
                   <span>{copiedTeams ? "Copied!" : "Copy Teams"}</span>
                 </button>
-              </div>
-              <div style={{ display: "flex", gap: 16 }}>
-                <div style={{ flex: 1, background: "rgba(239,68,68,0.06)", border: "1px solid rgba(239,68,68,0.2)", borderRadius: 8, padding: "12px 14px" }}>
-                  <div style={{ fontSize: 11, fontWeight: 700, color: "#f87171", textTransform: "uppercase", letterSpacing: "0.1em", marginBottom: 10 }}>Red Team</div>
-                  {(teams?.teamA || []).map((p: any, i: number) => (
-                    <div key={i} style={{ fontSize: 13, color: "#e5e5e5", padding: "4px 0", borderBottom: "1px solid rgba(255,255,255,0.05)" }}>
-                      {p.name || p}
-                    </div>
-                  ))}
-                </div>
-                <div style={{ flex: 1, background: "rgba(59,130,246,0.06)", border: "1px solid rgba(59,130,246,0.2)", borderRadius: 8, padding: "12px 14px" }}>
-                  <div style={{ fontSize: 11, fontWeight: 700, color: "#60a5fa", textTransform: "uppercase", letterSpacing: "0.1em", marginBottom: 10 }}>Blue Team</div>
-                  {(teams?.teamB || []).map((p: any, i: number) => (
-                    <div key={i} style={{ fontSize: 13, color: "#e5e5e5", padding: "4px 0", borderBottom: "1px solid rgba(255,255,255,0.05)" }}>
-                      {p.name || p}
-                    </div>
-                  ))}
-                </div>
-              </div>
-            </div>
+              }
+            />
           )}
 
         </div>

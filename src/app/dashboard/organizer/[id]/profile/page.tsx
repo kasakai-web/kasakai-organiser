@@ -4,6 +4,13 @@ import React, { useEffect, useRef, useState, useCallback } from "react";
 import { useParams, useRouter } from "next/navigation";
 import "../../../organizer-dashboard.css";
 import { buildApiUrl, clearSession, getSession, fetchWithRetry, resolveImageUrl } from "@/utils/api";
+import {
+  PROFILE_IMAGE_ACCEPT_ATTR,
+  formatFileSize,
+  uploadProfileImage,
+  validateProfileImageFile,
+  type UploadPhase,
+} from "@/utils/imageUpload";
 import { useAuthGuard } from "@/hooks/useAuthGuard";
 import { useAutoRefresh } from "@/hooks/useAutoRefresh";
 import { NavBtn } from "@/components/ui/NavBtn";
@@ -66,10 +73,18 @@ export default function OrganiserProfilePage() {
   const [showWelcomeBanner, setShowWelcomeBanner] = useState(false);
   const [requirePhoto, setRequirePhoto] = useState(false);
   const [imageUploading, setImageUploading] = useState(false);
+  const [uploadPercent, setUploadPercent] = useState(0);
+  const [uploadPhase, setUploadPhase] = useState<UploadPhase>("sending");
+  const [imageError, setImageError] = useState("");
+  // Size of the WebP the server actually stored, reported back after upload.
+  const [uploadedSize, setUploadedSize] = useState<number | null>(null);
   const [imagePreview, setImagePreview] = useState<string | null>(null);
   const [showLightbox, setShowLightbox] = useState(false);
   const [showPhotoPicker, setShowPhotoPicker] = useState(false);
   const imageInputRef = useRef<HTMLInputElement>(null);
+  // The blob: URL behind the local preview, so it can be released when it is
+  // replaced by the next pick or by the stored image.
+  const previewObjectUrlRef = useRef<string | null>(null);
   const pickerWrapRef = useRef<HTMLDivElement>(null);
   const videoRef = useRef<HTMLVideoElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -252,31 +267,69 @@ export default function OrganiserProfilePage() {
   const silentFetchProfile = useCallback(() => fetchProfile(true), [fetchProfile]);
   useAutoRefresh(isAuthorized ? silentFetchProfile : null, { interval: 30_000 });
 
+  // Show the picked file straight away, releasing whatever blob: URL the
+  // previous preview was holding.
+  const showLocalPreview = (file: File) => {
+    if (previewObjectUrlRef.current) URL.revokeObjectURL(previewObjectUrlRef.current);
+    const objectUrl = URL.createObjectURL(file);
+    previewObjectUrlRef.current = objectUrl;
+    setImagePreview(objectUrl);
+  };
+
+  const restorePreview = () => {
+    if (previewObjectUrlRef.current) {
+      URL.revokeObjectURL(previewObjectUrlRef.current);
+      previewObjectUrlRef.current = null;
+    }
+    setImagePreview(profile.profileImage ? resolveImageUrl(profile.profileImage) : null);
+  };
+
   const uploadFile = async (file: File) => {
     const { token } = getSession();
     if (!token) { clearSessionAndExit(); return; }
+
+    // Fail fast on the obvious cases. The server checks the decoded image too —
+    // this only spares the user a doomed upload.
+    const localProblem = validateProfileImageFile(file);
+    if (localProblem) {
+      setImageError(localProblem);
+      if (imageInputRef.current) imageInputRef.current.value = "";
+      return;
+    }
+
     setImageUploading(true);
+    setUploadPercent(0);
+    setUploadPhase("sending");
+    setImageError("");
+    setUploadedSize(null);
     setError("");
-    setImagePreview(URL.createObjectURL(file));
+    showLocalPreview(file);
+
     try {
-      const formData = new FormData();
-      formData.append("profileImage", file);
-      const res = await fetch(buildApiUrl("/api/v1/organisers/me/profile-image"), {
-        method: "POST",
-        headers: { Authorization: `Bearer ${token}` },
-        body: formData,
+      const { status, body } = await uploadProfileImage({
+        url: buildApiUrl("/api/v1/organisers/me/profile-image"),
+        file,
+        token,
+        onProgress: (percent, phase) => { setUploadPercent(percent); setUploadPhase(phase); },
       });
-      if (res.status === 401 || res.status === 403) { clearSessionAndExit(); return; }
-      const data = await parseApiResponse(res);
-      if (!res.ok || !data.success) {
-        setError(data.message || "Failed to upload image");
-        setImagePreview(profile.profileImage ? resolveImageUrl(profile.profileImage) : null);
+
+      if (status === 401 || status === 403) { clearSessionAndExit(); return; }
+      if (status < 200 || status >= 300 || !body.success) {
+        setImageError(body.message || "Failed to upload image");
+        restorePreview();
         return;
       }
-      const newImagePath = data.data?.profileImage;
+
+      const newImagePath = body.data?.profileImage;
       const newImageUrl = newImagePath ? resolveImageUrl(newImagePath) : null;
+      // The stored URL takes over from the local blob: preview.
+      if (previewObjectUrlRef.current) {
+        URL.revokeObjectURL(previewObjectUrlRef.current);
+        previewObjectUrlRef.current = null;
+      }
       setProfile((prev) => ({ ...prev, profileImage: newImagePath }));
       setImagePreview(newImageUrl);
+      setUploadedSize(body.data?.uploadedImage?.bytes ?? null);
       if (newImageUrl) {
         localStorage.setItem("userProfileImage", newImageUrl);
         if (localStorage.getItem("requirePhotoUpload") === "true") {
@@ -287,13 +340,19 @@ export default function OrganiserProfilePage() {
       } else { localStorage.removeItem("userProfileImage"); }
       window.dispatchEvent(new CustomEvent("organiser-profile-updated", { detail: { profileImage: newImageUrl || "" } }));
     } catch {
-      setError("Failed to upload image");
-      setImagePreview(profile.profileImage ? resolveImageUrl(profile.profileImage) : null);
+      setImageError("Upload failed — check your connection and try again.");
+      restorePreview();
     } finally {
       setImageUploading(false);
+      setUploadPercent(0);
       if (imageInputRef.current) imageInputRef.current.value = "";
     }
   };
+
+  // Release the last preview blob when leaving the page.
+  useEffect(() => () => {
+    if (previewObjectUrlRef.current) URL.revokeObjectURL(previewObjectUrlRef.current);
+  }, []);
 
   const handleImageUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -495,6 +554,46 @@ export default function OrganiserProfilePage() {
               )}
             </div>
 
+            {/* Upload progress — the bar tracks the bytes leaving the browser,
+                then switches to a processing note while the server compresses. */}
+            {imageUploading && (
+              <div style={{ width: 180, marginTop: 10 }} role="status" aria-live="polite">
+                <div style={{ height: 4, borderRadius: 999, background: "#2a2a4a", overflow: "hidden" }}>
+                  <div
+                    style={{
+                      height: "100%",
+                      width: `${uploadPercent}%`,
+                      background: "#4ade80",
+                      borderRadius: 999,
+                      transition: "width 120ms linear",
+                    }}
+                  />
+                </div>
+                <div style={{ fontSize: 11, color: "#9ca3c4", marginTop: 5, textAlign: "center" }}>
+                  {uploadPhase === "processing" ? "Optimising image…" : `Uploading… ${uploadPercent}%`}
+                </div>
+              </div>
+            )}
+
+            {imageError && (
+              <div
+                role="alert"
+                style={{
+                  maxWidth: 240, marginTop: 10, padding: "8px 10px", borderRadius: 8,
+                  background: "rgba(220,38,38,0.12)", border: "1px solid rgba(220,38,38,0.4)",
+                  color: "#fca5a5", fontSize: 12, textAlign: "center", lineHeight: 1.4,
+                }}
+              >
+                {imageError}
+              </div>
+            )}
+
+            {!imageUploading && !imageError && uploadedSize !== null && (
+              <div style={{ fontSize: 11, color: "#9ca3c4", marginTop: 8, textAlign: "center" }}>
+                Photo updated · {formatFileSize(uploadedSize)}
+              </div>
+            )}
+
             {/* Photo button + inline dropdown */}
             <div ref={pickerWrapRef} style={{ position: "relative" }}>
               <button type="button" className="op-photo-btn"
@@ -525,7 +624,7 @@ export default function OrganiserProfilePage() {
                 </div>
               )}
             </div>
-            <input ref={imageInputRef} type="file" accept="image/jpeg,image/png,image/webp" style={{ display: "none" }} onChange={handleImageUpload} />
+            <input ref={imageInputRef} type="file" accept={PROFILE_IMAGE_ACCEPT_ATTR} style={{ display: "none" }} onChange={handleImageUpload} />
             {!imagePreview && (
               <p style={{ margin: "6px 0 0", fontSize: 11, color: "#888", textAlign: "center", lineHeight: 1.4, maxWidth: 140 }}>
                 📸 A real photo is required to host games
