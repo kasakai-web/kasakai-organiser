@@ -2,7 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { activeRegCount, filledCount, spotsLeft } from "./playerCount.ts";
 
-const reg = (over: Partial<{ paymentStatus: string; optedOut: boolean; plusOneName: string; backedOutAt: string }> = {}) => ({
+const reg = (over: Partial<{ paymentStatus: string; optedOut: boolean; plusOneName: string; backedOutAt: string; removedAt: string }> = {}) => ({
   paymentStatus: "paid",
   optedOut: false,
   ...over,
@@ -25,16 +25,17 @@ test("excludes opted-out players", () => {
   assert.equal(filledCount(game), 2, "opted-out player not counted");
 });
 
-test("excludes backed-out registrations, which the API still sends as history", () => {
+test("excludes backed-out and organiser-removed rows, which the API still sends as history", () => {
   const game = {
     registrations: [
       reg(),
       reg({ backedOutAt: "2026-08-01T10:00:00.000Z", paymentStatus: "refunded" }),
       reg({ backedOutAt: "2026-08-01T10:00:00.000Z", paymentStatus: "refunded", plusOneName: "Their guest" }),
+      reg({ removedAt: "2026-08-02T10:00:00.000Z", paymentStatus: "refunded" }),
     ],
     organiserIsPlaying: false,
   };
-  assert.equal(filledCount(game), 1, "a cancelled booking frees its seat and its guests'");
+  assert.equal(filledCount(game), 1, "a cancelled or revoked booking frees its seat and its guests'");
 });
 
 test("excludes refunded / forfeited registrations", () => {

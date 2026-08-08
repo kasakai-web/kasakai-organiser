@@ -35,7 +35,7 @@ function saveDismissed(keys: Set<string>) {
 
 const activeCount = (g: any) =>
   (g.registrations || []).filter(
-    (r: any) => !r.backedOutAt && !["refunded", "forfeited"].includes(r.paymentStatus) && !r.optedOut
+    (r: any) => !r.backedOutAt && !r.removedAt && !["refunded", "forfeited"].includes(r.paymentStatus) && !r.optedOut
   ).length + (g.organiserIsPlaying ? 1 : 0);
 
 // Identity of the current alert. Dismissing hides exactly this one; if the game

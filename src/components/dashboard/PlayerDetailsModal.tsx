@@ -22,9 +22,11 @@ interface Registration {
   optedOut?: boolean;
   optedOutAt?: string;
   optedOutReason?: "self" | "format_change" | null;
-  // Set when the player cancelled outright. The backend keeps the row as history
-  // instead of deleting it, so the UI has to filter it out itself.
+  // Tombstones. The backend keeps these rows as history instead of deleting them,
+  // so the UI has to filter them out itself. backedOutAt = the player left;
+  // removedAt = the organiser took the slot away.
   backedOutAt?: string | null;
+  removedAt?: string | null;
 }
 
 interface WaitlistEntry {
@@ -454,7 +456,7 @@ function downloadTeamExcel(result: {
   // visible. So all the display/count derivations below run off `roster`, not the
   // raw `players`.
   const roster = players.filter(
-    (r) => !r.backedOutAt && !(r.optedOut && r.optedOutReason === "format_change")
+    (r) => !r.backedOutAt && !r.removedAt && !(r.optedOut && r.optedOutReason === "format_change")
   );
 
   const mainRegs  = roster.filter((r) => !r.plusOneName);
@@ -484,7 +486,7 @@ function downloadTeamExcel(result: {
   // Only regs that actually occupy a slot (not backed out, not opted-out, not
   // refunded/forfeited)
   const activeRegs = players.filter(
-    (r) => !r.backedOutAt && !r.optedOut && !['refunded', 'forfeited'].includes(r.paymentStatus || '')
+    (r) => !r.backedOutAt && !r.removedAt && !r.optedOut && !['refunded', 'forfeited'].includes(r.paymentStatus || '')
   );
   // Derive from the registrations we're displaying (single source of truth) so the
   // count always matches the player/guest list shown below — rather than a
