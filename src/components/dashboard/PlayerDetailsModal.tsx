@@ -969,6 +969,10 @@ function downloadTeamExcel(result: {
               gameId={gameId}
               teams={teams}
               onDistribute={handleDistribute}
+              // Merged, not replaced: a move returns the teams, not the extras
+              // the distribute response carried (playerDetails, for one, which
+              // the WhatsApp copy reads).
+              onTeamsChanged={(result) => setTeams((prev: any) => ({ ...prev, ...result }))}
               onRefresh={onRefresh}
               showStatus={showStatus}
               copySlot={

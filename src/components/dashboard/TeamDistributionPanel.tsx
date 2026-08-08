@@ -2,6 +2,7 @@
 
 import React, { useState } from "react";
 import { buildApiUrl, getAuthHeaders } from "@/utils/api";
+import { TeamSheetHistory } from "@/components/dashboard/TeamSheetHistory";
 
 /**
  * Distributed teams, why they came out that way, and what to do next.
@@ -65,6 +66,7 @@ export function TeamDistributionPanel({
   gameId,
   teams,
   onDistribute,
+  onTeamsChanged,
   onRefresh,
   showStatus,
   copySlot,
@@ -72,6 +74,8 @@ export function TeamDistributionPanel({
   gameId: string;
   teams: DistributionResult;
   onDistribute: (reshuffleNonce: number) => Promise<void>;
+  /** Hand back a fresh distribution result — a manual move rewrites the teams. */
+  onTeamsChanged?: (result: DistributionResult) => void;
   onRefresh?: () => void;
   showStatus: ShowStatus;
   copySlot?: React.ReactNode;
@@ -81,6 +85,9 @@ export function TeamDistributionPanel({
   const [published, setPublished] = useState(false);
   const [nonce, setNonce] = useState(0);
   const [pinned, setPinned] = useState<Record<string, "A" | "B" | null>>({});
+  // Bumped whenever an announcement is made, so the history picks up the new
+  // revision without a page reload.
+  const [historyKey, setHistoryKey] = useState(0);
 
   const isV2 = teams.version === 2;
   const colours = teams.colours || { A: "red" as const, B: "blue" as const };
@@ -99,7 +106,17 @@ export function TeamDistributionPanel({
         return;
       }
       setPublished(true);
-      showStatus("success", `Teams published — ${data.data?.published ?? 0} player(s) notified`);
+      setHistoryKey((k) => k + 1);
+      // Say what actually went out. "Published" alone hides a WhatsApp campaign
+      // that is rejecting every send.
+      const wa = data.data?.whatsapp;
+      const waNote = wa
+        ? ` · WhatsApp ${wa.sent} sent${wa.failed ? `, ${wa.failed} failed` : ""}`
+        : "";
+      showStatus(
+        "success",
+        `Teams published — ${data.data?.published ?? 0} player(s) notified${waNote}`
+      );
       onRefresh?.();
     } catch {
       showStatus("error", "Couldn't publish teams");
@@ -117,6 +134,33 @@ export function TeamDistributionPanel({
       // A reshuffle replaces the previous run, so anything published no longer
       // describes the teams on screen.
       setPublished(false);
+    } finally {
+      setBusy(null);
+    }
+  };
+
+  // Send one player across to the other side, now. The opposite of pinning:
+  // this changes the teams on screen, a pin only constrains the next shuffle.
+  const move = async (assignment: Assignment) => {
+    setBusy(`move:${assignment.id}`);
+    try {
+      const res = await fetch(buildApiUrl(`/api/v1/games/organisers/${gameId}/teams/move`), {
+        method: "POST",
+        headers: { ...getAuthHeaders(), "Content-Type": "application/json" },
+        body: JSON.stringify({ memberId: assignment.id }),
+      });
+      const data = await res.json();
+      if (!res.ok || !data.success) {
+        showStatus("error", data.message || "Couldn't move that player");
+        return;
+      }
+      onTeamsChanged?.(data.data);
+      // The teams are no longer the ones anyone was told about.
+      setPublished(false);
+      showStatus("success", data.message || `${assignment.name} moved`);
+      onRefresh?.();
+    } catch {
+      showStatus("error", "Couldn't move that player");
     } finally {
       setBusy(null);
     }
@@ -161,6 +205,7 @@ export function TeamDistributionPanel({
 
   const renderSide = (side: "A" | "B") => {
     const style = COLOUR_STYLE(colours[side]);
+    const otherStyle = COLOUR_STYLE(colours[side === "A" ? "B" : "A"]);
     const rows = byTeam(side);
     const names = side === "A" ? teams.teamA : teams.teamB;
     const stats = side === "A" ? teams.statsA : teams.statsB;
@@ -203,8 +248,27 @@ export function TeamDistributionPanel({
                 )}
                 <button
                   type="button"
+                  onClick={() => move(a)}
+                  disabled={busy != null}
+                  title={`Move ${a.name} to ${otherStyle.label}`}
+                  aria-label={`Move ${a.name} to ${otherStyle.label}`}
+                  style={{
+                    display: "flex", alignItems: "center", gap: 4,
+                    padding: "2px 7px", borderRadius: 5,
+                    fontSize: 10, fontWeight: 700, lineHeight: 1.6,
+                    whiteSpace: "nowrap",
+                    cursor: busy != null ? "wait" : "pointer",
+                    border: `1px solid ${otherStyle.fg}55`,
+                    background: `${otherStyle.fg}14`,
+                    color: otherStyle.fg,
+                  }}
+                >
+                  {busy === `move:${a.id}` ? "…" : `⇄ ${colours[side] === "red" ? "Blue" : "Red"}`}
+                </button>
+                <button
+                  type="button"
                   onClick={() => togglePin(a)}
-                  disabled={busy === `pin:${a.id}`}
+                  disabled={busy != null}
                   title={isPinned ? "Unpin from this team" : "Pin to this team for the next distribution"}
                   style={{
                     background: "none", border: "none", cursor: "pointer", padding: 0,
@@ -294,9 +358,12 @@ export function TeamDistributionPanel({
         </div>
       )}
 
+      <TeamSheetHistory gameId={gameId} refreshKey={historyKey} />
+
       {isV2 && (
         <div style={{ marginTop: 10, fontSize: 10.5, color: "#666", lineHeight: 1.6 }}>
-          Players only see their side once you press Publish. Pins apply to the next distribution.
+          Players only see their side once you press Publish. ⇄ swaps a player over straight away;
+          📌 pins them for the next distribution.
         </div>
       )}
     </div>
