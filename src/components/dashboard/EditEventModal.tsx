@@ -78,7 +78,7 @@ function extractOrgGuests(game: any): GuestReg[] {
 
 function liveActiveCount(game: any): number {
   return (game.registrations || []).filter(
-    (r: any) => !["refunded", "forfeited"].includes(r.paymentStatus || "") && !r.optedOut
+    (r: any) => !r.backedOutAt && !["refunded", "forfeited"].includes(r.paymentStatus || "") && !r.optedOut
   ).length;
 }
 
@@ -243,7 +243,7 @@ export function EditEventModal({
     const ids = new Set<string>();
     const idOf = (v: any) => String(v?._id ?? v ?? "");
     (initialData.registrations || []).forEach((r: any) => {
-      if (["refunded", "forfeited"].includes(r.paymentStatus || "") || r.optedOut) return;
+      if (r.backedOutAt || ["refunded", "forfeited"].includes(r.paymentStatus || "") || r.optedOut) return;
       if (idOf(r.player)) ids.add(idOf(r.player));
     });
     (initialData.waitlist || []).forEach((w: any) => {
