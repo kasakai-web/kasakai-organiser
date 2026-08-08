@@ -462,20 +462,22 @@ function downloadTeamExcel(result: {
   const mainRegs  = roster.filter((r) => !r.plusOneName);
   const guestRegs = roster.filter((r) => !!r.plusOneName);
 
-  // Robust organiser-guest detection: covers both populated (player=null) and
-  // unpopulated (player=organiser ObjectId string) states from the API.
+  // An organiser's filler guest has no host player: `addedByOrganiser` says so
+  // outright. Rows written before that carry the organiser's own id in `player` — a
+  // Player ref that never populates — so the id compare below still reads them.
   const loggedInOrgId = typeof window !== "undefined" ? (localStorage.getItem("userId") || "") : "";
-  const organiserGuests = roster.filter((r) => {
+  const isOrganiserGuest = (r: Registration) => {
     if (!r.plusOneName) return false;
+    if ((r as any).addedByOrganiser) return true;
     if (!r.player) return true;
     return String((r.player as any)?._id ?? (r.player as any) ?? "") === loggedInOrgId;
-  });
+  };
+  const organiserGuests = roster.filter(isOrganiserGuest);
   // Player guests grouped by their owner's player ID (exclude organiser guests)
   const guestsByPlayer = new Map<string, Registration[]>();
   roster.filter((r) => {
     if (!r.plusOneName || !r.player) return false;
-    const pid = String((r.player as any)?._id ?? (r.player as any) ?? "");
-    return pid && pid !== loggedInOrgId;
+    return !isOrganiserGuest(r);
   }).forEach((r) => {
     const k = (r.player as any)?._id?.toString() ?? (r.player as any)?.toString() ?? "";
     if (k) {

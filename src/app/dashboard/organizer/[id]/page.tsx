@@ -15,6 +15,7 @@ import { useAutoRefresh } from "@/hooks/useAutoRefresh";
 import "../../organizer-dashboard.css"; 
 import GameCard from "@/components/dashboard/GameCard/GameCard";
 import CoOrganiserModal from "@/components/dashboard/CoOrganiserModal";
+import { TeamSheetHistory } from "@/components/dashboard/TeamSheetHistory";
 
 
 export default function OrganizerDashboard() {
@@ -49,6 +50,7 @@ export default function OrganizerDashboard() {
   const [showPostGameModal, setShowPostGameModal] = useState(false);
   const [postGameTarget, setPostGameTarget] = useState<any>(null);
   const [coOrgGame, setCoOrgGame] = useState<any>(null);
+  const [teamHistoryGame, setTeamHistoryGame] = useState<any>(null);
   const [cancelTargetGame, setCancelTargetGame] = useState<any>(null);
   const [cancelMessage, setCancelMessage] = useState("");
   const [cancellingId, setCancellingId] = useState<string | null>(null);
@@ -735,6 +737,22 @@ export default function OrganizerDashboard() {
         onCancel={(g) => { setCancelTargetGame(g); setCancelMessage(""); setShowCancelModal(true); }}
       />
 
+      {/* Published team sheets — what the players were told, and when */}
+      {teamHistoryGame && (
+        <div className="modal-overlay" onClick={() => setTeamHistoryGame(null)}>
+          <div onClick={(e) => e.stopPropagation()} style={{ width: "100%", maxWidth: 620, maxHeight: "85vh", overflowY: "auto", background: "#111214", border: "1px solid #2a2a2a", borderRadius: 16, padding: 22, color: "#fff" }}>
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 6 }}>
+              <h2 style={{ margin: 0, fontSize: 18, fontWeight: 800 }}>📣 Team history</h2>
+              <button onClick={() => setTeamHistoryGame(null)} style={{ background: "none", border: "none", color: "#888", fontSize: 20, cursor: "pointer", lineHeight: 1 }}>✕</button>
+            </div>
+            <p style={{ fontSize: 13, color: "#9aa", margin: "0 0 14px", lineHeight: 1.5 }}>
+              Every time the teams for <b style={{ color: "#ddd" }}>{teamHistoryGame.title}</b> were published, newest first — and whether each player&apos;s message got through.
+            </p>
+            <TeamSheetHistory gameId={teamHistoryGame._id} />
+          </div>
+        </div>
+      )}
+
       {/* SOS preview — shows the eligible regulars before sending */}
       {sosModal && (
         <div className="modal-overlay" onClick={() => setSosModal(null)}>
@@ -1270,6 +1288,7 @@ export default function OrganizerDashboard() {
                 onCancel={() => openCancelModal(game)}
                 onInvite={()=>openInviteModal(game)}
                 onManageCoOrgs={() => { setCoOrgGame(game); setOpenMenuGameId(null); }}
+                onTeamHistory={() => { setTeamHistoryGame(game); setOpenMenuGameId(null); }}
               />
               ))}
           </div>
@@ -1312,6 +1331,7 @@ export default function OrganizerDashboard() {
                     setPostGameTarget(game);
                     setShowPostGameModal(true);
                   }}
+                  onTeamHistory={() => { setTeamHistoryGame(game); setOpenMenuGameId(null); }}
                 />
               ))}
             </div>

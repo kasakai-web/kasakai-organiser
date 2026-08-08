@@ -2,7 +2,6 @@
 
 import React, { useState } from "react";
 import { buildApiUrl, getAuthHeaders } from "@/utils/api";
-import { TeamSheetHistory } from "@/components/dashboard/TeamSheetHistory";
 
 /**
  * Distributed teams, why they came out that way, and what to do next.
@@ -85,9 +84,6 @@ export function TeamDistributionPanel({
   const [published, setPublished] = useState(false);
   const [nonce, setNonce] = useState(0);
   const [pinned, setPinned] = useState<Record<string, "A" | "B" | null>>({});
-  // Bumped whenever an announcement is made, so the history picks up the new
-  // revision without a page reload.
-  const [historyKey, setHistoryKey] = useState(0);
 
   const isV2 = teams.version === 2;
   const colours = teams.colours || { A: "red" as const, B: "blue" as const };
@@ -106,7 +102,6 @@ export function TeamDistributionPanel({
         return;
       }
       setPublished(true);
-      setHistoryKey((k) => k + 1);
       // Say what actually went out. "Published" alone hides a WhatsApp campaign
       // that is rejecting every send.
       const wa = data.data?.whatsapp;
@@ -358,12 +353,11 @@ export function TeamDistributionPanel({
         </div>
       )}
 
-      <TeamSheetHistory gameId={gameId} refreshKey={historyKey} />
-
       {isV2 && (
         <div style={{ marginTop: 10, fontSize: 10.5, color: "#666", lineHeight: 1.6 }}>
           Players only see their side once you press Publish. ⇄ swaps a player over straight away;
-          📌 pins them for the next distribution.
+          📌 pins them for the next distribution. Past announcements live under the game card&apos;s
+          Actions ▸ Team history.
         </div>
       )}
     </div>

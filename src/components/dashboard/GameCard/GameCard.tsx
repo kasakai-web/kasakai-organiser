@@ -2,7 +2,7 @@
 
 import { useLayoutEffect, useMemo, useRef, useState } from "react";
 import "./GameCard.css";
-import {Lock,Calendar,Star,Clock,MapPin,Users,Trophy,CheckCircle2,Timer,ChevronDown,Pencil,RefreshCw,TriangleAlert,Undo2,CircleCheck,CircleX,CircleCheckBig, UserPlus,} from "lucide-react";
+import {Lock,Calendar,Star,Clock,MapPin,Users,Trophy,CheckCircle2,Timer,ChevronDown,Pencil,RefreshCw,TriangleAlert,Undo2,CircleCheck,CircleX,CircleCheckBig, UserPlus,History,} from "lucide-react";
 import { filledCount } from "@/utils/playerCount";
 
 interface GameCardProps {
@@ -20,6 +20,7 @@ interface GameCardProps {
   onSwitch?: () => void;
   onInvite?: () => void;
   onManageCoOrgs?: () => void;
+  onTeamHistory?: () => void;
 }
 
 const getStatusConfig = (status: string) => {
@@ -78,7 +79,7 @@ const formatTime = (d: Date) =>
     })
     .toUpperCase();
 
-function GameCard({game,variant = "upcoming",isMenuOpen,onToggleMenu,onPlayers,onEdit,onConfirm,onWithdraw,onCancel,onSwitch,onSOS,onComplete,onInvite,onManageCoOrgs,
+function GameCard({game,variant = "upcoming",isMenuOpen,onToggleMenu,onPlayers,onEdit,onConfirm,onWithdraw,onCancel,onSwitch,onSOS,onComplete,onInvite,onManageCoOrgs,onTeamHistory,
 }: GameCardProps) {
   const status = getStatusConfig(game.status);
   const isPast = variant === "past";
@@ -99,6 +100,11 @@ function GameCard({game,variant = "upcoming",isMenuOpen,onToggleMenu,onPlayers,o
   // Approved-but-unpaid requests aren't actionable yet (waiting on the player's top-up)
   // but must stay reachable so they never vanish — they count toward showing the entry.
   const liveRequestCount = (game.invitations || []).filter((i: any) => ["pending", "approved_unpaid"].includes(i.status)).length;
+  // Teams were announced at least once. `teamsPublished` flips back to false on
+  // a reshuffle, but what was already sent out stays worth reading — so the
+  // published-sheet reference, which survives a reshuffle, is what gates this.
+  const hasTeamHistory = Boolean(game.publishedTeamSheet);
+
   const isClosed = ["completed", "cancelled"].includes(game.status);
   // Show the invite/requests entry when it's a private game (invite + manage link)
   // or whenever there are live requests to act on / follow up.
@@ -309,6 +315,18 @@ function GameCard({game,variant = "upcoming",isMenuOpen,onToggleMenu,onPlayers,o
               <Users size={16} />
               Players
             </button>
+
+            {/* Read-only, so co-organisers with view access get it too */}
+            {hasTeamHistory && onTeamHistory && (
+              <button
+                onClick={onTeamHistory}
+                title="What the players were told, and when"
+                className="team-history-item"
+              >
+                <History size={16} />
+                Team history
+              </button>
+            )}
 
             {isPast ? (
               <>

@@ -421,6 +421,15 @@ background: rgb(255, 255, 0,0.15);
   background: rgba(255, 91, 91, 0.12);
 }
 
+/* ── Published team sheets: dropdown item ── */
+.team-history-item {
+  color: #f0abfc;
+}
+
+.team-history-item:hover {
+  background: rgba(240, 171, 252, 0.14);
+}
+
 .rotate-icon {
   transform: rotate(180deg);
   transition: 0.2s;
