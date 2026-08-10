@@ -16,6 +16,7 @@ interface Registration {
   plusOneName?: string | null;
   preferredPosition?: string;
   teamPreference?: string;
+  teamRequests?: { target?: string | null; guestName?: string | null; relation: "with" | "against"; hard?: boolean }[];
   signedUpAt?: string;
   paymentStatus?: string;
   amountPaidPaise?: number;
@@ -462,6 +463,15 @@ function downloadTeamExcel(result: {
   const mainRegs  = roster.filter((r) => !r.plusOneName);
   const guestRegs = roster.filter((r) => !!r.plusOneName);
 
+  // teamRequests.target is a bare Player ObjectId (not populated by the
+  // backend) — resolve it to a display name from the roster we already have.
+  const playerNameById = new Map<string, string>();
+  players.forEach((r) => {
+    const pid = (r.player as any)?._id?.toString?.() ?? (r.player as any)?.toString?.();
+    const pname = (r.player as any)?.name;
+    if (pid && pname) playerNameById.set(pid, pname);
+  });
+
   // An organiser's filler guest has no host player: `addedByOrganiser` says so
   // outright. Rows written before that carry the organiser's own id in `player` — a
   // Player ref that never populates — so the id compare below still reads them.
@@ -820,6 +830,7 @@ function downloadTeamExcel(result: {
                             slotNum={slotNum}
                             type="guest"
                             gameFeeInPaise={feeInPaise}
+                            playerNameById={playerNameById}
                             isProcessing={processingId === regId}
                             onRemove={
                               onRemoveRegistration && regId && !isLocked
@@ -878,6 +889,7 @@ function downloadTeamExcel(result: {
                         slotNum={slot}
                         type="player"
                         gameFeeInPaise={feeInPaise}
+                        playerNameById={playerNameById}
                         isProcessing={processingId === regId}
                         onRemove={undefined}
                       />
@@ -893,6 +905,7 @@ function downloadTeamExcel(result: {
                                 slotNum={slot}
                                 type="guest"
                                 gameFeeInPaise={feeInPaise}
+                                playerNameById={playerNameById}
                                 isProcessing={processingId === gId}
                                 onRemove={undefined}
                               />
@@ -1341,6 +1354,7 @@ function PlayerCard({
   isProcessing,
   onRemove,
   gameFeeInPaise,
+  playerNameById,
 }: {
   reg: Registration;
   slotNum?: number;
@@ -1348,12 +1362,17 @@ function PlayerCard({
   isProcessing?: boolean;
   onRemove?: () => void;
   gameFeeInPaise?: number;
+  playerNameById?: Map<string, string>;
 }) {
   const isGuest = type === "guest";
   const name    = isGuest ? (reg.plusOneName ?? "Guest") : (reg.player?.name ?? "Unknown");
   const pos     = posLabel(reg.preferredPosition);
   const team    = teamInfo(reg.teamPreference);
   const date    = fmtDate(reg.signedUpAt);
+  const requests = (reg.teamRequests || []).map((r) => ({
+    relation: r.relation,
+    name: r.guestName || (r.target ? playerNameById?.get(String(r.target)) : null) || "Unknown",
+  }));
   const imgSrc  = !isGuest && reg.player?.profileImage
     ? (reg.player.profileImage.startsWith("http") ? reg.player.profileImage : `${IMG_BASE}${reg.player.profileImage}`)
     : null;
@@ -1403,7 +1422,24 @@ function PlayerCard({
             )}
           </div>
         )}
-        {isGuest && !pos && !team && (
+        {requests.length > 0 && (
+          <div style={{ display: "flex", alignItems: "center", gap: 6, marginTop: 4, flexWrap: "wrap" }}>
+            {requests.map((r, i) => (
+              <span
+                key={i}
+                style={{
+                  fontSize: 10, fontWeight: 700, borderRadius: 20, padding: "2px 8px",
+                  color: r.relation === "with" ? "#c8ff3e" : "#ff9f7f",
+                  background: r.relation === "with" ? "rgba(200,255,62,0.08)" : "rgba(255,159,127,0.08)",
+                  border: `1px solid ${r.relation === "with" ? "rgba(200,255,62,0.25)" : "rgba(255,159,127,0.25)"}`,
+                }}
+              >
+                {r.relation === "with" ? "With" : "Against"} {r.name}
+              </span>
+            ))}
+          </div>
+        )}
+        {isGuest && !pos && !team && requests.length === 0 && (
           <div style={{ fontSize: 10, color: "#444", marginTop: 4 }}>No preferences set</div>
         )}
 
