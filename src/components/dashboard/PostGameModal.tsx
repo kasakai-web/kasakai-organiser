@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect, useMemo, useRef } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import Image from "next/image";
 import { buildApiUrl, getSession } from "@/utils/api";
 import "./PostGameModal.css";
@@ -25,6 +25,17 @@ export interface Game {
 
 type AttendanceStatus = "present" | "absent";
 
+// What we already know about this player, if this organiser has rated them before.
+// A rating is a standing opinion revised over time, not a per-game score, so this
+// is here to say "you have said this before" rather than to be edited.
+export interface StandingSummary {
+  gamesObserved: number;
+  revision: number;
+  lastRatedAt: string | null;
+  lastRatedGameTitle: string | null;
+  ratedInThisGame: boolean;
+}
+
 export interface PlayerRatingDraft {
   playerId: string;
   name: string;
@@ -36,24 +47,36 @@ export interface PlayerRatingDraft {
   playAgainst: string[];
   notes: string;
   team: "A" | "B" | null;
+  existing: StandingSummary | null;
 }
 
-type SavedPlayerRating = {
-  player?: { _id?: string; name?: string };
-  playerId?: string;
-  conductRating?: number;
-  gameplayRating?: number;
-  preferredPosition?: string;
-  gkAffinity?: number;
-  playWith?: unknown;
-  playAgainst?: unknown;
-  notes?: string;
-  team?: string;
+// GET /games/organisers/:id/player-ratings — one row per player in the game,
+// carrying this organiser's standing opinion of them where there is one.
+type PrefillRow = {
+  playerId: string;
+  name: string;
+  profileImage?: string | null;
+  team?: string | null;
+  existing?: {
+    conductRating?: number;
+    gameplayRating?: number;
+    preferredPosition?: string;
+    gkAffinity?: number | null;
+    playWith?: unknown;
+    playAgainst?: unknown;
+    notes?: string | null;
+    gamesObserved?: number;
+    revision?: number;
+    lastRatedAt?: string | null;
+    lastRatedGame?: { _id?: string; title?: string } | null;
+    ratedInThisGame?: boolean;
+  } | null;
 };
 
-type SavedRatingsResponse = {
+type PrefillResponse = {
   success?: boolean;
-  data?: SavedPlayerRating[];
+  message?: string;
+  data?: PrefillRow[];
 };
 
 interface Props {
@@ -211,16 +234,20 @@ function PlayerDropdownSelect({
 }
 
 // ── Main Optimized Modal ───────────────────────────────────────────────────
-export function PostGameModal({ game, onClose, onDone }: Props) { 
-
-  console.log(game); 
-
+export function PostGameModal({ game, onClose, onDone }: Props) {
   const [step, setStep] = useState<"attendance" | "ratings" | "summary">("attendance");
   const [attendance, setAttendance] = useState<Record<string, AttendanceStatus>>({});
   const [savingAttendance, setSavingAttendance] = useState(false);
   const [savingRatings, setSavingRatings] = useState(false);
   const [error, setError] = useState("");
   const [ratings, setRatings] = useState<Record<string, PlayerRatingDraft>>({});
+  // Which drafts the organiser has actually touched this session. Only these are
+  // sent — re-posting a pre-filled row nobody edited would be a no-op on the
+  // server and noise for the player.
+  const [dirty, setDirty] = useState<Record<string, true>>({});
+  const [loadingPrefill, setLoadingPrefill] = useState(true);
+
+  const markDirty = (pid: string) => setDirty((prev) => (prev[pid] ? prev : { ...prev, [pid]: true }));
 
   // Pre-load existing attendance marks — map legacy no_show → absent
   useEffect(() => {
@@ -233,6 +260,66 @@ export function PostGameModal({ game, onClose, onDone }: Props) {
     }
     setAttendance(init);
   }, [game]);
+
+  // Load this organiser's standing ratings as soon as the modal opens, rather
+  // than on the way out of the attendance step. Re-opening an already-rated game
+  // must not force the organiser back through completing and re-saving
+  // attendance just to see what they already said.
+  useEffect(() => {
+    let cancelled = false;
+
+    (async () => {
+      const { token } = getSession();
+      if (!token) { setLoadingPrefill(false); return; }
+      try {
+        const res = await fetch(
+          buildApiUrl(`/api/v1/games/organisers/${game._id}/player-ratings`),
+          { headers: { Authorization: `Bearer ${token}` } }
+        );
+        const data = (await res.json()) as PrefillResponse;
+        if (cancelled) return;
+        if (!res.ok || !data.success) {
+          // Silence here would look identical to "nobody has been rated yet",
+          // which would invite the organiser to rate everyone a second time.
+          setError(data.message || "Couldn't load your existing ratings — reload before rating.");
+          return;
+        }
+
+        const drafts: Record<string, PlayerRatingDraft> = {};
+        for (const row of data.data ?? []) {
+          const e = row.existing;
+          drafts[row.playerId] = {
+            playerId:          row.playerId,
+            name:              row.name,
+            conductRating:     typeof e?.conductRating === "number" ? e.conductRating : 0,
+            gameplayRating:    typeof e?.gameplayRating === "number" ? e.gameplayRating : 0,
+            preferredPosition: e?.preferredPosition || "any",
+            gkAffinity:        typeof e?.gkAffinity === "number" ? e.gkAffinity : null,
+            playWith:          Array.isArray(e?.playWith) ? e.playWith.map((x: unknown) => String(x)) : [],
+            playAgainst:       Array.isArray(e?.playAgainst) ? e.playAgainst.map((x: unknown) => String(x)) : [],
+            notes:             e?.notes || "",
+            team:              row.team === "A" || row.team === "B" ? row.team : null,
+            existing: e
+              ? {
+                gamesObserved:      e.gamesObserved ?? 0,
+                revision:           e.revision ?? 1,
+                lastRatedAt:        e.lastRatedAt ?? null,
+                lastRatedGameTitle: e.lastRatedGame?.title ?? null,
+                ratedInThisGame:    Boolean(e.ratedInThisGame),
+              }
+              : null,
+          };
+        }
+        setRatings(drafts);
+      } catch (err) {
+        if (!cancelled) setError((err as Error).message || "Couldn't load your existing ratings");
+      } finally {
+        if (!cancelled) setLoadingPrefill(false);
+      }
+    })();
+
+    return () => { cancelled = true; };
+  }, [game._id]);
 
 
   // ── Step 1: save attendance + complete game ──────────────────────────────
@@ -277,56 +364,7 @@ export function PostGameModal({ game, onClose, onDone }: Props) {
         return;
       }
 
-      // Build initial rating drafts for all attended real players
-      const attended = game.registrations.filter(
-        (r) => !r.plusOneName && r.player && attendance[r._id] === "present"
-      );
-      const drafts: Record<string, PlayerRatingDraft> = {};
-      for (const reg of attended) {
-        const pid = reg.player!._id;
-        drafts[pid] = {
-          playerId:          pid,
-          name:              reg.player!.name,
-          conductRating:     0,
-          gameplayRating:    0,
-          preferredPosition: "any",
-          gkAffinity:        null,
-          playWith:          [],
-          playAgainst:       [],
-          notes:             "",
-          team:              null,
-        };
-      }
-
-      // Restore any previously saved/current ratings, or fall back to prior-game prefs.
-      try {
-        const rRes = await fetch(
-          buildApiUrl(`/api/v1/games/organisers/${game._id}/player-ratings`),
-          { headers: { Authorization: `Bearer ${token}` } }
-        );
-        const rData = (await rRes.json()) as SavedRatingsResponse;
-
-        if (rData.success) {
-          for (const r of rData.data ?? []) {
-            const pid = r.player?._id || r.playerId;
-            if (!pid || !drafts[pid]) continue;
-            drafts[pid] = {
-              playerId:          pid,
-              name:              r.player?.name || drafts[pid].name,
-              conductRating:     typeof r.conductRating === "number" ? r.conductRating : 0,
-              gameplayRating:    typeof r.gameplayRating === "number" ? r.gameplayRating : 0,
-              preferredPosition: r.preferredPosition || "any",
-              gkAffinity:        typeof r.gkAffinity === "number" ? r.gkAffinity : null,
-              playWith:          Array.isArray(r.playWith) ? r.playWith.map((x: unknown) => String(x)) : [],
-              playAgainst:       Array.isArray(r.playAgainst) ? r.playAgainst.map((x: unknown) => String(x)) : [],
-              notes:             r.notes || "",
-              team:              (r.team === "A" || r.team === "B") ? r.team : null,
-            };
-          }
-        }
-      } catch {}
-
-      setRatings(drafts);
+      // Drafts are already loaded — the modal fetched them when it opened.
       setStep("ratings");
     } catch (e) {
       setError((e as Error).message || "An error occurred");
@@ -342,17 +380,22 @@ export function PostGameModal({ game, onClose, onDone }: Props) {
     const { token } = getSession();
     if (!token) { setSavingRatings(false); return; }
     try {
-      const payload = Object.values(ratings).map((r) => ({
-        playerId:          r.playerId,
-        conductRating:     r.conductRating,
-        gameplayRating:    r.gameplayRating,
-        preferredPosition: r.preferredPosition,
-        gkAffinity:        r.gkAffinity && r.gkAffinity > 0 ? r.gkAffinity : null,
-        playWith:          r.playWith,
-        playAgainst:       r.playAgainst,
-        notes:             r.notes || null,
-        team:              r.team ?? null,
-      }));
+      // Only what the organiser touched, or a player they had never rated. An
+      // untouched pre-filled row carries no new information, and sending it would
+      // tell the player they had been "rated" again for nothing.
+      const payload = ratingList
+        .filter((r) => dirty[r.playerId] || !r.existing)
+        .map((r) => ({
+          playerId:          r.playerId,
+          conductRating:     r.conductRating,
+          gameplayRating:    r.gameplayRating,
+          preferredPosition: r.preferredPosition,
+          gkAffinity:        r.gkAffinity && r.gkAffinity > 0 ? r.gkAffinity : null,
+          playWith:          r.playWith,
+          playAgainst:       r.playAgainst,
+          notes:             r.notes || null,
+          team:              r.team ?? null,
+        }));
 
       if (payload.length > 0) {
         const res = await fetch(
@@ -381,14 +424,18 @@ export function PostGameModal({ game, onClose, onDone }: Props) {
 
   const updateRating = (pid: string, field: keyof PlayerRatingDraft, value: string | number | null) => {
     setRatings((prev) => ({ ...prev, [pid]: { ...prev[pid], [field]: value } }));
+    markDirty(pid);
   };
 
+  // Team is a per-game assignment, not part of the standing opinion — but it still
+  // has to reach the server, so touching it counts as a change worth sending.
   const assignTeam = (pid: string, team: "A" | "B" | null) => {
     setRatings((prev) => ({ ...prev, [pid]: { ...prev[pid], team } }));
+    markDirty(pid);
   };
 
   const autoSplitTeams = () => {
-    const ids = Object.keys(ratings);
+    const ids = ratingList.map((r) => r.playerId);
     const half = Math.ceil(ids.length / 2);
     setRatings((prev) => {
       const next = { ...prev };
@@ -397,6 +444,7 @@ export function PostGameModal({ game, onClose, onDone }: Props) {
       });
       return next;
     });
+    setDirty((prev) => ({ ...prev, ...Object.fromEntries(ids.map((id) => [id, true as const])) }));
   };
 
   const markAllPresent = () => {
@@ -428,7 +476,6 @@ export function PostGameModal({ game, onClose, onDone }: Props) {
   };
 
   const [viewMode, setViewMode] = useState<"express" | "detailed">("express");
-  const [filterUnrated, setFilterUnrated] = useState(false);
   const [selectedPlayerCardId, setSelectedPlayerCardId] = useState("all");
 
   const togglePlayerPreference = (
@@ -458,6 +505,7 @@ export function PostGameModal({ game, onClose, onDone }: Props) {
         },
       };
     });
+    markDirty(pid);
   };
 
   // ── Helpers ──────────────────────────────────────────────────────────────
@@ -468,18 +516,46 @@ export function PostGameModal({ game, onClose, onDone }: Props) {
     .map(([regId]) => regId);
 
   const attendedPlayers = playerRegs.filter((r) => attendedIds.includes(r._id));
-  const ratingList = Object.values(ratings);
 
-  const filteredRatingList = useMemo(() => {
-    return ratingList.filter((r) => {
-      const isUnrated = r.conductRating === 0 || r.gameplayRating === 0;
-      return !filterUnrated || isUnrated;
-    });
-  }, [ratingList, filterUnrated]);
+  // Drafts are held for every player in the game so an attendance change never
+  // discards an edit; the list on screen is whoever actually turned up. Nobody
+  // the organiser has rated before goes first — they are the work.
+  const presentPlayerIds = new Set(attendedPlayers.map((r) => r.player!._id));
+  const ratingList = Object.values(ratings)
+    .filter((r) => presentPlayerIds.has(r.playerId))
+    .sort((a, b) => Number(Boolean(a.existing)) - Number(Boolean(b.existing)));
+
+  const freshList = ratingList.filter((r) => !r.existing);
+  const ratedList = ratingList.filter((r) => r.existing);
+
+  // Everyone already has a standing rating? Then there is nothing to hide behind a
+  // toggle — show them, since revising is the only thing left to do.
+  const [showRated, setShowRated] = useState(false);
+  const collapseRated = freshList.length > 0 && !showRated;
+
+  const filteredRatingList = collapseRated ? freshList : ratingList;
 
   const presentCount = Object.values(attendance).filter((s) => s === "present").length;
   const absentCount = Object.values(attendance).filter((s) => s === "absent").length;
   const ratedCount = ratingList.filter((r) => r.conductRating > 0 && r.gameplayRating > 0).length;
+
+  // What Save would actually send: edits, plus anyone rated here for the first
+  // time. Zero means the pass is already recorded and Save has nothing to do.
+  const pendingCount = ratingList.filter(
+    (r) => dirty[r.playerId] || (!r.existing && r.conductRating > 0 && r.gameplayRating > 0)
+  ).length;
+
+  // "Rated 12 Jul · 4 games" — enough to recognise the opinion as yours.
+  const standingNote = (r: PlayerRatingDraft) => {
+    if (!r.existing) return null;
+    const when = r.existing.lastRatedAt
+      ? new Date(r.existing.lastRatedAt).toLocaleDateString("en-IN", { day: "numeric", month: "short" })
+      : null;
+    const games = r.existing.gamesObserved;
+    return [when && `rated ${when}`, games > 0 && `${games} game${games === 1 ? "" : "s"}`]
+      .filter(Boolean)
+      .join(" · ");
+  };
 
   return (
     <div className="pgm-overlay" onClick={onClose}>
@@ -592,23 +668,39 @@ export function PostGameModal({ game, onClose, onDone }: Props) {
 
             <div className="pgm-summary-row" style={{ padding: "10px 24px 4px" }}>
               <div className="pgm-chip-group">
-                <span className="pgm-summary-chip present">{ratedCount}/{ratingList.length} Rated</span>
-                <button
-                  type="button"
-                  onClick={() => setFilterUnrated(!filterUnrated)}
-                  className={`pgm-chip ${filterUnrated ? "selected" : ""}`}
-                  style={{ fontSize: 11, padding: "2px 8px" }}
-                >
-                  {filterUnrated ? "Show All" : "Unrated Only"}
-                </button>
+                <span className="pgm-summary-chip present">{freshList.length} to rate</span>
+                {ratedList.length > 0 && (
+                  <button
+                    type="button"
+                    onClick={() => setShowRated(!collapseRated)}
+                    className={`pgm-chip ${!collapseRated ? "selected" : ""}`}
+                    style={{ fontSize: 11, padding: "2px 8px" }}
+                    title="Your saved ratings for these players — open to revise one"
+                  >
+                    {collapseRated
+                      ? `${ratedList.length} already rated · Show`
+                      : `${ratedList.length} already rated · Hide`}
+                  </button>
+                )}
               </div>
               <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
                 {viewMode === "express" && <span className="pgm-scroll-hint">👈 Swipe table 👉</span>}
               </div>
             </div>
 
-            {ratingList.length === 0 && (
+            {loadingPrefill && (
+              <div className="pgm-empty">Loading your ratings…</div>
+            )}
+
+            {!loadingPrefill && ratingList.length === 0 && (
               <div className="pgm-empty">No players were marked as present. Nothing to rate.</div>
+            )}
+
+            {!loadingPrefill && ratingList.length > 0 && freshList.length === 0 && (
+              <div className="pgm-guests-note" style={{ margin: "0 24px 8px" }}>
+                You have already rated everyone who played. Ratings carry over — change one only
+                if a player has actually changed.
+              </div>
             )}
 
             {ratingList.length > 0 && viewMode === "express" && (
@@ -636,7 +728,14 @@ export function PostGameModal({ game, onClose, onDone }: Props) {
                           <td style={{ minWidth: 130 }}>
                             <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
                               <PlayerAvatar name={r.name} profileImage={profileImage} />
-                              <span style={{ fontWeight: 600, color: "#f4efe8" }}>{r.name}</span>
+                              <div style={{ display: "flex", flexDirection: "column", gap: 1 }}>
+                                <span style={{ fontWeight: 600, color: "#f4efe8" }}>{r.name}</span>
+                                {r.existing && (
+                                  <span style={{ fontSize: 9.5, color: dirty[r.playerId] ? "#c4d56c" : "#6b6b6b", whiteSpace: "nowrap" }}>
+                                    {dirty[r.playerId] ? "● changed" : `✓ ${standingNote(r)}`}
+                                  </span>
+                                )}
+                              </div>
                             </div>
                           </td>
                           <td>
@@ -740,14 +839,12 @@ export function PostGameModal({ game, onClose, onDone }: Props) {
                         onChange={(e) => setSelectedPlayerCardId(e.target.value)}
                       >
                         <option value="all">👥 Show All Player Cards ({filteredRatingList.length})</option>
-                        {filteredRatingList.map((r, idx) => {
-                          const isRated = r.conductRating > 0 || r.gameplayRating > 0;
-                          return (
-                            <option key={r.playerId} value={r.playerId}>
-                              {idx + 1}. {r.name} {r.team ? `(Team ${r.team})` : ""} {isRated ? "✓ Rated" : "• Unrated"}
-                            </option>
-                          );
-                        })}
+                        {filteredRatingList.map((r, idx) => (
+                          <option key={r.playerId} value={r.playerId}>
+                            {idx + 1}. {r.name} {r.team ? `(Team ${r.team})` : ""}{" "}
+                            {dirty[r.playerId] ? "● Changed" : r.existing ? "✓ Saved" : "• New"}
+                          </option>
+                        ))}
                       </select>
                     </div>
 
@@ -798,8 +895,13 @@ export function PostGameModal({ game, onClose, onDone }: Props) {
                           <div className="pgm-rating-card-header">
                             <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
                               <PlayerAvatar name={r.name} profileImage={profileImage} />
-                              <div>
+                              <div style={{ display: "flex", flexDirection: "column", gap: 2 }}>
                                 <span className="pgm-player-name">{r.name}</span>
+                                {r.existing && (
+                                  <span style={{ fontSize: 10, color: dirty[r.playerId] ? "#c4d56c" : "#6b6b6b" }}>
+                                    {dirty[r.playerId] ? "● changed" : `✓ ${standingNote(r)}`}
+                                  </span>
+                                )}
                               </div>
                             </div>
 
@@ -914,7 +1016,11 @@ export function PostGameModal({ game, onClose, onDone }: Props) {
               <button className="pgm-btn-secondary" onClick={() => setStep("attendance")}>← Back</button>
               <button className="pgm-btn-ghost" onClick={() => setStep("summary")} disabled={savingRatings}>Skip Ratings</button>
               <button className="pgm-btn-primary" onClick={handleSaveRatings} disabled={savingRatings || ratingList.length === 0}>
-                {savingRatings ? "Saving…" : "Save Ratings ✓"}
+                {savingRatings
+                  ? "Saving…"
+                  : pendingCount > 0
+                    ? `Save ${pendingCount} Rating${pendingCount === 1 ? "" : "s"} ✓`
+                    : "Continue →"}
               </button>
             </div>
           </div>
@@ -926,7 +1032,7 @@ export function PostGameModal({ game, onClose, onDone }: Props) {
               <span className="pgm-summary-chip present">{presentCount} Present</span>
               <span className="pgm-summary-chip absent">{absentCount} Absent</span>
               <span style={{ marginLeft: "auto", fontSize: 11, color: "#555" }}>
-                {ratingList.length} players rated
+                {ratedCount} of {ratingList.length} rated
               </span>
             </div>
 

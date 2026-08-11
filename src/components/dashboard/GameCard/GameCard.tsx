@@ -275,7 +275,12 @@ function GameCard({game,variant = "upcoming",isMenuOpen,onToggleMenu,onPlayers,o
                 </div>
                 <div className="postgame-mini-row">
                   <span>Ratings</span>
-                  <b>{game.playerRatingsCount || 0}</b>
+                  {/* Against the number who turned up — the count alone never said
+                      whether the rating pass was finished. */}
+                  <b>
+                    {game.playerRatingsCount || 0}
+                    {presentCount > 0 && <span style={{ opacity: 0.4 }}>/{presentCount}</span>}
+                  </b>
                 </div>
                 <div className="postgame-mini-row">
                   <span>Feedback</span>

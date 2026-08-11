@@ -8,16 +8,21 @@ import "../../../organizer-dashboard.css";
 import "./performance.css";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
+// One standing record per player — what you currently think of them, not a log of
+// every night you rated them.
 interface PlayerRatingGiven {
   _id: string;
   player: { _id: string; name: string; phone?: string };
-  game: { _id: string; title?: string; format?: string; scheduledAt?: string };
+  lastRatedGame?: { _id: string; title?: string; format?: string; scheduledAt?: string } | null;
   conductRating: number;
   gameplayRating: number;
   preferredPosition?: string;
   gkAffinity?: number | null;
   notes?: string;
-  createdAt: string;
+  gamesObserved?: number;
+  revision?: number;
+  lastRatedAt?: string | null;
+  updatedAt?: string;
 }
 
 function Stars({ value, size = 16 }: { value: number; size?: number }) {
@@ -70,14 +75,17 @@ export default function OrgPerformancePage() {
   const totalRated = ratingsGiven.length;
   const avgConduct  = totalRated ? (ratingsGiven.reduce((s, r) => s + r.conductRating,  0) / totalRated).toFixed(1) : null;
   const avgGameplay = totalRated ? (ratingsGiven.reduce((s, r) => s + r.gameplayRating, 0) / totalRated).toFixed(1) : null;
+  const totalGamesObserved = ratingsGiven.reduce((s, r) => s + (r.gamesObserved || 0), 0);
 
   return (
     <div className="organizer-dashboard-container">
       {/* Header */}
       <div className="dashboard-header-section">
         <div className="header-left">
-          <h1 className="dashboard-title">Ratings Given to Players</h1>
-          <p className="dashboard-subtitle">Conduct and gameplay ratings you gave after completed games</p>
+          <h1 className="dashboard-title">Your Player Ratings</h1>
+          <p className="dashboard-subtitle">
+            One standing rating per player, revised whenever you rate them again after a game
+          </p>
         </div>
       </div>
 
@@ -105,6 +113,12 @@ export default function OrgPerformancePage() {
                   <div className="op-stat-label">Avg Gameplay Given</div>
                 </div>
               )}
+              {totalGamesObserved > 0 && (
+                <div className="op-stat">
+                  <div className="op-stat-value">{totalGamesObserved}</div>
+                  <div className="op-stat-label">Games Observed</div>
+                </div>
+              )}
             </div>
           )}
 
@@ -112,7 +126,10 @@ export default function OrgPerformancePage() {
             <div className="empty-state">
               <div className="empty-icon">⭐</div>
               <h3>No ratings given yet</h3>
-              <p>After completing a game and marking attendance, rate your players. All ratings appear here.</p>
+              <p>
+                After completing a game and marking attendance, rate your players. Each player gets one
+                rating you can revise later — you will never be asked to rate the same regular twice.
+              </p>
             </div>
           ) : (
             <div className="op-cards">
@@ -122,12 +139,18 @@ export default function OrgPerformancePage() {
                     <div className="op-card-main">
                       <div className="op-card-name">{r.player?.name || "Player"}</div>
                       <div className="op-card-meta">
-                        {r.game?.title && <span className="op-muted">{r.game.title}</span>}
-                        {r.game?.format && <span className="op-badge">{r.game.format}</span>}
-                        {r.game?.scheduledAt && (
-                          <span className="op-muted">
-                            {new Date(r.game.scheduledAt).toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric" })}
+                        {(r.gamesObserved ?? 0) > 0 && (
+                          <span className="op-badge">
+                            {r.gamesObserved} game{r.gamesObserved === 1 ? "" : "s"} observed
                           </span>
+                        )}
+                        {r.lastRatedAt && (
+                          <span className="op-muted">
+                            last rated {new Date(r.lastRatedAt).toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric" })}
+                          </span>
+                        )}
+                        {(r.revision ?? 1) > 1 && (
+                          <span className="op-muted">revised {r.revision! - 1}×</span>
                         )}
                       </div>
                     </div>
