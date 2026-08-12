@@ -1,7 +1,6 @@
 "use client";
 
 import React, { useState, useEffect, useRef } from "react";
-import Image from "next/image";
 import { buildApiUrl, getSession } from "@/utils/api";
 import "./PostGameModal.css";
 
@@ -294,7 +293,7 @@ export function PostGameModal({ game, onClose, onDone }: Props) {
             conductRating:     typeof e?.conductRating === "number" ? e.conductRating : 0,
             gameplayRating:    typeof e?.gameplayRating === "number" ? e.gameplayRating : 0,
             preferredPosition: e?.preferredPosition || "any",
-            gkAffinity:        typeof e?.gkAffinity === "number" ? e.gkAffinity : null,
+            gkAffinity:        e?.gkAffinity ?? null,
             playWith:          Array.isArray(e?.playWith) ? e.playWith.map((x: unknown) => String(x)) : [],
             playAgainst:       Array.isArray(e?.playAgainst) ? e.playAgainst.map((x: unknown) => String(x)) : [],
             notes:             e?.notes || "",
@@ -390,7 +389,7 @@ export function PostGameModal({ game, onClose, onDone }: Props) {
           conductRating:     r.conductRating,
           gameplayRating:    r.gameplayRating,
           preferredPosition: r.preferredPosition,
-          gkAffinity:        r.gkAffinity && r.gkAffinity > 0 ? r.gkAffinity : null,
+          gkAffinity:        r.gkAffinity ?? null,
           playWith:          r.playWith,
           playAgainst:       r.playAgainst,
           notes:             r.notes || null,
@@ -745,7 +744,13 @@ export function PostGameModal({ game, onClose, onDone }: Props) {
                             <StarRating size="mini" value={r.gameplayRating} onChange={(v) => updateRating(r.playerId, "gameplayRating", v)} />
                           </td>
                           <td>
-                            <select className="pgm-select" style={{ padding: "4px 8px", fontSize: 11, width: 60, textAlign: "center" }} value={r.gkAffinity ?? 0} onChange={(e) => updateRating(r.playerId, "gkAffinity", Number(e.target.value))}>
+                            <select
+                              className="pgm-select"
+                              style={{ padding: "4px 8px", fontSize: 11, width: 60, textAlign: "center" }}
+                              value={r.gkAffinity == null ? "na" : r.gkAffinity}
+                              onChange={(e) => updateRating(r.playerId, "gkAffinity", e.target.value === "na" ? null : Number(e.target.value))}
+                            >
+                              <option value="na">NA</option>
                               {[0, 1, 2, 3, 4, 5].map((n) => (
                                 <option key={n} value={n}>{n}</option>
                               ))}
@@ -948,9 +953,10 @@ export function PostGameModal({ game, onClose, onDone }: Props) {
                               <select
                                 className="pgm-select"
                                 style={{ padding: "3px 8px", fontSize: 11, width: "auto", minWidth: 54, borderRadius: 4 }}
-                                value={r.gkAffinity ?? 0}
-                                onChange={(e) => updateRating(r.playerId, "gkAffinity", Number(e.target.value))}
+                                value={r.gkAffinity == null ? "na" : r.gkAffinity}
+                                onChange={(e) => updateRating(r.playerId, "gkAffinity", e.target.value === "na" ? null : Number(e.target.value))}
                               >
+                                <option value="na">NA</option>
                                 {[0, 1, 2, 3, 4, 5].map((n) => (
                                   <option key={n} value={n}>{n}</option>
                                 ))}
