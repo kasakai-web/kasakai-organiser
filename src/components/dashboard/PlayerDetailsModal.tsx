@@ -16,7 +16,21 @@ interface Registration {
   plusOneName?: string | null;
   preferredPosition?: string;
   teamPreference?: string;
-  teamRequests?: { target?: string | null; guestName?: string | null; relation: "with" | "against"; hard?: boolean }[];
+  // `target` arrives populated ({ _id, name }) from my-games and as a bare id from
+  // the endpoints that return a game after a write — both shapes have to read.
+  teamRequests?: {
+    target?: string | { _id?: string; name?: string } | null;
+    guestName?: string | null;
+    relation: "with" | "against";
+    hard?: boolean;
+  }[];
+  // Whose guest this is, and whether they came to play alongside them or against
+  // them. Null on a guest row means "derive it" — a player's guest plays with them.
+  guestOf?: string | { _id?: string; name?: string } | null;
+  guestRelation?: "with" | "against" | "none" | null;
+  addedByOrganiser?: boolean;
+  // Answered at signup: would they still play if the organiser changed the format?
+  willingIfFormatChange?: boolean;
   signedUpAt?: string;
   paymentStatus?: string;
   amountPaidPaise?: number;
@@ -85,6 +99,21 @@ const POS_LABEL: Record<string, string> = {
 function posLabel(raw?: string) {
   if (!raw || raw === "any") return null;
   return POS_LABEL[raw.toLowerCase()] ?? raw.toUpperCase();
+}
+
+// A Player ref reaches us either populated ({ _id, name }) or as a bare id,
+// depending on which endpoint last returned the game.
+function refId(v: unknown): string | null {
+  if (!v) return null;
+  if (typeof v === "string") return v;
+  const id = (v as { _id?: unknown })._id;
+  return id ? String(id) : null;
+}
+
+function refName(v: unknown): string | null {
+  if (!v || typeof v === "string") return null;
+  const name = (v as { name?: unknown }).name;
+  return typeof name === "string" ? name : null;
 }
 
 function teamInfo(raw?: string): { label: string; cls: string } | null {
@@ -298,6 +327,7 @@ function downloadTeamExcel(result: {
   teamB: string[];
   statsA?: { totalSkill?: number; totalGKQuotient?: number; playerCount?: number; positions?: Record<string, number> };
   statsB?: { totalSkill?: number; totalGKQuotient?: number; playerCount?: number; positions?: Record<string, number> };
+  colours?: { A: "red" | "blue"; B: "red" | "blue" };
   isBalanced?: boolean;
   skillDifference?: number;
   playerDetails?: Record<string, string>;
@@ -306,9 +336,16 @@ function downloadTeamExcel(result: {
     ? upperMeridiem(new Date(scheduledAt).toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit", hour12: true }))
     : "N/A";
   const venueName = [venue, location].filter(Boolean).join(", ") || "N/A";
-  const rows = Math.max(result.teamA.length, result.teamB.length);
-  const sA   = result.statsA || {};
-  const sB   = result.statsB || {};
+  // The two columns are painted red and blue, so they have to be filled by
+  // colour, not by A/B — v2 labels the sides after balancing and team A is
+  // often blue. Trusting A here sends half the squad out in the wrong shirt.
+  const colours = result.colours || { A: "red" as const, B: "blue" as const };
+  const sideA   = { names: result.teamA, stats: result.statsA || {} };
+  const sideB   = { names: result.teamB, stats: result.statsB || {} };
+  const red     = colours.A === "red" ? sideA : sideB;
+  const blue    = colours.A === "red" ? sideB : sideA;
+
+  const rows = Math.max(red.names.length, blue.names.length);
   const pd   = result.playerDetails || {};
 
   const fmt = (name: string) => {
@@ -318,8 +355,8 @@ function downloadTeamExcel(result: {
 
   const playerRows = Array.from({ length: rows }, (_, i) => `
     <tr>
-      <td style="background:#fee2e2;color:#7f1d1d;padding:8px 12px;border:1px solid #fca5a5;">${result.teamA[i] ? fmt(result.teamA[i]) : ""}</td>
-      <td style="background:#dbeafe;color:#1e3a8a;padding:8px 12px;border:1px solid #93c5fd;">${result.teamB[i] ? fmt(result.teamB[i]) : ""}</td>
+      <td style="background:#fee2e2;color:#7f1d1d;padding:8px 12px;border:1px solid #fca5a5;">${red.names[i] ? fmt(red.names[i]) : ""}</td>
+      <td style="background:#dbeafe;color:#1e3a8a;padding:8px 12px;border:1px solid #93c5fd;">${blue.names[i] ? fmt(blue.names[i]) : ""}</td>
     </tr>`).join("");
 
   const html = `
@@ -346,19 +383,19 @@ function downloadTeamExcel(result: {
   </tr>` : ""}
   <tr>
     <td style="background:#ef4444;color:#fff;font-weight:bold;font-size:15px;text-align:center;padding:10px;border:1px solid #dc2626;">
-      🔴 Red Team (${result.teamA.length} players)
+      🔴 Red Team (${red.names.length} players)
     </td>
     <td style="background:#3b82f6;color:#fff;font-weight:bold;font-size:15px;text-align:center;padding:10px;border:1px solid #2563eb;">
-      🔵 Blue Team (${result.teamB.length} players)
+      🔵 Blue Team (${blue.names.length} players)
     </td>
   </tr>
   ${playerRows}
   <tr>
     <td style="background:#fca5a5;font-weight:bold;padding:8px 12px;border:1px solid #f87171;">
-      Skill: ${sA.totalSkill ?? "-"} &nbsp;|&nbsp; GK: ${sA.totalGKQuotient ?? "-"} &nbsp;|&nbsp; Players: ${sA.playerCount ?? result.teamA.length}
+      Skill: ${red.stats.totalSkill ?? "-"} &nbsp;|&nbsp; GK: ${red.stats.totalGKQuotient ?? "-"} &nbsp;|&nbsp; Players: ${red.stats.playerCount ?? red.names.length}
     </td>
     <td style="background:#93c5fd;font-weight:bold;padding:8px 12px;border:1px solid #60a5fa;">
-      Skill: ${sB.totalSkill ?? "-"} &nbsp;|&nbsp; GK: ${sB.totalGKQuotient ?? "-"} &nbsp;|&nbsp; Players: ${sB.playerCount ?? result.teamB.length}
+      Skill: ${blue.stats.totalSkill ?? "-"} &nbsp;|&nbsp; GK: ${blue.stats.totalGKQuotient ?? "-"} &nbsp;|&nbsp; Players: ${blue.stats.playerCount ?? blue.names.length}
     </td>
   </tr>
   <tr>
@@ -403,17 +440,19 @@ function downloadTeamExcel(result: {
 
     lines.push("");
     lines.push("─".repeat(28));
-    lines.push(`${heading("A")} (${(teams.teamA || []).length} players)`);
-    (teams.teamA || []).forEach((name: string, i: number) => {
-      const detail = pd[name];
-      lines.push(`${i + 1}. ${name}${detail ? ` (${detail})` : ""}`);
-    });
 
-    lines.push("");
-    lines.push(`${heading("B")} (${(teams.teamB || []).length} players)`);
-    (teams.teamB || []).forEach((name: string, i: number) => {
-      const detail = pd[name];
-      lines.push(`${i + 1}. ${name}${detail ? ` (${detail})` : ""}`);
+    // Red first, then blue — the same order the portal and the downloaded sheet
+    // put them in, so an organiser reading the two side by side isn't checking
+    // a message whose halves are the other way round.
+    const sideOrder: ("A" | "B")[] = colours.A === "red" ? ["A", "B"] : ["B", "A"];
+    sideOrder.forEach((side, index) => {
+      const names = (side === "A" ? teams.teamA : teams.teamB) || [];
+      if (index > 0) lines.push("");
+      lines.push(`${heading(side)} (${names.length} players)`);
+      names.forEach((name: string, i: number) => {
+        const detail = pd[name];
+        lines.push(`${i + 1}. ${name}${detail ? ` (${detail})` : ""}`);
+      });
     });
 
     lines.push("─".repeat(28));
@@ -463,13 +502,19 @@ function downloadTeamExcel(result: {
   const mainRegs  = roster.filter((r) => !r.plusOneName);
   const guestRegs = roster.filter((r) => !!r.plusOneName);
 
-  // teamRequests.target is a bare Player ObjectId (not populated by the
-  // backend) — resolve it to a display name from the roster we already have.
+  // my-games populates teamRequests.target, but the endpoints that return a game
+  // after a write (add-player, add-guest, remove) do not — there it is still a
+  // bare ObjectId. Index the roster so those ids can be resolved to a name too.
   const playerNameById = new Map<string, string>();
   players.forEach((r) => {
-    const pid = (r.player as any)?._id?.toString?.() ?? (r.player as any)?.toString?.();
-    const pname = (r.player as any)?.name;
+    const pid = refId(r.player);
+    const pname = refName(r.player);
     if (pid && pname) playerNameById.set(pid, pname);
+    (r.teamRequests || []).forEach((req) => {
+      const tid = refId(req.target);
+      const tname = refName(req.target);
+      if (tid && tname) playerNameById.set(tid, tname);
+    });
   });
 
   // An organiser's filler guest has no host player: `addedByOrganiser` says so
@@ -478,18 +523,20 @@ function downloadTeamExcel(result: {
   const loggedInOrgId = typeof window !== "undefined" ? (localStorage.getItem("userId") || "") : "";
   const isOrganiserGuest = (r: Registration) => {
     if (!r.plusOneName) return false;
-    if ((r as any).addedByOrganiser) return true;
+    if (r.addedByOrganiser) return true;
     if (!r.player) return true;
-    return String((r.player as any)?._id ?? (r.player as any) ?? "") === loggedInOrgId;
+    return refId(r.player) === loggedInOrgId;
   };
   const organiserGuests = roster.filter(isOrganiserGuest);
-  // Player guests grouped by their owner's player ID (exclude organiser guests)
+  // Player guests grouped by their host. `guestOf` is the explicit host and the
+  // field team distribution reads; `player` is the same person on every row the
+  // app writes, and the fallback for rows written before guestOf existed.
   const guestsByPlayer = new Map<string, Registration[]>();
   roster.filter((r) => {
     if (!r.plusOneName || !r.player) return false;
     return !isOrganiserGuest(r);
   }).forEach((r) => {
-    const k = (r.player as any)?._id?.toString() ?? (r.player as any)?.toString() ?? "";
+    const k = refId(r.guestOf) ?? refId(r.player);
     if (k) {
       if (!guestsByPlayer.has(k)) guestsByPlayer.set(k, []);
       guestsByPlayer.get(k)!.push(r);
@@ -877,9 +924,7 @@ function downloadTeamExcel(result: {
                 return mainRegs.map((reg) => {
                   slot++;
                   const regId   = reg._id || "";
-                  const playerId = (reg.player as any)?._id?.toString()
-                    ?? (reg.player as any)?.toString()
-                    ?? "";
+                  const playerId = refId(reg.player) ?? "";
                   const myGuests = guestsByPlayer.get(playerId) ?? [];
 
                   return (
@@ -992,6 +1037,7 @@ function downloadTeamExcel(result: {
           {teams && (
             <TeamDistributionPanel
               gameId={gameId}
+              gameStatus={gameStatus}
               teams={teams}
               onDistribute={handleDistribute}
               // Merged, not replaced: a move returns the teams, not the extras
@@ -1369,10 +1415,39 @@ function PlayerCard({
   const pos     = posLabel(reg.preferredPosition);
   const team    = teamInfo(reg.teamPreference);
   const date    = fmtDate(reg.signedUpAt);
-  const requests = (reg.teamRequests || []).map((r) => ({
-    relation: r.relation,
-    name: r.guestName || (r.target ? playerNameById?.get(String(r.target)) : null) || "Unknown",
-  }));
+
+  // Who this person asked to play with or against. `hard` means an organiser
+  // promoted the request to a constraint the distributor cannot break; players
+  // can only ask.
+  const requests = (reg.teamRequests || []).map((r) => {
+    const tid = refId(r.target);
+    return {
+      relation: r.relation,
+      hard: Boolean(r.hard),
+      name: r.guestName
+        || refName(r.target)
+        || (tid ? playerNameById?.get(tid) : null)
+        || "someone not in this game",
+    };
+  });
+
+  // A guest's tie to whoever brought them is the same kind of preference — it
+  // just lives on the guest row rather than in teamRequests. A guest row carries
+  // its host in `player`, so no extra lookup is needed. Mirrors the backend's
+  // deriveGuestRelation, including the legacy same/opposite spelling.
+  const hostName = isGuest && !reg.addedByOrganiser ? (reg.player?.name ?? null) : null;
+  const guestRelation = !hostName
+    ? null
+    : reg.guestRelation
+      ?? (reg.teamPreference === "opposite" ? "against" : "with");
+  const guestLink = guestRelation && guestRelation !== "none"
+    ? { relation: guestRelation as "with" | "against", name: hostName!, hard: true }
+    : null;
+
+  // Only meaningful on a player's own row — a guest never answered the question.
+  const formatChange = !isGuest && typeof reg.willingIfFormatChange === "boolean"
+    ? reg.willingIfFormatChange
+    : null;
   const imgSrc  = !isGuest && reg.player?.profileImage
     ? (reg.player.profileImage.startsWith("http") ? reg.player.profileImage : `${IMG_BASE}${reg.player.profileImage}`)
     : null;
@@ -1422,11 +1497,16 @@ function PlayerCard({
             )}
           </div>
         )}
-        {requests.length > 0 && (
+        {(guestLink || requests.length > 0 || formatChange !== null) && (
           <div style={{ display: "flex", alignItems: "center", gap: 6, marginTop: 4, flexWrap: "wrap" }}>
-            {requests.map((r, i) => (
+            {[...(guestLink ? [guestLink] : []), ...requests].map((r, i) => (
               <span
                 key={i}
+                title={
+                  r.hard
+                    ? `${r.relation === "with" ? "Must play with" : "Must play against"} ${r.name} — the distributor cannot break this`
+                    : `Asked to play ${r.relation} ${r.name} — honoured where the balance allows`
+                }
                 style={{
                   fontSize: 10, fontWeight: 700, borderRadius: 20, padding: "2px 8px",
                   color: r.relation === "with" ? "#c8ff3e" : "#ff9f7f",
@@ -1434,12 +1514,31 @@ function PlayerCard({
                   border: `1px solid ${r.relation === "with" ? "rgba(200,255,62,0.25)" : "rgba(255,159,127,0.25)"}`,
                 }}
               >
-                {r.relation === "with" ? "With" : "Against"} {r.name}
+                {r.hard ? "🔒 " : ""}{r.relation === "with" ? "With" : "Against"} {r.name}
               </span>
             ))}
+            {/* Answered at signup. "No" is the one that costs the organiser a
+                slot when they switch format, so it is the one that stands out. */}
+            {formatChange !== null && (
+              <span
+                title={
+                  formatChange
+                    ? "Happy to play even if you change the format"
+                    : "Will be removed and refunded if you change the format"
+                }
+                style={{
+                  fontSize: 10, fontWeight: 700, borderRadius: 20, padding: "2px 8px",
+                  color: formatChange ? "#7a8a5e" : "#f59e0b",
+                  background: formatChange ? "rgba(255,255,255,0.03)" : "rgba(245,158,11,0.1)",
+                  border: `1px solid ${formatChange ? "rgba(255,255,255,0.08)" : "rgba(245,158,11,0.3)"}`,
+                }}
+              >
+                {formatChange ? "Format change OK" : "No format change"}
+              </span>
+            )}
           </div>
         )}
-        {isGuest && !pos && !team && requests.length === 0 && (
+        {isGuest && !pos && !team && !guestLink && requests.length === 0 && (
           <div style={{ fontSize: 10, color: "#444", marginTop: 4 }}>No preferences set</div>
         )}
 

@@ -2,6 +2,7 @@
 
 import React, { useState } from "react";
 import { buildApiUrl, getAuthHeaders } from "@/utils/api";
+import { ConfirmationModal } from "@/components/ui/ConfirmationModal";
 
 /**
  * Distributed teams, why they came out that way, and what to do next.
@@ -17,7 +18,6 @@ export type Assignment = {
   name: string;
   team: "A" | "B";
   colour: "red" | "blue";
-  isGoalkeeper?: boolean;
   colourOutcome?: "granted" | "denied" | "rationed" | "superseded" | "none";
   colourReason?: string | null;
 };
@@ -35,7 +35,6 @@ export type DistributionResult = {
   colours?: { A: "red" | "blue"; B: "red" | "blue" };
   colourSummary?: Record<string, number>;
   assignments?: Assignment[];
-  goalkeepers?: { id: string; name: string; team: "A" | "B"; gkScore: number }[];
   warnings?: string[];
   reasoningLog?: string[];
 };
@@ -63,6 +62,7 @@ const COLOUR_STYLE = (colour: "red" | "blue") =>
 
 export function TeamDistributionPanel({
   gameId,
+  gameStatus,
   teams,
   onDistribute,
   onTeamsChanged,
@@ -71,6 +71,8 @@ export function TeamDistributionPanel({
   copySlot,
 }: {
   gameId: string;
+  /** Drives the publish warning — publishing an unconfirmed game confirms it. */
+  gameStatus?: string;
   teams: DistributionResult;
   onDistribute: (reshuffleNonce: number) => Promise<void>;
   /** Hand back a fresh distribution result — a manual move rewrites the teams. */
@@ -84,14 +86,27 @@ export function TeamDistributionPanel({
   const [published, setPublished] = useState(false);
   const [nonce, setNonce] = useState(0);
   const [pinned, setPinned] = useState<Record<string, "A" | "B" | null>>({});
+  const [confirmingPublish, setConfirmingPublish] = useState(false);
+
+  // The backend confirms an open/tentative game as part of publishing, so the
+  // organiser has to be told that before they press it — a status change is not
+  // something to discover afterwards.
+  const publishConfirmsGame = gameStatus === "open" || gameStatus === "tentative";
 
   const isV2 = teams.version === 2;
   const colours = teams.colours || { A: "red" as const, B: "blue" as const };
   const byTeam = (side: "A" | "B") => (teams.assignments || []).filter((a) => a.team === side);
 
+  // Colour is a label v2 puts on a partition after balancing, so team A is not
+  // always red — left/right would otherwise flip between runs of the same game.
+  // Pin the columns to the colours instead: Red/White left, Blue/Black right,
+  // the way the organiser reads them out to two sets of shirts.
+  const sideOrder: ("A" | "B")[] = colours.A === "red" ? ["A", "B"] : ["B", "A"];
+
   const publish = async () => {
     setBusy("publish");
     try {
+      setConfirmingPublish(false);
       const res = await fetch(buildApiUrl(`/api/v1/games/organisers/${gameId}/teams/publish`), {
         method: "POST",
         headers: getAuthHeaders(),
@@ -108,9 +123,10 @@ export function TeamDistributionPanel({
       const waNote = wa
         ? ` · WhatsApp ${wa.sent} sent${wa.failed ? `, ${wa.failed} failed` : ""}`
         : "";
+      const confirmedNote = data.data?.gameConfirmed ? " and the game confirmed" : "";
       showStatus(
         "success",
-        `Teams published — ${data.data?.published ?? 0} player(s) notified${waNote}`
+        `Teams published${confirmedNote} — ${data.data?.published ?? 0} player(s) notified${waNote}`
       );
       onRefresh?.();
     } catch {
@@ -206,7 +222,7 @@ export function TeamDistributionPanel({
     const stats = side === "A" ? teams.statsA : teams.statsB;
 
     return (
-      <div style={{ flex: 1, background: style.bg, border: `1px solid ${style.border}`, borderRadius: 8, padding: "12px 14px" }}>
+      <div key={side} style={{ flex: 1, background: style.bg, border: `1px solid ${style.border}`, borderRadius: 8, padding: "12px 14px" }}>
         <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", marginBottom: 10 }}>
           <div style={{ fontSize: 11, fontWeight: 700, color: style.fg, textTransform: "uppercase", letterSpacing: "0.1em" }}>
             {style.label}
@@ -232,8 +248,10 @@ export function TeamDistributionPanel({
                   borderBottom: "1px solid rgba(255,255,255,0.05)",
                 }}
               >
+                {/* Which side someone is on is the organiser's decision to make
+                    public; who keeps goal is not. The distributor still splits
+                    the keepers — it just isn't announced on the team list. */}
                 <span style={{ flex: 1, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                  {a.isGoalkeeper && <span title="Goalkeeper">🧤 </span>}
                   {a.name}
                 </span>
                 {tone && a.colourOutcome !== "none" && (
@@ -311,10 +329,14 @@ export function TeamDistributionPanel({
                 🔀 {busy === "reshuffle" ? "Shuffling…" : "Reshuffle"}
               </button>
               <button
-                onClick={publish}
+                onClick={() => setConfirmingPublish(true)}
                 disabled={busy != null || published}
                 style={btn(published ? "#4ade80" : "#c8ff3e", busy === "publish")}
-                title="Show these teams to the players and notify them"
+                title={
+                  publishConfirmsGame
+                    ? "Show these teams to the players, notify them, and confirm the game"
+                    : "Show these teams to the players and notify them"
+                }
               >
                 {published ? "✓ Published" : busy === "publish" ? "Publishing…" : "📣 Publish"}
               </button>
@@ -332,8 +354,7 @@ export function TeamDistributionPanel({
       )}
 
       <div style={{ display: "flex", gap: 16, flexWrap: "wrap" }}>
-        {renderSide("A")}
-        {renderSide("B")}
+        {sideOrder.map((side) => renderSide(side))}
       </div>
 
       {isV2 && teams.reasoningLog && teams.reasoningLog.length > 0 && (
@@ -355,11 +376,26 @@ export function TeamDistributionPanel({
 
       {isV2 && (
         <div style={{ marginTop: 10, fontSize: 10.5, color: "#666", lineHeight: 1.6 }}>
-          Players only see their side once you press Publish. ⇄ swaps a player over straight away;
-          📌 pins them for the next distribution. Past announcements live under the game card&apos;s
-          Actions ▸ Team history.
+          Players only see their side once you press Publish
+          {publishConfirmsGame ? ", which also confirms the game" : ""}. ⇄ swaps a player over
+          straight away; 📌 pins them for the next distribution. Past announcements live under the
+          game card&apos;s Actions ▸ Team history.
         </div>
       )}
+
+      <ConfirmationModal
+        open={confirmingPublish}
+        loading={busy === "publish"}
+        title={publishConfirmsGame ? "Publish teams and confirm the game?" : "Publish these teams?"}
+        message={
+          publishConfirmsGame
+            ? "Every player gets their shirt colour on WhatsApp and in the app — and this confirms the game, so they will be told it is going ahead.\n\nThe game's status changes to Confirmed. You can still reshuffle or move players afterwards, but they will have already been told."
+            : "Every player gets their shirt colour on WhatsApp and in the app.\n\nYou can still reshuffle or move players afterwards, but they will have already been told."
+        }
+        confirmLabel={publishConfirmsGame ? "Publish & confirm" : "Publish"}
+        onConfirm={publish}
+        onCancel={() => setConfirmingPublish(false)}
+      />
     </div>
   );
 }

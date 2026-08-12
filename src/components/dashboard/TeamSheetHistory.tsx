@@ -20,7 +20,6 @@ type SheetMember = {
   isGuest?: boolean;
   isOrganiser?: boolean;
   hostName?: string | null;
-  isGoalkeeper?: boolean;
   whatsapp?: "sent" | "failed" | "skipped" | "not_sent";
   whatsappError?: string | null;
 };
@@ -190,7 +189,6 @@ export function TeamSheetHistory({ gameId }: { gameId: string }) {
                             }}
                           >
                             <span style={{ flex: 1, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                              {m.isGoalkeeper && <span title="Goalkeeper">🧤 </span>}
                               {m.name}
                               {m.isGuest && (
                                 <span style={{ fontSize: 10, color: "#6b7280" }}>
