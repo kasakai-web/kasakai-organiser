@@ -15,10 +15,11 @@ const TIME_SLOT_OPTIONS = Array.from({ length: 96 }, (_, idx) => {
   return { value, label: `${displayHour}:${minutes} ${period}` };
 });
 
-const FORMATS = ["5v5", "6v6", "7v7", "8v8", "9v9", "10v10"] as const;
+const FORMATS = ["5v5", "6v6", "7v7", "8v8", "9v9", "10v10", "11v11","Screening"] as const;
 type Format = typeof FORMATS[number];
 
 const slotsFromFormat = (fmt: string) => {
+  if (fmt === "Screening") return 0; // Screening format has no fixed slots
   const parts = fmt.split("v");
   if (parts.length === 2) return parseInt(parts[0]) + parseInt(parts[1]);
   return 10;
@@ -188,11 +189,18 @@ export function CreateEventForm({ lastEvent, presetDate, onClose, onCreate, onSu
 
   useEffect(() => {
     const slots = slotsFromFormat(format);
-    setMaxPlayers((prev) => (Number(prev) >= slots ? prev : String(slots)));
-    if (!minPlayersEdited.current) {
-      setMinPlayers(String(Math.ceil(slots / 2)));
+    if (format === "Screening") {
+      // For Screening, preserve user's input or use defaults
+      if (!minPlayersEdited.current && !minPlayers) setMinPlayers("2");
+      if (!maxPlayers) setMaxPlayers("20");
     } else {
-      setMinPlayers((prev) => String(Math.min(Number(prev), slots)));
+      // For regular formats, constrain to format slots
+      setMaxPlayers((prev) => (Number(prev) >= slots ? prev : String(slots)));
+      if (!minPlayersEdited.current) {
+        setMinPlayers(String(Math.ceil(slots / 2)));
+      } else {
+        setMinPlayers((prev) => String(Math.min(Number(prev), slots)));
+      }
     }
   }, [format]);
 
@@ -297,9 +305,9 @@ export function CreateEventForm({ lastEvent, presetDate, onClose, onCreate, onSu
     const formatSlots = slotsFromFormat(format);
     if (Number(minPlayers) < 2)
       newErrors.minMax = "Min players required must be at least 2";
-    else if (Number(minPlayers) > formatSlots)
+    else if (format !== "Screening" && Number(minPlayers) > formatSlots)
       newErrors.minMax = `Min players cannot exceed ${formatSlots} (total slots for ${format})`;
-    else if (Number(maxPlayers) < formatSlots)
+    else if (format !== "Screening" && Number(maxPlayers) < formatSlots)
       newErrors.minMax = `Max players must be at least ${formatSlots} for ${format}`;
     else if (Number(maxPlayers) < Number(minPlayers))
       newErrors.minMax = "Max players cannot be less than min players";
@@ -762,7 +770,7 @@ export function CreateEventForm({ lastEvent, presetDate, onClose, onCreate, onSu
                 className="form-select"
               >
                 {FORMATS.map((f) => (
-                  <option key={f} value={f}>{f} ({slotsFromFormat(f)} Players)</option>
+                  <option key={f} value={f}>{f === "Screening" ? "Screening" : `${f} (${slotsFromFormat(f)} Players)`}</option>
                 ))}
               </select>
             </div>
@@ -794,41 +802,50 @@ export function CreateEventForm({ lastEvent, presetDate, onClose, onCreate, onSu
                   disabled={Number(minPlayers) <= 2}
                 >−</button>
                 <input
-                  type="number" min="2" max={slotsFromFormat(format)}
+                  type="number" min="2" max={format === "Screening" ? undefined : slotsFromFormat(format)}
                   value={minPlayers}
                   onChange={(e) => {
                     minPlayersEdited.current = true;
                     const val = Number(e.target.value);
-                    const cap = slotsFromFormat(format);
                     if (val < 2) setMinPlayers("2");
-                    else if (val > cap) setMinPlayers(String(cap));
-                    else setMinPlayers(e.target.value);
+                    else if (format !== "Screening") {
+                      const cap = slotsFromFormat(format);
+                      if (val > cap) setMinPlayers(String(cap));
+                      else setMinPlayers(e.target.value);
+                    } else {
+                      setMinPlayers(e.target.value);
+                    }
                   }}
                   className={`form-input stepper-input ${errors.minMax ? "error" : ""}`}
                 />
                 <button type="button" className="stepper-btn"
-                  onClick={() => { minPlayersEdited.current = true; setMinPlayers((v: string) => String(Math.min(slotsFromFormat(format), Number(v) + 1))); }}
-                  disabled={Number(minPlayers) >= slotsFromFormat(format)}
+                  onClick={() => { minPlayersEdited.current = true; setMinPlayers((v: string) => format === "Screening" ? String(Number(v) + 1) : String(Math.min(slotsFromFormat(format), Number(v) + 1))); }}
+                  disabled={format !== "Screening" && Number(minPlayers) >= slotsFromFormat(format)}
                 >+</button>
               </div>
-              <div className="field-hint">Min to confirm · max {slotsFromFormat(format)} for {format}</div>
+              <div className="field-hint">{format === "Screening" ? "Min players to confirm" : `Min to confirm · max ${slotsFromFormat(format)} for ${format}`}</div>
             </div>
 
             <div className="form-group">
               <label className="form-label"><span className="label-text">Max Players Allowed</span></label>
               <div className="stepper-row">
                 <button type="button" className="stepper-btn"
-                  onClick={() => setMaxPlayers((v: string) => String(Math.max(slotsFromFormat(format), Number(v) - 1)))}
-                  disabled={Number(maxPlayers) <= slotsFromFormat(format)}
+                  onClick={() => setMaxPlayers((v: string) => String(Math.max(format === "Screening" ? 2 : slotsFromFormat(format), Number(v) - 1)))}
+                  disabled={format !== "Screening" && Number(maxPlayers) <= slotsFromFormat(format)}
                 >−</button>
                 <input
-                  type="number" min={slotsFromFormat(format)}
+                  type="number" min={format === "Screening" ? 2 : slotsFromFormat(format)}
                   value={maxPlayers}
                   onChange={(e) => {
                     const val = Number(e.target.value);
-                    const floor = slotsFromFormat(format);
-                    if (val < floor) setMaxPlayers(String(floor));
-                    else setMaxPlayers(e.target.value);
+                    if (format === "Screening") {
+                      if (val < 2) setMaxPlayers("2");
+                      else setMaxPlayers(e.target.value);
+                    } else {
+                      const floor = slotsFromFormat(format);
+                      if (val < floor) setMaxPlayers(String(floor));
+                      else setMaxPlayers(e.target.value);
+                    }
                   }}
                   className={`form-input stepper-input ${errors.minMax ? "error" : ""}`}
                 />
@@ -837,7 +854,7 @@ export function CreateEventForm({ lastEvent, presetDate, onClose, onCreate, onSu
                 >+</button>
               </div>
               {errors.minMax && <div className="field-error">{errors.minMax}</div>}
-              <div className="field-hint">Must be ≥ {slotsFromFormat(format)} (format slots)</div>
+              <div className="field-hint">{format === "Screening" ? "Max players allowed" : `Must be ≥ ${slotsFromFormat(format)} (format slots)`}</div>
             </div>
           </div>
 
