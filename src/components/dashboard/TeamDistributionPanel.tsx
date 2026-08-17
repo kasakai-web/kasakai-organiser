@@ -120,14 +120,27 @@ export function TeamDistributionPanel({
       // Say what actually went out. "Published" alone hides a WhatsApp campaign
       // that is rejecting every send.
       const wa = data.data?.whatsapp;
-      const waNote = wa
-        ? ` · WhatsApp ${wa.sent} sent${wa.failed ? `, ${wa.failed} failed` : ""}`
-        : "";
+      const notified = data.data?.published ?? 0;
       const confirmedNote = data.data?.gameConfirmed ? " and the game confirmed" : "";
-      showStatus(
-        "success",
-        `Teams published${confirmedNote} — ${data.data?.published ?? 0} player(s) notified${waNote}`
-      );
+
+      // A re-publish that moved nobody messages nobody — which looks like a
+      // failure unless it is said out loud.
+      if (notified === 0 && wa?.unchanged) {
+        showStatus(
+          "success",
+          `Teams published — nobody's team changed, so no messages went out ` +
+          `(${wa.unchanged} player(s) already have theirs)`
+        );
+      } else {
+        const waNote = wa
+          ? ` · WhatsApp ${wa.sent} sent${wa.failed ? `, ${wa.failed} failed` : ""}` +
+            `${wa.unchanged ? `, ${wa.unchanged} unchanged` : ""}`
+          : "";
+        showStatus(
+          "success",
+          `Teams published${confirmedNote} — ${notified} player(s) notified${waNote}`
+        );
+      }
       onRefresh?.();
     } catch {
       showStatus("error", "Couldn't publish teams");

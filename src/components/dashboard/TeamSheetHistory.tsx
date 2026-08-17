@@ -20,8 +20,12 @@ type SheetMember = {
   isGuest?: boolean;
   isOrganiser?: boolean;
   hostName?: string | null;
-  whatsapp?: "sent" | "failed" | "skipped" | "not_sent";
+  whatsapp?: "sent" | "failed" | "skipped" | "not_sent" | "unchanged";
   whatsappError?: string | null;
+  // What this revision was to this player: their first team message, a change
+  // to one they were already holding, or nothing because it still stands.
+  announcement?: "new" | "changed" | "unchanged";
+  previousColour?: "red" | "blue" | null;
 };
 
 type Sheet = {
@@ -39,6 +43,7 @@ type Sheet = {
     whatsappSent?: number;
     whatsappFailed?: number;
     whatsappSkipped?: number;
+    whatsappUnchanged?: number;
   };
 };
 
@@ -52,7 +57,16 @@ const COLOUR = (colour?: string) =>
 const WA_MARK: Record<string, { icon: string; fg: string; title: string }> = {
   failed:  { icon: "!", fg: "#f87171", title: "WhatsApp failed" },
   skipped: { icon: "–", fg: "#6b7280", title: "No WhatsApp — no number, or switched off" },
+  unchanged: {
+    icon: "=", fg: "#6b7280",
+    title: "Not messaged — same team as the last time they were told",
+  },
 };
+
+// A name that moved between revisions. Worth a mark of its own: on a re-publish
+// these are the only people who heard anything, so they are the ones an
+// organiser is looking for.
+const CHANGED_MARK = { icon: "⇄", fg: "#a78bfa", title: "Team changed — told it changed" };
 
 const when = (iso: string) => {
   const d = new Date(iso);
@@ -140,6 +154,9 @@ export function TeamSheetHistory({ gameId }: { gameId: string }) {
               <span style={{ fontSize: 10.5, color: "#777", whiteSpace: "nowrap" }}>
                 {d.inApp ?? 0} notified
                 {d.whatsappSent ? ` · ${d.whatsappSent} on WhatsApp` : ""}
+                {/* Nobody messaged is the RIGHT outcome for a re-publish that
+                    moved nobody, so it is stated rather than left as a zero. */}
+                {d.whatsappUnchanged ? ` · ${d.whatsappUnchanged} unchanged` : ""}
               </span>
               {Boolean(d.whatsappFailed) && (
                 <span style={{ fontSize: 10.5, fontWeight: 700, color: "#f87171", whiteSpace: "nowrap" }}>
@@ -199,6 +216,18 @@ export function TeamSheetHistory({ gameId }: { gameId: string }) {
                                 <span style={{ fontSize: 10, color: "#6b7280" }}> · organiser</span>
                               )}
                             </span>
+                            {m.announcement === "changed" && (
+                              <span
+                                title={
+                                  m.previousColour
+                                    ? `Moved from ${COLOUR(m.previousColour).label} — told their team changed`
+                                    : CHANGED_MARK.title
+                                }
+                                style={{ fontSize: 10, fontWeight: 800, color: CHANGED_MARK.fg }}
+                              >
+                                {CHANGED_MARK.icon}
+                              </span>
+                            )}
                             {mark && (
                               <span
                                 title={m.whatsappError || mark.title}
