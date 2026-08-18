@@ -12,11 +12,15 @@ import { buildApiUrl, clearSession, getSession, resolveImageUrl } from "@/utils/
 import { activeRegCount, filledCount } from "@/utils/playerCount";
 import { useAuthGuard } from "@/hooks/useAuthGuard";
 import { useAutoRefresh } from "@/hooks/useAutoRefresh";
+import { useIncrementalList } from "@/hooks/useIncrementalList";
 import "../../organizer-dashboard.css"; 
 import GameCard from "@/components/dashboard/GameCard/GameCard";
 import CoOrganiserModal from "@/components/dashboard/CoOrganiserModal";
 import { TeamSheetHistory } from "@/components/dashboard/TeamSheetHistory";
 
+
+// How many cards the Past Events tab reveals per scroll.
+const PAST_PAGE_SIZE = 20;
 
 export default function OrganizerDashboard() {
   const router = useRouter();
@@ -679,6 +683,26 @@ export default function OrganizerDashboard() {
   const filteredUpcoming = applyFilters(upcomingGames);
   const filteredPast     = applyFilters(pastGames);
   const hasActiveFilters = !!(searchQuery || filterStatus !== 'all' || filterFormat !== 'all' || sortBy !== 'date-asc');
+
+  // Past Events only ever grows — an organiser a couple of seasons in would
+  // otherwise render every game they have ever run in one go. Reveal it a page
+  // at a time as they scroll. Upcoming is bounded by how many fixtures anyone
+  // can have ahead of them, so it still renders whole.
+  //
+  // Any change to the filter bar is a different list and starts back at the
+  // top; the 20-second background refresh is not, and leaves the scroll alone.
+  const {
+    visible: pagedPast,
+    hasMore: hasMorePast,
+    sentinelRef: pastSentinelRef,
+    loadMore: loadMorePast,
+    shown: shownPastCount,
+  } = useIncrementalList(filteredPast, {
+    pageSize: PAST_PAGE_SIZE,
+    resetKey: `${activeTab}|${searchQuery}|${filterStatus}|${filterFormat}|${sortBy}`,
+    enabled: activeTab === 'past',
+  });
+
   const clearFilters = () => { setSearchQuery(''); setFilterStatus('all'); setFilterFormat('all'); setSortBy('date-asc'); };
 
   const handleLogout = () => {
@@ -1315,8 +1339,9 @@ export default function OrganizerDashboard() {
               )}
             </div>
           ) : (
+            <>
             <div className="games-list">
-              {filteredPast.map((game) => (
+              {pagedPast.map((game) => (
                 <GameCard
                   key={game._id}
                   game={game}
@@ -1335,6 +1360,20 @@ export default function OrganizerDashboard() {
                 />
               ))}
             </div>
+            {/* Scrolling to here reveals the next page. The button is the
+                fallback for keyboard users and for anything without
+                IntersectionObserver. */}
+            {hasMorePast && (
+              <div className="kk-load-more" ref={pastSentinelRef}>
+                <button type="button" className="kk-load-more-btn" onClick={loadMorePast}>
+                  Show more events
+                </button>
+                <span className="kk-load-more-count" aria-live="polite">
+                  {shownPastCount} of {filteredPast.length}
+                </span>
+              </div>
+            )}
+            </>
           )
         )}
      
