@@ -190,8 +190,13 @@ export default function DashboardLayout({
       setActiveSection("profile");
       return;
     }
-    if (pathname.includes("/dashboard/organizer/") && pathname.endsWith("/performance")) {
-      setActiveSection("performance");
+    // /performance is the retired "My Feedback" page — it redirects here, so it
+    // shares this section rather than highlighting nothing on the way through.
+    if (
+      pathname.includes("/dashboard/organizer/")
+      && (pathname.endsWith("/player-ratings") || pathname.endsWith("/performance"))
+    ) {
+      setActiveSection("player-ratings");
       return;
     }
     if (pathname.includes("/dashboard/organizer/") && pathname.endsWith("/finance")) {
@@ -344,15 +349,17 @@ export default function DashboardLayout({
             >
               <span className="sidebar-icon">🔁</span>Recurring
             </button>
+            {/* Replaces the old read-only "My Feedback" page, which showed the
+                same standing ratings without letting anyone change them. */}
             <button
-              className={`sidebar-link ${activeSection === 'performance' ? 'active' : ''}`}
+              className={`sidebar-link ${activeSection === 'player-ratings' ? 'active' : ''}`}
               onClick={() => {
-                setActiveSection("performance");
+                setActiveSection("player-ratings");
                 setSidebarOpen(false);
-                if (userId) router.push(`/dashboard/organizer/${userId}/performance`);
+                if (userId) router.push(`/dashboard/organizer/${userId}/player-ratings`);
               }}
             >
-              <span className="sidebar-icon">📊</span>My Feedback
+              <span className="sidebar-icon">⭐</span>Player Ratings
             </button>
             <button
               className={`sidebar-link ${activeSection === 'finance' ? 'active' : ''}`}

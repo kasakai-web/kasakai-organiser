@@ -1,0 +1,246 @@
+/* ── Player multi-select ──
+   Chips for what is picked, a small "+ Add" trigger, and a portalled menu.
+   Shared by the post-game rating matrix and the Player Ratings page — both of
+   which live inside a horizontally scrolling table, which is why the menu is
+   positioned against the viewport rather than the cell. */
+
+.pms-root {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 4px;
+  min-width: 120px;
+}
+
+/* ── Chips ── */
+.pms-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  max-width: 190px;
+}
+
+.pms-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 3px 2px 7px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 1.5;
+  max-width: 100%;
+}
+
+.pms-chip.pms-with {
+  background: rgba(16, 185, 129, 0.16);
+  border: 1px solid rgba(16, 185, 129, 0.45);
+  color: #34d399;
+}
+
+.pms-chip.pms-against {
+  background: rgba(239, 68, 68, 0.16);
+  border: 1px solid rgba(239, 68, 68, 0.45);
+  color: #f87171;
+}
+
+.pms-chip-name {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 118px;
+}
+
+/* Removal is one click from the table — no need to open anything. */
+.pms-chip-remove {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 15px;
+  height: 15px;
+  flex-shrink: 0;
+  border: none;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.1);
+  color: inherit;
+  font-size: 8px;
+  line-height: 1;
+  cursor: pointer;
+  transition: background 0.12s;
+}
+
+.pms-chip-remove:hover:not(:disabled) {
+  background: rgba(255, 255, 255, 0.28);
+}
+
+.pms-chip-remove:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+/* Nothing picked. Says so in the column rather than inside a closed menu. */
+.pms-na {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  color: #6a6a6a;
+  font-family: var(--mono, monospace);
+}
+
+/* ── Trigger ── */
+.pms-trigger {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 4px 9px;
+  font-size: 11px;
+  font-family: inherit;
+  background: #0a0a0c;
+  border: 1px dashed #33333a;
+  border-radius: 5px;
+  color: #8a8a8a;
+  cursor: pointer;
+  transition: border-color 0.15s, color 0.15s, background 0.15s;
+  white-space: nowrap;
+}
+
+.pms-trigger:hover:not(:disabled) {
+  background: rgba(255, 255, 255, 0.04);
+  color: #ddd;
+}
+
+.pms-trigger.pms-with:hover:not(:disabled)    { border-color: rgba(16, 185, 129, 0.6); }
+.pms-trigger.pms-against:hover:not(:disabled) { border-color: rgba(239, 68, 68, 0.6); }
+
+/* Once something is picked the chips carry the meaning, so the button shrinks
+   back out of the way. */
+.pms-trigger.compact {
+  padding: 2px 7px;
+  font-size: 10px;
+}
+
+.pms-trigger:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.pms-trigger-plus {
+  font-size: 13px;
+  line-height: 1;
+  opacity: 0.8;
+}
+
+/* ── Menu (portalled to <body>) ── */
+.pms-menu {
+  position: fixed;
+  z-index: 4000;
+  max-width: 320px;
+  display: flex;
+  flex-direction: column;
+  background: #141418;
+  border: 1px solid #33333a;
+  border-radius: 8px;
+  box-shadow: 0 14px 40px rgba(0, 0, 0, 0.7);
+  overflow: hidden;
+}
+
+.pms-menu.pms-with    { border-top: 2px solid rgba(16, 185, 129, 0.6); }
+.pms-menu.pms-against { border-top: 2px solid rgba(239, 68, 68, 0.6); }
+
+.pms-search-wrap {
+  padding: 8px;
+  border-bottom: 1px solid #26262c;
+}
+
+.pms-search {
+  width: 100%;
+  padding: 6px 9px;
+  font-size: 12px;
+  font-family: inherit;
+  background: #0a0a0c;
+  border: 1px solid #2a2a2e;
+  border-radius: 5px;
+  color: #e8e8e8;
+  outline: none;
+}
+
+.pms-search:focus {
+  border-color: var(--lime, #c8ff3e);
+}
+
+.pms-list {
+  max-height: 210px;
+  overflow-y: auto;
+  padding: 4px 0;
+}
+
+.pms-option {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  width: 100%;
+  padding: 7px 12px;
+  border: none;
+  background: transparent;
+  color: #bbb;
+  font-size: 12px;
+  font-family: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+/* Hover and keyboard share one highlight, so arrowing down looks the same as
+   pointing at it. */
+.pms-option.highlighted {
+  background: rgba(255, 255, 255, 0.08);
+  color: #fff;
+}
+
+.pms-option-name {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.pms-option-add {
+  flex-shrink: 0;
+  opacity: 0;
+  font-size: 13px;
+  color: var(--lime, #c8ff3e);
+}
+
+.pms-option.highlighted .pms-option-add {
+  opacity: 1;
+}
+
+.pms-empty {
+  padding: 14px 12px;
+  font-size: 11px;
+  color: #666;
+  font-style: italic;
+  text-align: center;
+}
+
+.pms-footer {
+  padding: 6px 12px;
+  border-top: 1px solid #26262c;
+  font-size: 10px;
+  color: #6a6a6a;
+}
+
+@media (max-width: 640px) {
+  .pms-trigger {
+    min-height: 30px;
+    font-size: 12px;
+  }
+
+  .pms-option {
+    padding: 10px 12px;
+    font-size: 13px;
+  }
+
+  .pms-chip {
+    font-size: 12px;
+  }
+}

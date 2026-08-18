@@ -1,7 +1,9 @@
 "use client";
 
-import React, { useState, useEffect, useRef } from "react";
+import React, { useState, useEffect } from "react";
 import { buildApiUrl, getSession } from "@/utils/api";
+import { StarRating } from "@/components/ui/StarRating";
+import { PlayerMultiSelect, type PlayerOption } from "@/components/ui/PlayerMultiSelect";
 import "./PostGameModal.css";
 
 // ── Types ──────────────────────────────────────────────────────────────────
@@ -38,8 +40,10 @@ export interface StandingSummary {
 export interface PlayerRatingDraft {
   playerId: string;
   name: string;
-  conductRating: number;
-  gameplayRating: number;
+  // null = NA. The backend drops a row with no stars rather than writing a
+  // default, so an untouched player stays unrated.
+  conductRating: number | null;
+  gameplayRating: number | null;
   preferredPosition: string;
   gkAffinity: number | null;
   playWith: string[];
@@ -102,50 +106,10 @@ function PlayerAvatar({ name, profileImage }: { name: string; profileImage?: str
   return <span className="pgm-player-avatar">{text}</span>;
 }
 
-// ── Star Rating component ──────────────────────────────────────────────────
-function StarRating({
-  value,
-  onChange,
-  label,
-  size = "normal",
-}: {
-  value: number;
-  onChange: (v: number) => void;
-  label?: string;
-  size?: "normal" | "mini";
-}) {
-  const [hovered, setHovered] = useState(0);
-  return (
-    <div className={`pgm-star-row ${size === "mini" ? "pgm-star-row-mini" : ""}`}>
-      {label && <span className="pgm-star-label">{label}</span>}
-      <div className="pgm-stars">
-        {[1, 2, 3, 4, 5].map((n) => (
-          <button
-            key={n}
-            type="button"
-            className={`pgm-star ${size === "mini" ? "pgm-star-mini" : ""} ${n <= (hovered || value) ? "filled" : ""}`}
-            onMouseEnter={() => setHovered(n)}
-            onMouseLeave={() => setHovered(0)}
-            onClick={() => onChange(value === n ? 0 : n)}
-            title={`${n} Stars`}
-          >
-            ★
-          </button>
-        ))}
-        {size !== "mini" && (
-          <span className="pgm-star-value">{value > 0 ? `${value}/5` : "Unrated"}</span>
-        )}
-      </div>
-    </div>
-  );
-}
-
-// ── Multi-select Dropdown for Matrix Table ──────────────────────────────────
-interface DropdownOption {
-  id: string;
-  name: string;
-}
-
+// Everyone who could be picked is already in the game, so this speaks in bare
+// ids and lets the shared component do the rendering. The Player Ratings page
+// uses the same component in its search mode, where ids alone would not be
+// enough to draw a chip.
 function PlayerDropdownSelect({
   variant,
   selectedIds,
@@ -154,81 +118,16 @@ function PlayerDropdownSelect({
 }: {
   variant: "with" | "against";
   selectedIds: string[];
-  options: DropdownOption[];
+  options: PlayerOption[];
   onToggle: (id: string) => void;
 }) {
-  const [isOpen, setIsOpen] = useState(false);
-  const dropdownRef = useRef<HTMLDivElement>(null);
-
-  useEffect(() => {
-    function handleClickOutside(event: MouseEvent) {
-      if (dropdownRef.current && !dropdownRef.current.contains(event.target as Node)) {
-        setIsOpen(false);
-      }
-    }
-    if (isOpen) {
-      document.addEventListener("mousedown", handleClickOutside);
-    }
-    return () => {
-      document.removeEventListener("mousedown", handleClickOutside);
-    };
-  }, [isOpen]);
-
-  const selectedNames = options
-    .filter((o) => selectedIds.includes(o.id))
-    .map((o) => o.name);
-
-  let labelText = "Select...";
-  if (selectedNames.length === 1) {
-    labelText = selectedNames[0];
-  } else if (selectedNames.length > 1) {
-    labelText = `${selectedNames[0]} (+${selectedNames.length - 1})`;
-  }
-
-  const isWith = variant === "with";
-
   return (
-    <div className="pgm-dropdown-container" ref={dropdownRef} style={{ position: "relative" }}>
-      <button
-        type="button"
-        className={`pgm-dropdown-btn ${isWith ? "pgm-dropdown-with" : "pgm-dropdown-against"} ${selectedIds.length > 0 ? "has-selection" : ""}`}
-        onClick={() => setIsOpen(!isOpen)}
-        title={selectedNames.length > 0 ? selectedNames.join(", ") : `Select players to play ${variant}`}
-      >
-        <span className="pgm-dropdown-label">{labelText}</span>
-        <span className="pgm-dropdown-arrow">▾</span>
-      </button>
-
-      {isOpen && (
-        <div className="pgm-dropdown-menu">
-          {options.length === 0 ? (
-            <div className="pgm-dropdown-empty">No other players</div>
-          ) : (
-            options.map((opt) => {
-              const checked = selectedIds.includes(opt.id);
-              return (
-                <div
-                  key={opt.id}
-                  className={`pgm-dropdown-item ${checked ? "selected" : ""}`}
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    onToggle(opt.id);
-                  }}
-                >
-                  <input
-                    type="checkbox"
-                    checked={checked}
-                    onChange={() => {}}
-                    style={{ pointerEvents: "none" }}
-                  />
-                  <span>{opt.name}</span>
-                </div>
-              );
-            })
-          )}
-        </div>
-      )}
-    </div>
+    <PlayerMultiSelect
+      variant={variant}
+      selected={options.filter((o) => selectedIds.includes(o.id))}
+      options={options}
+      onToggle={(opt) => onToggle(opt.id)}
+    />
   );
 }
 
@@ -536,12 +435,13 @@ export function PostGameModal({ game, onClose, onDone }: Props) {
 
   const presentCount = Object.values(attendance).filter((s) => s === "present").length;
   const absentCount = Object.values(attendance).filter((s) => s === "absent").length;
-  const ratedCount = ratingList.filter((r) => r.conductRating > 0 && r.gameplayRating > 0).length;
+  const isRated = (r: PlayerRatingDraft) => (r.conductRating ?? 0) > 0 && (r.gameplayRating ?? 0) > 0;
+  const ratedCount = ratingList.filter(isRated).length;
 
   // What Save would actually send: edits, plus anyone rated here for the first
   // time. Zero means the pass is already recorded and Save has nothing to do.
   const pendingCount = ratingList.filter(
-    (r) => dirty[r.playerId] || (!r.existing && r.conductRating > 0 && r.gameplayRating > 0)
+    (r) => dirty[r.playerId] || (!r.existing && isRated(r))
   ).length;
 
   // "Rated 12 Jul · 4 games" — enough to recognise the opinion as yours.
