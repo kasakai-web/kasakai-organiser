@@ -1,4 +1,4 @@
-import { formatIstTime } from "./formatTime";
+import { formatIstTime } from "./formatTime.ts";
 // Builds the WhatsApp-style "Copy List" message for an organiser to share.
 // Pure function (no DOM) so it can be unit-tested.
 
