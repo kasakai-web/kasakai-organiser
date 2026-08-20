@@ -377,11 +377,10 @@ export default function OrganiserProfilePage() {
           "Content-Type": "application/json",
           Authorization: `Bearer ${token}`,
         },
+        // email / phone / whatsappNumber are deliberately absent: they are the
+        // account's verified identity and the backend refuses to change them here.
         body: JSON.stringify({
           name: profile.name,
-          email: profile.email,
-          phone: profile.phone,
-          whatsappNumber: profile.whatsappNumber,
           location: profile.location,
           defaultFeeInPaise: profile.defaultFeeInPaise,
           defaultFormat: profile.defaultFormat,
@@ -686,15 +685,15 @@ export default function OrganiserProfilePage() {
               </div>
               <div className="op-field">
                 <label className="op-label">Email</label>
-                <input className="op-input" type="email" value={profile.email || ""} onChange={(e) => setProfile({ ...profile, email: e.target.value })} placeholder="your@email.com" />
+                <input className="op-input op-input-locked" type="email" value={profile.email || ""} readOnly aria-readonly="true" placeholder="your@email.com" />
               </div>
               <div className="op-field">
-                <label className="op-label">Phone *</label>
-                <input className="op-input" value={profile.phone} onChange={(e) => setProfile({ ...profile, phone: e.target.value })} placeholder="10-digit number" required />
+                <label className="op-label">Phone</label>
+                <input className="op-input op-input-locked" value={profile.phone} readOnly aria-readonly="true" />
               </div>
               <div className="op-field">
-                <label className="op-label">WhatsApp Number *</label>
-                <input className="op-input" value={profile.whatsappNumber} onChange={(e) => setProfile({ ...profile, whatsappNumber: e.target.value })} placeholder="WhatsApp number" required />
+                <label className="op-label">WhatsApp Number</label>
+                <input className="op-input op-input-locked" value={profile.whatsappNumber} readOnly aria-readonly="true" />
               </div>
               <div className="op-field">
                 <label className="op-label">City</label>
@@ -705,6 +704,11 @@ export default function OrganiserProfilePage() {
                 <input className="op-input" value={profile.location?.state || ""} onChange={(e) => setProfile({ ...profile, location: { ...(profile.location || {}), state: e.target.value } })} placeholder="e.g. Maharashtra" />
               </div>
             </div>
+            <p className="op-lock-note">
+              Your email, phone and WhatsApp number are how we verify your account and
+              where your OTPs and game updates are sent, so they can&apos;t be edited
+              here. To change them, write to support@kasakai.in.
+            </p>
           </div>
 
           {/* Event Defaults */}

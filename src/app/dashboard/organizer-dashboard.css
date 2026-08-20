@@ -1300,6 +1300,21 @@
 .op-input:focus { border-color: var(--lime, #a3e635); }
 .op-input option { background: #1a1a1a; }
 
+/* Verified contact details — read-only until there is a flow that can prove a
+   new number or address belongs to the person typing it. */
+.op-input-locked {
+  background: rgba(255,255,255,0.02);
+  color: var(--muted);
+  cursor: not-allowed;
+}
+.op-input-locked:focus { border-color: var(--border); }
+.op-lock-note {
+  font-size: 11px;
+  color: var(--muted);
+  line-height: 1.5;
+  margin: 2px 0 0 0;
+}
+
 /* Notification rows */
 .op-notif-row {
   display: flex;
