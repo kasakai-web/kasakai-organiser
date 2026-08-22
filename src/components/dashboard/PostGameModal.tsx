@@ -571,7 +571,7 @@ export function PostGameModal({ game, onClose, onDone }: Props) {
                 {ratedList.length > 0 && (
                   <button
                     type="button"
-                    onClick={() => setShowRated(!collapseRated)}
+                    onClick={() => setShowRated((v) => !v)}
                     className={`pgm-chip ${!collapseRated ? "selected" : ""}`}
                     style={{ fontSize: 11, padding: "2px 8px" }}
                     title="Your saved ratings for these players — open to revise one"
