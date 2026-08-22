@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { activeRegCount, filledCount, spotsLeft } from "./playerCount.ts";
+import { activeRegCount, filledCount, isActiveReg, spotsLeft } from "./playerCount.ts";
 
 const reg = (over: Partial<{ paymentStatus: string; optedOut: boolean; plusOneName: string; backedOutAt: string; removedAt: string }> = {}) => ({
   paymentStatus: "paid",
@@ -74,4 +74,15 @@ test("spotsLeft never goes negative (over capacity)", () => {
 test("empty / missing registrations", () => {
   assert.equal(filledCount({ organiserIsPlaying: false }), 0);
   assert.equal(filledCount({ registrations: [], organiserIsPlaying: true }), 1);
+});
+
+test("isActiveReg rejects a guest the organiser removed", () => {
+  // What Edit Event's guest list asks of every row it renders. Removal tombstones
+  // the row in place, so the API keeps sending it.
+  assert.equal(isActiveReg(reg({ plusOneName: "Org + 1" })), true);
+  assert.equal(
+    isActiveReg(reg({ plusOneName: "Org + 1", removedAt: "2026-08-22T10:00:00.000Z", paymentStatus: "refunded" })),
+    false,
+  );
+  assert.equal(isActiveReg(reg({ plusOneName: "Org + 2", backedOutAt: "2026-08-22T10:00:00.000Z" })), false);
 });

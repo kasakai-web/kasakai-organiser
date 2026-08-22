@@ -22,12 +22,16 @@ export interface CountableGame {
   organiserIsPlaying?: boolean;
 }
 
+// Is this one row still live? The single predicate behind every "who is in this
+// game" question — counts AND lists. A list that skips this check shows people
+// the backend has already retired (a removed guest reappearing in Edit Event).
+export const isActiveReg = (r: CountableReg): boolean =>
+  !r.backedOutAt && !r.removedAt && !["refunded", "forfeited"].includes(r.paymentStatus || "") && !r.optedOut;
+
 // Active registration rows (players + guests), excluding backed-out,
 // organiser-removed, refunded/forfeited and opted-out.
 export const activeRegCount = (game: CountableGame): number =>
-  (game.registrations || []).filter(
-    (r) => !r.backedOutAt && !r.removedAt && !["refunded", "forfeited"].includes(r.paymentStatus || "") && !r.optedOut,
-  ).length;
+  (game.registrations || []).filter(isActiveReg).length;
 
 // Total bodies on the field = active registrations + the organiser's own slot.
 export const filledCount = (game: CountableGame): number =>
