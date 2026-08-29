@@ -12,7 +12,24 @@ export interface Registration {
   player?: { _id: string; name: string; phone?: string; profileImage?: string };
   plusOneName?: string | null;
   attended?: "present" | "absent" | "not_marked";
+  // Tombstone / settlement markers — a row with any of these holds no seat, so
+  // it must never reach attendance or rating even though it stays in the array.
+  backedOutAt?: string | null;
+  removedAt?: string | null;
+  optedOut?: boolean;
+  paymentStatus?: string;
 }
+
+// Mirrors isActiveRegistration (utils/registration.js): a row is a
+// real seat only while none of these tombstone/settlement markers are set. The
+// registrations array is append-mostly — backouts, organiser removals and
+// opt-outs stay in it as history — so every screen that lists "who is actually
+// in this game" must filter through this, or a departed player reappears here.
+const isActiveReg = (r: Registration) =>
+  !r.backedOutAt &&
+  !r.removedAt &&
+  !r.optedOut &&
+  !["refunded", "forfeited"].includes(r.paymentStatus || "");
 
 export interface Game {
   _id: string;
@@ -151,6 +168,7 @@ export function PostGameModal({ game, onClose, onDone }: Props) {
   useEffect(() => {
     const init: Record<string, AttendanceStatus> = {};
     for (const reg of game.registrations) {
+      if (!isActiveReg(reg)) continue;
       const s = reg.attended as string | undefined;
       if (s === "present") init[reg._id] = "present";
       else if (s === "absent" || s === "no_show") init[reg._id] = "absent";
@@ -242,10 +260,12 @@ export function PostGameModal({ game, onClose, onDone }: Props) {
       }
 
       // 2. Save attendance
-      const attendancePayload = game.registrations.map((reg) => ({
-        regId:  reg._id,
-        status: attendance[reg._id] === "absent" ? "absent" : "present",
-      }));
+      const attendancePayload = game.registrations
+        .filter(isActiveReg)
+        .map((reg) => ({
+          regId:  reg._id,
+          status: attendance[reg._id] === "absent" ? "absent" : "present",
+        }));
 
       const attRes = await fetch(
         buildApiUrl(`/api/v1/games/organisers/${game._id}/attendance`),
@@ -349,6 +369,7 @@ export function PostGameModal({ game, onClose, onDone }: Props) {
     setAttendance((prev) => {
       const next: Record<string, AttendanceStatus> = {};
       for (const reg of game.registrations) {
+        if (!isActiveReg(reg)) continue;
         if (!reg.plusOneName && reg.player) {
           next[reg._id] = "present";
         } else {
@@ -363,6 +384,7 @@ export function PostGameModal({ game, onClose, onDone }: Props) {
     setAttendance((prev) => {
       const next: Record<string, AttendanceStatus> = {};
       for (const reg of game.registrations) {
+        if (!isActiveReg(reg)) continue;
         if (!reg.plusOneName && reg.player) {
           next[reg._id] = "absent";
         } else {
@@ -407,8 +429,8 @@ export function PostGameModal({ game, onClose, onDone }: Props) {
   };
 
   // ── Helpers ──────────────────────────────────────────────────────────────
-  const playerRegs = game.registrations.filter((r) => !r.plusOneName && r.player);
-  const guestRegs = game.registrations.filter((r) => r.plusOneName);
+  const playerRegs = game.registrations.filter((r) => !r.plusOneName && r.player && isActiveReg(r));
+  const guestRegs = game.registrations.filter((r) => r.plusOneName && isActiveReg(r));
   const attendedIds = Object.entries(attendance)
     .filter(([, s]) => s === "present")
     .map(([regId]) => regId);
@@ -950,7 +972,7 @@ export function PostGameModal({ game, onClose, onDone }: Props) {
                 <div style={{ display: "flex", gap: 12, flexWrap: "wrap" }}>
                   <div style={{ background: "#111114", border: "1px solid #1e1e22", borderRadius: 8, padding: "12px 16px", flex: 1, textAlign: "center" }}>
                     <div style={{ fontSize: 10, color: "#666", textTransform: "uppercase", marginBottom: 4 }}>Total Players</div>
-                    <div style={{ fontSize: 22, color: "#888", fontWeight: 800 }}>{game.registrations.length}</div>
+                    <div style={{ fontSize: 22, color: "#888", fontWeight: 800 }}>{playerRegs.length + guestRegs.length}</div>
                   </div>
                   <div style={{ background: "#111114", border: "1px solid #1e1e22", borderRadius: 8, padding: "12px 16px", flex: 1, textAlign: "center" }}>
                     <div style={{ fontSize: 10, color: "#666", textTransform: "uppercase", marginBottom: 4 }}>Attended</div>
