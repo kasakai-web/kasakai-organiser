@@ -13,6 +13,7 @@ import { activeRegCount, filledCount } from "@/utils/playerCount";
 import { useAuthGuard } from "@/hooks/useAuthGuard";
 import { useAutoRefresh } from "@/hooks/useAutoRefresh";
 import { useIncrementalList } from "@/hooks/useIncrementalList";
+import { usePlayerSearch, type PlayerSearchResult } from "@/hooks/usePlayerSearch";
 import "../../organizer-dashboard.css"; 
 import GameCard from "@/components/dashboard/GameCard/GameCard";
 import CoOrganiserModal from "@/components/dashboard/CoOrganiserModal";
@@ -21,6 +22,12 @@ import { TeamSheetHistory } from "@/components/dashboard/TeamSheetHistory";
 
 // How many cards the Past Events tab reveals per scroll.
 const PAST_PAGE_SIZE = 20;
+
+// Each tab has its own natural reading order: Upcoming starts with the next
+// fixture, Past starts with the one just played — that most recent game is what
+// an organiser opens the tab for (attendance, ratings, settlement). The two are
+// kept separately so switching tabs never inherits the other tab's ordering.
+const DEFAULT_SORT: Record<string, string> = { upcoming: 'date-asc', past: 'date-desc' };
 
 export default function OrganizerDashboard() {
   const router = useRouter();
@@ -34,7 +41,18 @@ export default function OrganizerDashboard() {
   const [showEditModal, setShowEditModal] = useState(false);
   const [showPlayersModal, setShowPlayersModal] = useState(false);
   const [showCancelModal, setShowCancelModal] = useState(false);
-  const [sosModal, setSosModal] = useState<null | { gameId: string; gameTitle: string; loading: boolean; sending?: boolean; error?: string; regulars: { name: string; games: number; phone: string }[] }>(null);
+  // SOS: `regulars` is the venue-regulars SUGGESTION pool (tap to add back),
+  // `recipients` is who the SOS actually goes to — seeded from the regulars but
+  // freely added to (search) and removed from before sending.
+  const [sosModal, setSosModal] = useState<null | {
+    gameId: string;
+    gameTitle: string;
+    loading: boolean;
+    sending?: boolean;
+    error?: string;
+    regulars:   { id?: string; name: string; games: number; phone: string }[];
+    recipients: { id: string; name: string; sub?: string; games?: number }[];
+  }>(null);
   // Private-game invitations
   const [inviteGameId, setInviteGameId] = useState<string | null>(null);
   const [inviteRegulars, setInviteRegulars] = useState<{ id?: string; name: string; phone: string; games: number }[]>([]);
@@ -44,10 +62,9 @@ export default function OrganizerDashboard() {
   const [invitePhone, setInvitePhone] = useState("");
   const [inviteSending, setInviteSending] = useState(false);
   const [inviteActionId, setInviteActionId] = useState<string | null>(null);
-  // Player-search typeahead (debounced) inside the invite modal
-  const [inviteSearch, setInviteSearch] = useState("");
-  const [searchResults, setSearchResults] = useState<{ _id: string; name: string; phone?: string; email?: string; profileImage?: string; totalGamesPlayed?: number }[]>([]);
-  const [searchLoading, setSearchLoading] = useState(false);
+  // Player-search typeaheads (debounced, abort-on-keystroke) — one per modal.
+  const inviteFind = usePlayerSearch(!!inviteGameId);
+  const sosFind    = usePlayerSearch(!!sosModal);
   // Shared invite-link management
   const [linkBusy, setLinkBusy] = useState(false);
   const [maxJoinsInput, setMaxJoinsInput] = useState<string>("");
@@ -75,7 +92,10 @@ export default function OrganizerDashboard() {
   const [searchQuery, setSearchQuery] = useState('');
   const [filterStatus, setFilterStatus] = useState('all');
   const [filterFormat, setFilterFormat] = useState('all');
-  const [sortBy, setSortBy] = useState('date-asc');
+  const [sortByTab, setSortByTab] = useState<Record<string, string>>(DEFAULT_SORT);
+  const defaultSort = DEFAULT_SORT[activeTab] ?? 'date-asc';
+  const sortBy = sortByTab[activeTab] ?? defaultSort;
+  const setSortBy = (value: string) => setSortByTab(prev => ({ ...prev, [activeTab]: value }));
   const { toast, showToast, hideToast } = useToast();
 
   // Arriving back from the create-event page: surface its success toast here
@@ -325,26 +345,29 @@ export default function OrganizerDashboard() {
     setConfirmVisible(true);
   };
 
-  const handleSendSos = async (gameId: string) => {
+  const handleSendSos = async (gameId: string, playerIds: string[]) => {
     const { token } = getSession();
     if (!token) { clearSession(); router.replace("/login?role=organiser"); return; }
     try {
       const res  = await fetch(buildApiUrl(`/api/v1/games/organisers/${gameId}/sos`), {
         method: 'POST',
         headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ playerIds }),
       });
       const data = await res.json();
       if (!res.ok || !data.success) { showToast("error", data.message || "Failed to send SOS"); return; }
-      showToast("success", "SOS Sent", data.message || `Notified ${data.data?.notified ?? 0} regular(s).`);
+      showToast("success", "SOS Sent", data.message || `Notified ${data.data?.notified ?? 0} player(s).`);
     } catch {
       showToast("error", "Failed to send SOS. Please try again.");
     }
   };
 
-  // SOS flow: first preview WHO is eligible (per the regulars algorithm), then the
-  // organiser confirms with a Send button in the pop-up.
+  // SOS flow: open the modal seeded with the venue regulars (the algorithm's
+  // suggestion), let the organiser edit that list — remove anyone, add anyone by
+  // search — then send to exactly who is left.
   const requestSendSos = async (game: any) => {
-    setSosModal({ gameId: game._id, gameTitle: game.title, loading: true, regulars: [] });
+    setSosModal({ gameId: game._id, gameTitle: game.title, loading: true, regulars: [], recipients: [] });
+    sosFind.reset();
     const { token } = getSession();
     if (!token) { clearSession(); router.replace("/login?role=organiser"); return; }
     try {
@@ -356,16 +379,36 @@ export default function OrganizerDashboard() {
         setSosModal((m) => (m ? { ...m, loading: false, error: data.message || "Couldn't load eligible players" } : m));
         return;
       }
-      setSosModal((m) => (m ? { ...m, loading: false, regulars: data.data?.regulars || [] } : m));
+      const regulars = (data.data?.regulars || []) as { id?: string; name: string; games: number; phone: string }[];
+      setSosModal((m) => (m ? {
+        ...m,
+        loading: false,
+        regulars,
+        // Pre-selected, so the old one-tap "send to all regulars" is still one tap.
+        recipients: regulars.filter((r) => r.id).map((r) => ({ id: r.id!, name: r.name, sub: r.phone, games: r.games })),
+      } : m));
     } catch {
       setSosModal((m) => (m ? { ...m, loading: false, error: "Couldn't load eligible players" } : m));
     }
   };
 
+  const addSosRecipient = (p: { id: string; name: string; sub?: string; games?: number }) => {
+    setSosModal((m) => (m && !m.recipients.some((r) => r.id === p.id) ? { ...m, recipients: [...m.recipients, p] } : m));
+  };
+
+  const removeSosRecipient = (id: string) => {
+    setSosModal((m) => (m ? { ...m, recipients: m.recipients.filter((r) => r.id !== id) } : m));
+  };
+
+  const addSosSearchResult = (p: PlayerSearchResult) => {
+    addSosRecipient({ id: p._id, name: p.name, sub: [p.phone, p.email].filter(Boolean).join(" · ") });
+    sosFind.reset();
+  };
+
   const confirmSendSos = async () => {
-    if (!sosModal) return;
+    if (!sosModal || sosModal.recipients.length === 0) return;
     setSosModal((m) => (m ? { ...m, sending: true } : m));
-    await handleSendSos(sosModal.gameId);
+    await handleSendSos(sosModal.gameId, sosModal.recipients.map((r) => r.id));
     setSosModal(null);
   };
 
@@ -375,8 +418,7 @@ export default function OrganizerDashboard() {
     setInviteRows([]);
     setInviteName("");
     setInvitePhone("");
-    setInviteSearch("");
-    setSearchResults([]);
+    inviteFind.reset();
     setMaxJoinsInput(game.inviteLinkMaxJoins != null ? String(game.inviteLinkMaxJoins) : "");
     setInviteRegulars([]);
     setInviteRegLoading(true);
@@ -389,36 +431,10 @@ export default function OrganizerDashboard() {
       .finally(() => setInviteRegLoading(false));
   };
 
-  // Debounced (300ms) player search for the invite typeahead. Aborts the in-flight
-  // request on each keystroke so only the latest query's results ever land.
-  useEffect(() => {
-    const q = inviteSearch.trim();
-    if (!inviteGameId || q.length < 2) { setSearchResults([]); setSearchLoading(false); return; }
-    setSearchLoading(true);
-    const ctrl = new AbortController();
-    const t = setTimeout(async () => {
-      try {
-        const { token } = getSession();
-        const res = await fetch(buildApiUrl(`/api/v1/organisers/search-players?q=${encodeURIComponent(q)}`), {
-          headers: { Authorization: `Bearer ${token}` },
-          signal: ctrl.signal,
-        });
-        const data = await res.json();
-        setSearchResults(res.ok && data?.success ? (data.data || []) : []);
-      } catch (e) {
-        if ((e as any)?.name !== "AbortError") setSearchResults([]);
-      } finally {
-        setSearchLoading(false);
-      }
-    }, 300);
-    return () => { clearTimeout(t); ctrl.abort(); };
-  }, [inviteSearch, inviteGameId]);
-
-  const addSearchInvitee = (p: { _id: string; name: string }) => {
+  const addSearchInvitee = (p: PlayerSearchResult) => {
     if (inviteRows.some((r) => r.playerId === p._id)) return;
     setInviteRows((rows) => [...rows, { name: p.name, playerId: p._id }]);
-    setInviteSearch("");
-    setSearchResults([]);
+    inviteFind.reset();
   };
 
   // Manage the shared invite link — toggle on/off, set/clear the cap, or regenerate.
@@ -680,7 +696,7 @@ export default function OrganizerDashboard() {
 
   const filteredUpcoming = applyFilters(upcomingGames);
   const filteredPast     = applyFilters(pastGames);
-  const hasActiveFilters = !!(searchQuery || filterStatus !== 'all' || filterFormat !== 'all' || sortBy !== 'date-asc');
+  const hasActiveFilters = !!(searchQuery || filterStatus !== 'all' || filterFormat !== 'all' || sortBy !== defaultSort);
 
   // Past Events only ever grows — an organiser a couple of seasons in would
   // otherwise render every game they have ever run in one go. Reveal it a page
@@ -701,7 +717,7 @@ export default function OrganizerDashboard() {
     enabled: activeTab === 'past',
   });
 
-  const clearFilters = () => { setSearchQuery(''); setFilterStatus('all'); setFilterFormat('all'); setSortBy('date-asc'); };
+  const clearFilters = () => { setSearchQuery(''); setFilterStatus('all'); setFilterFormat('all'); setSortByTab(DEFAULT_SORT); };
 
   const handleLogout = () => {
   clearSession(); // ✅ better than localStorage.clear()
@@ -775,56 +791,149 @@ export default function OrganizerDashboard() {
         </div>
       )}
 
-      {/* SOS preview — shows the eligible regulars before sending */}
-      {sosModal && (
-        <div className="modal-overlay" onClick={() => setSosModal(null)}>
-          <div onClick={(e) => e.stopPropagation()} style={{ width: "100%", maxWidth: 460, background: "#111214", border: "1px solid #2a2a2a", borderRadius: 16, padding: 22, color: "#fff" }}>
+      {/* SOS — the venue regulars SEED the list; the organiser edits it before sending */}
+      {sosModal && (() => {
+        const closeSos = () => { setSosModal(null); sosFind.reset(); };
+        const chosen = new Set(sosModal.recipients.map((r) => r.id));
+        // Regulars the organiser removed (or that never made the cut) stay available
+        // as one-tap chips — dropping someone is never a one-way door.
+        const suggestions = sosModal.regulars.filter((r) => r.id && !chosen.has(r.id));
+        const count = sosModal.recipients.length;
+        const canSend = count > 0 && !sosModal.loading && !sosModal.sending;
+        return (
+        <div className="modal-overlay" onClick={closeSos}>
+          <div onClick={(e) => e.stopPropagation()} style={{ width: "100%", maxWidth: 460, background: "#111214", border: "1px solid #2a2a2a", borderRadius: 16, padding: 22, color: "#fff", maxHeight: "88vh", overflowY: "auto" }}>
             <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 6 }}>
               <h2 style={{ margin: 0, fontSize: 18, fontWeight: 800 }}>📣 Send SOS</h2>
-              <button onClick={() => setSosModal(null)} style={{ background: "none", border: "none", color: "#888", fontSize: 20, cursor: "pointer", lineHeight: 1 }}>✕</button>
+              <button onClick={closeSos} style={{ background: "none", border: "none", color: "#888", fontSize: 20, cursor: "pointer", lineHeight: 1 }}>✕</button>
             </div>
-            <p style={{ fontSize: 13, color: "#9aa", margin: "0 0 12px", lineHeight: 1.5 }}>
-              Eligible regulars for <b style={{ color: "#ddd" }}>{sosModal.gameTitle}</b> — players who've played at this venue &amp; time often. Review, then send.
+            <p style={{ fontSize: 13, color: "#9aa", margin: "0 0 14px", lineHeight: 1.5 }}>
+              Ask players to fill the spots in <b style={{ color: "#ddd" }}>{sosModal.gameTitle}</b>. We&apos;ve pre-picked the venue regulars — add anyone else, or remove whoever you don&apos;t want, then send.
             </p>
+
             {sosModal.loading ? (
               <div style={{ padding: 22, textAlign: "center", color: "#888", fontSize: 13 }}>Finding eligible regulars…</div>
-            ) : sosModal.error ? (
-              <div style={{ padding: 12, color: "#f87171", fontSize: 13 }}>{sosModal.error}</div>
-            ) : sosModal.regulars.length === 0 ? (
-              <div style={{ padding: 18, textAlign: "center", color: "#999", fontSize: 13, background: "rgba(255,255,255,0.03)", borderRadius: 10, border: "1px solid #222" }}>
-                No eligible regulars for this venue &amp; time yet.
-              </div>
             ) : (
-              <div style={{ maxHeight: 280, overflowY: "auto", border: "1px solid #262626", borderRadius: 10 }}>
-                {sosModal.regulars.map((r, i) => (
-                  <div key={i} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "10px 12px", borderBottom: i < sosModal.regulars.length - 1 ? "1px solid #1c1c1c" : "none" }}>
-                    <div style={{ minWidth: 0 }}>
-                      <div style={{ fontSize: 14, fontWeight: 600, color: "#eee" }}>{r.name}</div>
-                      <div style={{ fontSize: 11, color: "#777" }}>{r.phone}</div>
-                    </div>
-                    <span style={{ flexShrink: 0, fontSize: 11, fontWeight: 700, color: "#c8ff3e", background: "rgba(200,255,62,0.1)", border: "1px solid rgba(200,255,62,0.25)", borderRadius: 20, padding: "2px 9px" }}>
-                      {r.games} games
-                    </span>
+            <>
+              {sosModal.error && (
+                <div style={{ padding: "10px 12px", marginBottom: 12, color: "#f87171", fontSize: 12.5, background: "rgba(248,113,113,0.08)", border: "1px solid rgba(248,113,113,0.25)", borderRadius: 9 }}>{sosModal.error}</div>
+              )}
+
+              {/* Player search typeahead (300ms debounce) — same list the invite modal picks from */}
+              <div style={{ position: "relative", marginBottom: 12 }}>
+                <input
+                  value={sosFind.query}
+                  onChange={(e) => sosFind.setQuery(e.target.value)}
+                  placeholder="🔍 Search players by name, email or phone…"
+                  style={{ width: "100%", padding: "10px 12px", borderRadius: 9, border: "1px solid #2a2a2a", background: "#141414", color: "#fff", fontSize: 13, boxSizing: "border-box" }}
+                />
+                {(sosFind.loading || sosFind.results.length > 0) && sosFind.isSearching && (
+                  <div style={{ position: "absolute", zIndex: 5, top: "calc(100% + 4px)", left: 0, right: 0, background: "#161616", border: "1px solid #2a2a2a", borderRadius: 10, maxHeight: 240, overflowY: "auto", boxShadow: "0 8px 24px rgba(0,0,0,0.5)" }}>
+                    {sosFind.loading && sosFind.results.length === 0 ? (
+                      <div style={{ padding: "10px 12px", fontSize: 12, color: "#888" }}>Searching…</div>
+                    ) : sosFind.results.length === 0 ? (
+                      <div style={{ padding: "10px 12px", fontSize: 12, color: "#888" }}>No players found</div>
+                    ) : sosFind.results.map((p) => {
+                      const added = chosen.has(p._id);
+                      return (
+                        <button
+                          key={p._id}
+                          type="button"
+                          disabled={added}
+                          onClick={() => addSosSearchResult(p)}
+                          style={{ width: "100%", display: "flex", alignItems: "center", gap: 10, padding: "9px 12px", background: "transparent", border: "none", borderBottom: "1px solid #202020", color: added ? "#666" : "#eee", cursor: added ? "default" : "pointer", textAlign: "left" }}
+                        >
+                          <span style={{ flexShrink: 0, width: 28, height: 28, borderRadius: "50%", background: "#242424", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 12, fontWeight: 700, color: "#c8ff3e", overflow: "hidden" }}>
+                            {p.profileImage ? <img src={resolveImageUrl(p.profileImage)} alt="" style={{ width: "100%", height: "100%", objectFit: "cover" }} /> : (p.name?.[0] || "?").toUpperCase()}
+                          </span>
+                          <span style={{ minWidth: 0, flex: 1 }}>
+                            <span style={{ display: "block", fontSize: 13, fontWeight: 600, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{p.name}</span>
+                            <span style={{ display: "block", fontSize: 11, color: "#777", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+                              {[p.phone, p.email].filter(Boolean).join(" · ")}{typeof p.totalGamesPlayed === "number" ? ` · ${p.totalGamesPlayed}g` : ""}
+                            </span>
+                          </span>
+                          <span style={{ flexShrink: 0, fontSize: 12, color: added ? "#666" : "#c8ff3e", fontWeight: 700 }}>{added ? "✓ Added" : "+ Add"}</span>
+                        </button>
+                      );
+                    })}
                   </div>
-                ))}
+                )}
               </div>
+
+              {suggestions.length > 0 && (
+                <div style={{ marginBottom: 12 }}>
+                  <div style={{ fontSize: 11, color: "#777", marginBottom: 6 }}>Venue regulars — tap to add</div>
+                  <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
+                    {suggestions.map((r) => (
+                      <button
+                        key={r.id}
+                        type="button"
+                        onClick={() => addSosRecipient({ id: r.id!, name: r.name, sub: r.phone, games: r.games })}
+                        style={{ fontSize: 12, fontWeight: 600, color: "#ddd", background: "#1c1f16", border: "1px solid rgba(200,255,62,0.25)", borderRadius: 20, padding: "5px 11px", cursor: "pointer" }}
+                      >
+                        + {r.name} <span style={{ color: "#888" }}>· {r.games}g</span>
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* Who the SOS goes to */}
+              <div style={{ fontSize: 12, fontWeight: 700, color: "#c8ff3e", textTransform: "uppercase", letterSpacing: 0.4, marginBottom: 8 }}>
+                Sending to {count > 0 ? `(${count})` : ""}
+              </div>
+              {count === 0 ? (
+                <div style={{ padding: 18, textAlign: "center", color: "#999", fontSize: 13, background: "rgba(255,255,255,0.03)", borderRadius: 10, border: "1px solid #222" }}>
+                  {sosModal.regulars.length === 0
+                    ? <>No venue regulars yet — search above to pick who gets the SOS.</>
+                    : <>Nobody selected — add players above.</>}
+                </div>
+              ) : (
+                <div style={{ maxHeight: 260, overflowY: "auto", border: "1px solid #262626", borderRadius: 10 }}>
+                  {sosModal.recipients.map((r, i) => (
+                    <div key={r.id} style={{ display: "flex", alignItems: "center", gap: 10, justifyContent: "space-between", padding: "10px 12px", borderBottom: i < count - 1 ? "1px solid #1c1c1c" : "none" }}>
+                      <div style={{ minWidth: 0 }}>
+                        <div style={{ fontSize: 14, fontWeight: 600, color: "#eee", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{r.name}</div>
+                        {r.sub && <div style={{ fontSize: 11, color: "#777", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{r.sub}</div>}
+                      </div>
+                      <div style={{ flexShrink: 0, display: "flex", alignItems: "center", gap: 8 }}>
+                        {typeof r.games === "number" && (
+                          <span style={{ fontSize: 11, fontWeight: 700, color: "#c8ff3e", background: "rgba(200,255,62,0.1)", border: "1px solid rgba(200,255,62,0.25)", borderRadius: 20, padding: "2px 9px" }}>
+                            {r.games} games
+                          </span>
+                        )}
+                        <button
+                          type="button"
+                          onClick={() => removeSosRecipient(r.id)}
+                          title={`Remove ${r.name}`}
+                          aria-label={`Remove ${r.name}`}
+                          style={{ background: "none", border: "none", color: "#888", cursor: "pointer", fontSize: 15, lineHeight: 1, padding: 4 }}
+                        >✕</button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </>
             )}
+
             <div style={{ display: "flex", gap: 10, marginTop: 16 }}>
-              <button onClick={() => setSosModal(null)} style={{ flex: 1, padding: 11, borderRadius: 9, border: "1px solid #333", background: "transparent", color: "#ccc", fontWeight: 700, cursor: "pointer" }}>Cancel</button>
+              <button onClick={closeSos} style={{ flex: 1, padding: 11, borderRadius: 9, border: "1px solid #333", background: "transparent", color: "#ccc", fontWeight: 700, cursor: "pointer" }}>Cancel</button>
               <button
-                disabled={sosModal.loading || sosModal.sending || sosModal.regulars.length === 0}
+                disabled={!canSend}
                 onClick={confirmSendSos}
                 style={{ flex: 2, padding: 11, borderRadius: 9, border: "none", fontWeight: 800,
-                  background: sosModal.regulars.length === 0 || sosModal.loading ? "#2a2a2a" : "#c8ff3e",
-                  color: sosModal.regulars.length === 0 || sosModal.loading ? "#888" : "#000",
-                  cursor: sosModal.regulars.length === 0 || sosModal.loading ? "not-allowed" : "pointer", opacity: sosModal.sending ? 0.7 : 1 }}
+                  background: canSend ? "#c8ff3e" : "#2a2a2a",
+                  color: canSend ? "#000" : "#888",
+                  cursor: canSend ? "pointer" : "not-allowed", opacity: sosModal.sending ? 0.7 : 1 }}
               >
-                {sosModal.sending ? "Sending…" : sosModal.regulars.length === 0 ? "No one to notify" : `Send SOS to ${sosModal.regulars.length} regular${sosModal.regulars.length !== 1 ? "s" : ""}`}
+                {sosModal.sending ? "Sending…" : count === 0 ? "No one selected" : `Send SOS to ${count} player${count !== 1 ? "s" : ""}`}
               </button>
             </div>
           </div>
         </div>
-      )}
+        );
+      })()}
 
       {/* Invite manager — every game, public or private */}
       {inviteGameId && (() => {
@@ -883,18 +992,18 @@ export default function OrganizerDashboard() {
               {/* Player search typeahead (300ms debounce) */}
               <div style={{ position: "relative", marginBottom: 12 }}>
                 <input
-                  value={inviteSearch}
-                  onChange={(e) => setInviteSearch(e.target.value)}
+                  value={inviteFind.query}
+                  onChange={(e) => inviteFind.setQuery(e.target.value)}
                   placeholder="🔍 Search players by name, email or phone…"
                   style={{ width: "100%", padding: "10px 12px", borderRadius: 9, border: "1px solid #2a2a2a", background: "#141414", color: "#fff", fontSize: 13, boxSizing: "border-box" }}
                 />
-                {(searchLoading || searchResults.length > 0) && inviteSearch.trim().length >= 2 && (
+                {(inviteFind.loading || inviteFind.results.length > 0) && inviteFind.isSearching && (
                   <div style={{ position: "absolute", zIndex: 5, top: "calc(100% + 4px)", left: 0, right: 0, background: "#161616", border: "1px solid #2a2a2a", borderRadius: 10, maxHeight: 240, overflowY: "auto", boxShadow: "0 8px 24px rgba(0,0,0,0.5)" }}>
-                    {searchLoading && searchResults.length === 0 ? (
+                    {inviteFind.loading && inviteFind.results.length === 0 ? (
                       <div style={{ padding: "10px 12px", fontSize: 12, color: "#888" }}>Searching…</div>
-                    ) : searchResults.length === 0 ? (
+                    ) : inviteFind.results.length === 0 ? (
                       <div style={{ padding: "10px 12px", fontSize: 12, color: "#888" }}>No players found</div>
-                    ) : searchResults.map((p) => {
+                    ) : inviteFind.results.map((p) => {
                       const added = inviteRows.some((x) => x.playerId === p._id);
                       return (
                         <button

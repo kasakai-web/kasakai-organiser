@@ -17,6 +17,12 @@ interface Notification {
   isRead: boolean;
   createdAt: string;
   actionUrl?: string | null;
+  // Set by the API for an organiser, on notifications that belong to a game:
+  // which game it was, and what this organiser is on it. `myRole` is "owner" for
+  // their own games and "edit"/"view" for ones they co-organise — the same role
+  // the game cards badge. Absent when the game is gone.
+  gameTitle?: string | null;
+  myRole?: "owner" | "edit" | "view" | null;
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -37,6 +43,23 @@ const TYPE_ICON: Record<string, string> = {
   guest_waitlisted:       "📋",
   guest_waitlist_spot:    "🔔",
   guest_confirmed:        "✅",
+  game_opt_out:           "↩️",
+  game_opt_back_in:       "🔄",
+  game_confirmed:         "🎽",
+  game_lifecycle:         "⏰",
+  game_time_changed:      "🕒",
+  game_sos:               "🆘",
+  format_changed:         "🔀",
+  teams_published:        "📣",
+  invite_pending:         "🙋",
+  invite_confirmed:       "✅",
+  invite_accepted:        "🤝",
+  invite_rejected:        "🚫",
+  guest_request_pending:  "🙋",
+  guest_request_approved: "✅",
+  guest_request_rejected: "🚫",
+  co_organiser_added:     "🤝",
+  co_organiser_changed:   "🤝",
   system:                 "ℹ️",
 };
 
@@ -57,6 +80,23 @@ const TYPE_COLOR: Record<string, string> = {
   guest_waitlisted:       "rgba(96,165,250,0.14)",
   guest_waitlist_spot:    "rgba(34,211,238,0.14)",
   guest_confirmed:        "rgba(74,222,128,0.14)",
+  game_opt_out:           "rgba(249,115,22,0.14)",
+  game_opt_back_in:       "rgba(74,222,128,0.14)",
+  game_confirmed:         "rgba(200,255,62,0.14)",
+  game_lifecycle:         "rgba(245,158,11,0.14)",
+  game_time_changed:      "rgba(245,158,11,0.14)",
+  game_sos:               "rgba(255,68,68,0.14)",
+  format_changed:         "rgba(167,139,250,0.14)",
+  teams_published:        "rgba(200,255,62,0.14)",
+  invite_pending:         "rgba(96,165,250,0.14)",
+  invite_confirmed:       "rgba(74,222,128,0.14)",
+  invite_accepted:        "rgba(74,222,128,0.14)",
+  invite_rejected:        "rgba(239,68,68,0.14)",
+  guest_request_pending:  "rgba(96,165,250,0.14)",
+  guest_request_approved: "rgba(74,222,128,0.14)",
+  guest_request_rejected: "rgba(239,68,68,0.14)",
+  co_organiser_added:     "rgba(200,255,62,0.14)",
+  co_organiser_changed:   "rgba(200,255,62,0.14)",
   system:                 "rgba(148,163,184,0.14)",
 };
 
@@ -271,7 +311,24 @@ export default function OrganizerNotificationsPage() {
                     {TYPE_ICON[n.type] ?? "ℹ️"}
                   </span>
                   <span className="pn-item-content">
-                    <span className="pn-item-title">{n.title}</span>
+                    <span className="pn-item-title-row">
+                      <span className="pn-item-title">{n.title}</span>
+                      {/* Which hat you were wearing. Only for games you help run —
+                          your own games are the unmarked default, exactly as on
+                          the game cards. */}
+                      {(n.myRole === "edit" || n.myRole === "view") && (
+                        <span
+                          className={`co-org-badge ${n.myRole}`}
+                          title={
+                            n.myRole === "view"
+                              ? `You are a co-organiser with view (read-only) access${n.gameTitle ? ` on "${n.gameTitle}"` : ""}`
+                              : `You are a co-organiser with edit access${n.gameTitle ? ` on "${n.gameTitle}"` : ""}`
+                          }
+                        >
+                          Co-organiser · {n.myRole === "view" ? "View" : "Edit"}
+                        </span>
+                      )}
+                    </span>
                     <span className="pn-item-body">{n.body}</span>
                     <span className="pn-item-time">{timeAgo(n.createdAt)}</span>
                   </span>

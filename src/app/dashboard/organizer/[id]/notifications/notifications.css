@@ -141,6 +141,15 @@
   gap: 3px;
 }
 
+/* Title and — when the notification came from a game you only co-organise —
+   its role badge. Wraps rather than squeezing the title on a narrow screen. */
+.pn-item-title-row {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
 .pn-item-title {
   font-size: 14px;
   font-weight: 600;
