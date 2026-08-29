@@ -369,7 +369,7 @@ export default function OrganizerDashboard() {
     setSosModal(null);
   };
 
-  // ── Private-game invitations ───────────────────────────────────────────────
+  // ── Game invitations (public & private) ────────────────────────────────────
   const openInviteModal = (game: any) => {
     setInviteGameId(game._id);
     setInviteRows([]);
@@ -379,8 +379,6 @@ export default function OrganizerDashboard() {
     setSearchResults([]);
     setMaxJoinsInput(game.inviteLinkMaxJoins != null ? String(game.inviteLinkMaxJoins) : "");
     setInviteRegulars([]);
-    // Regulars suggestions + invite form only apply to private games.
-    if (game.visibility !== "private") { setInviteRegLoading(false); return; }
     setInviteRegLoading(true);
     const { token } = getSession();
     if (!token) { clearSession(); router.replace("/login?role=organiser"); return; }
@@ -828,7 +826,7 @@ export default function OrganizerDashboard() {
         </div>
       )}
 
-      {/* Private-game invite manager */}
+      {/* Invite manager — every game, public or private */}
       {inviteGameId && (() => {
         const inviteGame = games.find((g) => g._id === inviteGameId);
         if (!inviteGame) return null;
@@ -870,16 +868,15 @@ export default function OrganizerDashboard() {
           <div className="modal-overlay" onClick={closeInvite}>
             <div onClick={(e) => e.stopPropagation()} style={{ width: "100%", maxWidth: 520, background: "#111214", border: "1px solid #2a2a2a", borderRadius: 16, padding: 22, color: "#fff", maxHeight: "88vh", overflowY: "auto" }}>
               <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 4 }}>
-                <h2 style={{ margin: 0, fontSize: 18, fontWeight: 800 }}>{isPrivateInvite ? "🔒 Invites & requests" : "🙋 Join requests"}</h2>
+                <h2 style={{ margin: 0, fontSize: 18, fontWeight: 800 }}>{isPrivateInvite ? "🔒 Invites & requests" : "✉️ Invites & requests"}</h2>
                 <button onClick={closeInvite} style={{ background: "none", border: "none", color: "#888", fontSize: 20, cursor: "pointer", lineHeight: 1 }}>✕</button>
               </div>
               <p style={{ fontSize: 13, color: "#9aa", margin: "0 0 14px", lineHeight: 1.5 }}>
                 {isPrivateInvite
                   ? <>Invite players to <b style={{ color: "#ddd" }}>{inviteGame.title}</b>, or share the invite link. Approve requests below.</>
-                  : <>Players you approve join <b style={{ color: "#ddd" }}>{inviteGame.title}</b> and are charged their fee. Players you invite directly skip approval.</>}
+                  : <>Invite players to <b style={{ color: "#ddd" }}>{inviteGame.title}</b>, or share the invite link — it&apos;s a public game, so players can also find and join it from browse. Approve requests below.</>}
               </p>
 
-              {isPrivateInvite && <>
               {/* ── Add invites ── */}
               <div style={{ fontSize: 12, fontWeight: 700, color: "#c8ff3e", textTransform: "uppercase", letterSpacing: 0.4, marginBottom: 8 }}>Add invites</div>
 
@@ -1028,7 +1025,9 @@ export default function OrganizerDashboard() {
                   </div>
                   <div style={{ fontSize: 11, color: "#777", marginTop: 8 }}>
                     {inviteGame.inviteLinkEnabled === false
-                      ? "Link is off — nobody can join through it."
+                      ? (isPrivateInvite
+                          ? "Link is off — nobody can join through it."
+                          : "Link is off — players can still join from browse.")
                       : inviteGame.requiresApproval
                         ? "Anyone with this link sends a join request for your approval."
                         : "Anyone with this link joins instantly (subject to slots)."}
@@ -1040,7 +1039,6 @@ export default function OrganizerDashboard() {
                   No link yet — <button type="button" disabled={linkBusy} onClick={() => manageLink({ regenerate: true })} style={{ background: "none", border: "none", color: "#c8ff3e", fontWeight: 700, cursor: "pointer", padding: 0 }}>generate one</button> to share.
                 </div>
               )}
-              </>}
 
               {/* ── Requests to approve (public & private) ── */}
               {pending.length > 0 && (
@@ -1107,7 +1105,7 @@ export default function OrganizerDashboard() {
                 </div>
               )}
 
-              {isPrivateInvite && sent.length > 0 && (
+              {sent.length > 0 && (
                 <>
                   <div style={{ fontSize: 12, fontWeight: 700, color: "#c8ff3e", textTransform: "uppercase", letterSpacing: 0.4, margin: "4px 0 8px" }}>
                     Invitations <span style={{ color: "#777" }}>({sent.length})</span>
@@ -1135,11 +1133,9 @@ export default function OrganizerDashboard() {
                 </>
               )}
 
-              {pending.length === 0 && (!isPrivateInvite || sent.length === 0) && (
+              {pending.length === 0 && sent.length === 0 && (
                 <div style={{ padding: 16, textAlign: "center", color: "#999", fontSize: 13, background: "rgba(255,255,255,0.03)", borderRadius: 10, border: "1px solid #222" }}>
-                  {isPrivateInvite
-                    ? "No invitations yet — add players above to get started."
-                    : "No join requests yet. Requests appear here for you to approve or reject."}
+                  No invitations yet — add players above to get started.
                 </div>
               )}
             </div>

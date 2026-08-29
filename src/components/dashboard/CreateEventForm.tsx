@@ -816,11 +816,9 @@ export function CreateEventForm({ lastEvent, presetDate, onClose, onCreate, onSu
                 </button>
               ))}
             </div>
-            {visibility === "private" && (
-              <p className="text-[#c4f042] text-xs font-medium mt-3 ml-1 leading-relaxed">
-                After creating, open this game from your dashboard to invite players and copy the shareable invite link.
-              </p>
-            )}
+            <p className="text-[#c4f042] text-xs font-medium mt-3 ml-1 leading-relaxed">
+              After creating, open this game from your dashboard to invite players and copy the shareable invite link — public games can be invited to as well.
+            </p>
             <SubSectionHeader title="Registration Approval" />
             <button
               type="button"

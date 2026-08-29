@@ -97,18 +97,15 @@ function GameCard({game,variant = "upcoming",isMenuOpen,onToggleMenu,onPlayers,o
 
   // Actionable join requests awaiting the organiser's decision (public & private).
   const pendingCount = (game.invitations || []).filter((i: any) => i.status === "pending").length;
-  // Approved-but-unpaid requests aren't actionable yet (waiting on the player's top-up)
-  // but must stay reachable so they never vanish — they count toward showing the entry.
-  const liveRequestCount = (game.invitations || []).filter((i: any) => ["pending", "approved_unpaid"].includes(i.status)).length;
   // Teams were announced at least once. `teamsPublished` flips back to false on
   // a reshuffle, but what was already sent out stays worth reading — so the
   // published-sheet reference, which survives a reshuffle, is what gates this.
   const hasTeamHistory = Boolean(game.publishedTeamSheet);
 
   const isClosed = ["completed", "cancelled"].includes(game.status);
-  // Show the invite/requests entry when it's a private game (invite + manage link)
-  // or whenever there are live requests to act on / follow up.
-  const showInvite = (isPrivate || liveRequestCount > 0) && !isClosed;
+  // Every live game can be invited to — public games are browsable AND invitable,
+  // so the entry (invite + manage link + requests) is offered until the game closes.
+  const showInvite = !isClosed;
 
   const gDay = new Date(game.scheduledAt).toLocaleDateString("en-IN", { timeZone: "Asia/Kolkata"});
   const fmt = (value: string | Date) => {
@@ -382,11 +379,11 @@ function GameCard({game,variant = "upcoming",isMenuOpen,onToggleMenu,onPlayers,o
                       <button
                         className="invite-item"
                         onClick={onInvite}
-                        title={isPrivate ? "Invite players & manage requests" : "Review join requests"}
+                        title="Invite players & manage requests"
                         style={{ position: "relative" }}
                       >
                       <UserPlus size={16} />
-                      {isPrivate ? "Invite" : "Requests"}{pendingCount > 0 && <span>{pendingCount}</span>}
+                      Invite{pendingCount > 0 && <span>{pendingCount}</span>}
                       </button>
                       </>
                  }
