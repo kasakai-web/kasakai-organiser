@@ -6,6 +6,7 @@ import { buildApiUrl, getAuthHeaders } from "@/utils/api";
 import { TeamDistributionPanel } from "@/components/dashboard/TeamDistributionPanel";
 import { formatIstTime, formatIstLongDate, upperMeridiem, KASAKAI_SIGNOFF } from "@/utils/formatTime";
 import { ConfirmationModal } from "@/components/ui/ConfirmationModal";
+import { ImageLightbox } from "@/components/ui/ImageLightbox";
 import { buildPlayerListMessage } from "@/utils/playerListMessage";
 
 const IMG_BASE = (process.env.NEXT_PUBLIC_API_BASE_URL || "http://localhost:5000/api/v1").replace(/\/api\/v1\/?$/, "");
@@ -173,6 +174,7 @@ export function PlayerDetailsModal({
   const [addingPlayerId, setAddingPlayerId] = useState<string | null>(null);
   const [statusMsg, setStatusMsg] = useState<{ type: "success" | "error"; text: string } | null>(null);
   const [approvingId, setApprovingId] = useState<string | null>(null);
+  const [lightbox, setLightbox] = useState<{ src: string; name: string } | null>(null);
 
   const showStatus = (type: "success" | "error", text: string) => {
     setStatusMsg({ type, text });
@@ -878,6 +880,7 @@ function downloadTeamExcel(result: {
                             type="guest"
                             gameFeeInPaise={feeInPaise}
                             playerNameById={playerNameById}
+                            onImageOpen={(src, name) => setLightbox({ src, name })}
                             isProcessing={processingId === regId}
                             onRemove={
                               onRemoveRegistration && regId && !isLocked
@@ -935,6 +938,7 @@ function downloadTeamExcel(result: {
                         type="player"
                         gameFeeInPaise={feeInPaise}
                         playerNameById={playerNameById}
+                        onImageOpen={(src, name) => setLightbox({ src, name })}
                         isProcessing={processingId === regId}
                         onRemove={undefined}
                       />
@@ -951,6 +955,7 @@ function downloadTeamExcel(result: {
                                 type="guest"
                                 gameFeeInPaise={feeInPaise}
                                 playerNameById={playerNameById}
+                                onImageOpen={(src, name) => setLightbox({ src, name })}
                                 isProcessing={processingId === gId}
                                 onRemove={undefined}
                               />
@@ -1002,6 +1007,7 @@ function downloadTeamExcel(result: {
                       isApproving={approvingId === entry._id}
                       guestCount={gc}
                       registeredGuestCount={registeredGc}
+                      onImageOpen={(src, name) => setLightbox({ src, name })}
                     />
                   );
                 })}
@@ -1162,6 +1168,11 @@ function downloadTeamExcel(result: {
         </div>
       </div>
     )}
+    <ImageLightbox
+      lightboxImage={lightbox?.src ?? null}
+      alt={lightbox ? `${lightbox.name} — profile photo` : undefined}
+      setLightboxImage={() => setLightbox(null)}
+    />
     <ConfirmationModal
       open={confirmVisible}
       title="Remove player"
@@ -1195,13 +1206,14 @@ const WAITLIST_STATUS_CFG: Record<string, { label: string; bg: string; color: st
   registered:{ label: "Registered",bg: "rgba(96,165,250,0.08)", color: "#60a5fa", border: "rgba(96,165,250,0.2)", leftBorder: "#60a5fa" },
 };
 
-function WaitlistCard({ entry, position, onApprove, isApproving, guestCount, registeredGuestCount }: {
+function WaitlistCard({ entry, position, onApprove, isApproving, guestCount, registeredGuestCount, onImageOpen }: {
   entry: WaitlistEntry;
   position: number;
   onApprove?: () => void;
   isApproving?: boolean;
   guestCount?: number;
   registeredGuestCount?: number;
+  onImageOpen?: (src: string, name: string) => void;
 }) {
   const status  = entry.status || "waiting";
   const isRejoin = entry.source === "opted_out_rejoin";
@@ -1223,15 +1235,25 @@ function WaitlistCard({ entry, position, onApprove, isApproving, guestCount, reg
       style={{ background: cfg.bg, border: `1px solid ${cfg.border}`, borderLeft: `3px solid ${cfg.leftBorder}` }}
     >
       <div className="pdm-slot-num" style={{ color: cfg.color }}>#{position}</div>
-      <div
-        className="pdm-avatar pdm-avatar-p"
-        style={{ background: `${cfg.leftBorder}22`, color: cfg.color, border: `1px solid ${cfg.border}`, padding: 0, overflow: "hidden" }}
-      >
-        {imgSrc && !imgFailed
-          ? <img src={imgSrc} alt={name} style={{ width: "100%", height: "100%", objectFit: "cover", display: "block", borderRadius: "50%" }} onError={() => setImgFailed(true)} />
-          : initials(name)
-        }
-      </div>
+      {imgSrc && !imgFailed ? (
+        <button
+          type="button"
+          className="pdm-avatar pdm-avatar-p"
+          style={{ background: `${cfg.leftBorder}22`, color: cfg.color, border: `1px solid ${cfg.border}`, padding: 0, overflow: "hidden", cursor: "zoom-in" }}
+          onClick={() => onImageOpen?.(imgSrc, name)}
+          title={`View ${name}'s photo`}
+          aria-label={`View ${name}'s photo full size`}
+        >
+          <img src={imgSrc} alt="" style={{ width: "100%", height: "100%", objectFit: "cover", display: "block", borderRadius: "50%" }} onError={() => setImgFailed(true)} />
+        </button>
+      ) : (
+        <div
+          className="pdm-avatar pdm-avatar-p"
+          style={{ background: `${cfg.leftBorder}22`, color: cfg.color, border: `1px solid ${cfg.border}`, padding: 0, overflow: "hidden" }}
+        >
+          {initials(name)}
+        </div>
+      )}
       <div className="pdm-card-body">
         <div className="pdm-card-top">
           <div className="pdm-card-name">{name}</div>
@@ -1401,6 +1423,7 @@ function PlayerCard({
   onRemove,
   gameFeeInPaise,
   playerNameById,
+  onImageOpen,
 }: {
   reg: Registration;
   slotNum?: number;
@@ -1409,6 +1432,7 @@ function PlayerCard({
   onRemove?: () => void;
   gameFeeInPaise?: number;
   playerNameById?: Map<string, string>;
+  onImageOpen?: (src: string, name: string) => void;
 }) {
   const isGuest = type === "guest";
   const name    = isGuest ? (reg.plusOneName ?? "Guest") : (reg.player?.name ?? "Unknown");
@@ -1459,12 +1483,22 @@ function PlayerCard({
     <div className={`pdm-card ${isGuest ? "pdm-card-guest" : "pdm-card-player"}`} style={optedOut ? { opacity: 0.6 } : undefined}>
       {slotNum !== undefined && <div className="pdm-slot-num">#{slotNum}</div>}
 
-      <div className={`pdm-avatar ${isGuest ? "pdm-avatar-g" : "pdm-avatar-p"}`} style={{ padding: 0, overflow: "hidden" }}>
-        {imgSrc && !imgFailed
-          ? <img src={imgSrc} alt={name} style={{ width: "100%", height: "100%", objectFit: "cover", display: "block", borderRadius: "50%" }} onError={() => setImgFailed(true)} />
-          : initials(name)
-        }
-      </div>
+      {imgSrc && !imgFailed ? (
+        <button
+          type="button"
+          className="pdm-avatar pdm-avatar-p"
+          style={{ padding: 0, overflow: "hidden", cursor: "zoom-in" }}
+          onClick={() => onImageOpen?.(imgSrc, name)}
+          title={`View ${name}'s photo`}
+          aria-label={`View ${name}'s photo full size`}
+        >
+          <img src={imgSrc} alt="" style={{ width: "100%", height: "100%", objectFit: "cover", display: "block", borderRadius: "50%" }} onError={() => setImgFailed(true)} />
+        </button>
+      ) : (
+        <div className={`pdm-avatar ${isGuest ? "pdm-avatar-g" : "pdm-avatar-p"}`} style={{ padding: 0, overflow: "hidden" }}>
+          {initials(name)}
+        </div>
+      )}
 
       <div className="pdm-card-body">
         <div className="pdm-card-top">

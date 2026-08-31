@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useParams } from "next/navigation";
 import { useAuthGuard } from "@/hooks/useAuthGuard";
 import { resolveImageUrl } from "@/utils/api";
@@ -17,6 +17,7 @@ import {
 } from "@/utils/playerRatings";
 import "../../../organizer-dashboard.css";
 import "./player-ratings.css";
+import { ImageLightbox } from "@/components/ui/ImageLightbox";
 
 const PAGE_SIZE = 30;
 const SEARCH_DEBOUNCE_MS = 300;
@@ -55,15 +56,26 @@ const isDirty = (draft: Draft, rating: StandingRating | null) => {
     || !sameIds(draft.playAgainst, base.playAgainst);
 };
 
-function PlayerAvatar({ name, profileImage }: { name: string; profileImage: string | null }) {
+function PlayerAvatar({ name, profileImage, onOpen }: {
+  name: string;
+  profileImage: string | null;
+  onOpen?: (src: string) => void;
+}) {
   const [failed, setFailed] = useState(false);
   const initials = (name || "P").substring(0, 2).toUpperCase();
+  const src = profileImage ? resolveImageUrl(profileImage) : "";
 
-  if (profileImage && !failed) {
+  if (src && !failed) {
     return (
-      <span className="pr-avatar pr-avatar-img">
-        <img src={resolveImageUrl(profileImage)} alt={name} onError={() => setFailed(true)} />
-      </span>
+      <button
+        type="button"
+        className="pr-avatar pr-avatar-img pr-avatar-btn"
+        onClick={() => onOpen?.(src)}
+        title={`View ${name}'s photo`}
+        aria-label={`View ${name}'s photo full size`}
+      >
+        <img src={src} alt="" onError={() => setFailed(true)} />
+      </button>
     );
   }
   return <span className="pr-avatar">{initials}</span>;
@@ -77,6 +89,8 @@ export default function PlayerRatingsPage() {
     routeUserId: organiserId,
     redirectTo: "/login?role=organiser",
   });
+
+  const [lightbox, setLightbox] = useState<{ src: string; name: string } | null>(null);
 
   const { toast, showToast, hideToast } = useToast();
 
@@ -95,8 +109,9 @@ export default function PlayerRatingsPage() {
 
   const [page, setPage] = useState(1);
   const [total, setTotal] = useState(0);
-  const [hasMore, setHasMore] = useState(false);
+  const [hasMore, setHasMore] = useState(false); 
 
+  
   // Debounce the box, not the request — the request is driven off `query`, so a
   // scope or filter change fires immediately while typing still waits.
   useEffect(() => {
@@ -331,7 +346,11 @@ export default function PlayerRatingsPage() {
                     <tr key={row.playerId} className={dirty ? "pr-row-dirty" : ""}>
                       <td className="pr-col-player">
                         <div className="pr-player-cell">
-                          <PlayerAvatar name={row.name} profileImage={row.profileImage} />
+                          <PlayerAvatar
+                            name={row.name}
+                            profileImage={row.profileImage}
+                            onOpen={(src) => setLightbox({ src, name: row.name })}
+                          />
                           <div className="pr-player-meta">
                             <span className="pr-player-name">{row.name}</span>
                             <span className="pr-player-sub">
@@ -433,6 +452,11 @@ export default function PlayerRatingsPage() {
           )}
         </>
       )}
+      <ImageLightbox
+        lightboxImage={lightbox?.src ?? null}
+        alt={lightbox ? `${lightbox.name} — profile photo` : undefined}
+        setLightboxImage={() => setLightbox(null)}
+      />
 
       {toast && (
         <Toast type={toast.type} title={toast.title} subtitle={toast.subtitle} onClose={hideToast} />

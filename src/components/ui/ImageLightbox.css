@@ -1,0 +1,17 @@
+
+.pr-avatar-btn {
+  padding: 0;
+  border: none;
+  cursor: zoom-in;
+  transition: box-shadow 0.15s, transform 0.15s;
+}
+
+.pr-avatar-btn:hover {
+  transform: scale(1.06);
+  box-shadow: 0 0 0 2px rgba(200, 255, 62, 0.55);
+}
+
+.pr-avatar-btn:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 2px var(--lime, #c8ff3e);
+}

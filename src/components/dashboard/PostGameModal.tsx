@@ -4,6 +4,7 @@ import React, { useState, useEffect } from "react";
 import { buildApiUrl, getSession } from "@/utils/api";
 import { StarRating } from "@/components/ui/StarRating";
 import { PlayerMultiSelect, type PlayerOption } from "@/components/ui/PlayerMultiSelect";
+import { ImageLightbox } from "@/components/ui/ImageLightbox";
 import "./PostGameModal.css";
 
 // ── Types ──────────────────────────────────────────────────────────────────
@@ -109,15 +110,26 @@ const POSITIONS = ["goalkeeper", "defender", "midfielder", "forward", "any"];
 
 const IMG_BASE = (process.env.NEXT_PUBLIC_API_BASE_URL || "http://localhost:5000/api/v1").replace(/\/api\/v1\/?$/, "");
 
-function PlayerAvatar({ name, profileImage }: { name: string; profileImage?: string }) {
+function PlayerAvatar({ name, profileImage, onOpen }: {
+  name: string;
+  profileImage?: string;
+  onOpen?: (src: string) => void;
+}) {
   const [failed, setFailed] = React.useState(false);
   const text = (name || "P").substring(0, 2).toUpperCase();
   if (profileImage && !failed) {
     const src = profileImage.startsWith("http") ? profileImage : `${IMG_BASE}${profileImage}`;
     return (
-      <span className="pgm-player-avatar" style={{ padding: 0, overflow: "hidden" }}>
+      <button
+        type="button"
+        className="pgm-player-avatar"
+        style={{ padding: 0, overflow: "hidden", cursor: "zoom-in" }}
+        onClick={() => onOpen?.(src)}
+        title={`View ${name}'s photo`}
+        aria-label={`View ${name}'s photo full size`}
+      >
         <img src={src} alt={name} style={{ width: "100%", height: "100%", objectFit: "cover", borderRadius: "50%", display: "block" }} onError={() => setFailed(true)} />
-      </span>
+      </button>
     );
   }
   return <span className="pgm-player-avatar">{text}</span>;
@@ -150,6 +162,7 @@ function PlayerDropdownSelect({
 
 // ── Main Optimized Modal ───────────────────────────────────────────────────
 export function PostGameModal({ game, onClose, onDone }: Props) {
+  const [lightbox, setLightbox] = useState<{ src: string; name: string } | null>(null);
   const [step, setStep] = useState<"attendance" | "ratings" | "summary">("attendance");
   const [attendance, setAttendance] = useState<Record<string, AttendanceStatus>>({});
   const [savingAttendance, setSavingAttendance] = useState(false);
@@ -535,7 +548,11 @@ export function PostGameModal({ game, onClose, onDone }: Props) {
               {playerRegs.map((reg) => (
                 <div key={reg._id} className="pgm-attendance-row">
                   <div className="pgm-player-info">
-                    <PlayerAvatar name={reg.player?.name || "P"} profileImage={reg.player?.profileImage} />
+                    <PlayerAvatar
+                      name={reg.player?.name || "P"}
+                      profileImage={reg.player?.profileImage}
+                      onOpen={(src) => setLightbox({ src, name: reg.player?.name || "Player" })}
+                    />
                     <span className="pgm-player-name">{reg.player?.name}</span>
                   </div>
                   <div className="pgm-attendance-btns">
@@ -648,7 +665,7 @@ export function PostGameModal({ game, onClose, onDone }: Props) {
                         <tr key={r.playerId}>
                           <td style={{ minWidth: 130 }}>
                             <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                              <PlayerAvatar name={r.name} profileImage={profileImage} />
+                              <PlayerAvatar name={r.name} profileImage={profileImage} onOpen={(src) => setLightbox({ src, name: r.name })} />
                               <div style={{ display: "flex", flexDirection: "column", gap: 1 }}>
                                 <span style={{ fontWeight: 600, color: "#f4efe8" }}>{r.name}</span>
                                 {r.existing && (
@@ -821,7 +838,7 @@ export function PostGameModal({ game, onClose, onDone }: Props) {
                         <div key={r.playerId} className="pgm-rating-card">
                           <div className="pgm-rating-card-header">
                             <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-                              <PlayerAvatar name={r.name} profileImage={profileImage} />
+                              <PlayerAvatar name={r.name} profileImage={profileImage} onOpen={(src) => setLightbox({ src, name: r.name })} />
                               <div style={{ display: "flex", flexDirection: "column", gap: 2 }}>
                                 <span className="pgm-player-name">{r.name}</span>
                                 {r.existing && (
@@ -1031,6 +1048,11 @@ export function PostGameModal({ game, onClose, onDone }: Props) {
           </div>
         )}
       </div>
+      <ImageLightbox
+        lightboxImage={lightbox?.src ?? null}
+        alt={lightbox ? `${lightbox.name} — profile photo` : undefined}
+        setLightboxImage={() => setLightbox(null)}
+      />
     </div>
   );
 }
