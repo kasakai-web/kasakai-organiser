@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { shiftDate, isMorningKickoff, checkInDate, defaultCheckTimes, checkInIso, checkInIsoFromParts, istYMD, istHHmm, sameMinute } from "./checkins.ts";
+import { shiftDate, isMorningKickoff, isNightKickoff, checkInDate, defaultCheckTimes, checkInIso, checkInIsoFromParts, istYMD, istHHmm, sameMinute } from "./checkins.ts";
 
 test("isMorningKickoff: before noon is morning, noon onward is evening", () => {
   assert.equal(isMorningKickoff("06:15"), true);
@@ -27,9 +27,36 @@ test("checkInDate: MORNING game → check-ins the DAY BEFORE", () => {
   assert.equal(checkInDate("2026-06-27", "06:15"), "2026-06-26");
 });
 
-test("defaultCheckTimes: 2pm/4pm for evening, 8pm/10pm for morning", () => {
-  assert.deepEqual(defaultCheckTimes("18:00"), { first: "14:00", second: "16:00" });
+test("isNightKickoff: 8pm onward is night", () => {
+  assert.equal(isNightKickoff("19:59"), false);
+  assert.equal(isNightKickoff("20:00"), true);
+  assert.equal(isNightKickoff("23:30"), true);
+  assert.equal(isNightKickoff(""), false);
+});
+
+test("defaultCheckTimes: EVENING game → 2h and 1h before kickoff", () => {
+  assert.deepEqual(defaultCheckTimes("18:00"), { first: "16:00", second: "17:00" });
+  assert.deepEqual(defaultCheckTimes("19:30"), { first: "17:30", second: "18:30" });
+  // Earliest possible evening kickoff still lands on the game day.
+  assert.deepEqual(defaultCheckTimes("12:00"), { first: "10:00", second: "11:00" });
+});
+
+test("defaultCheckTimes: NIGHT game (8pm+) → 4h and 2h before kickoff", () => {
+  assert.deepEqual(defaultCheckTimes("20:00"), { first: "16:00", second: "18:00" });
+  assert.deepEqual(defaultCheckTimes("22:15"), { first: "18:15", second: "20:15" });
+});
+
+test("defaultCheckTimes: MORNING game keeps the fixed day-before pair", () => {
   assert.deepEqual(defaultCheckTimes("08:00"), { first: "20:00", second: "22:00" });
+  assert.deepEqual(defaultCheckTimes("11:45"), { first: "20:00", second: "22:00" });
+});
+
+test("defaultCheckTimes: the second check is always after the first", () => {
+  for (const t of ["12:00", "15:45", "18:00", "19:59", "20:00", "23:45"]) {
+    const { first, second } = defaultCheckTimes(t);
+    assert.ok(first < second, `${t}: ${first} should precede ${second}`);
+    assert.ok(second < t, `${t}: ${second} should precede kickoff`);
+  }
 });
 
 test("both check-ins land on the same date (never mismatched/out of order)", () => {

@@ -5,6 +5,11 @@
 //   • morning game (kickoff before 12pm)    → the DAY BEFORE the game
 // The organiser edits only the *times*; the date is always rule-driven, so the
 // two check-ins can never end up on mismatched/out-of-order dates.
+//
+// The default times are RELATIVE to kickoff for anything on the game day, so a
+// 6pm and a 10pm game don't get the same afternoon check-ins. Night games get a
+// longer run-up because their players are still at work when an evening game's
+// first check would land. See defaultCheckTimes.
 
 // Shift a YYYY-MM-DD string by `days`, IST-safe (noon anchor avoids DST/midnight edges).
 export const shiftDate = (dateStr: string, days: number): string => {
@@ -27,11 +32,51 @@ export const checkInDate = (gameDate: string, gameTime: string): string => {
   return isMorningKickoff(gameTime) ? shiftDate(gameDate, -1) : gameDate;
 };
 
-// Default time-of-day for each check-in, based on morning/evening.
-export const defaultCheckTimes = (gameTime: string): { first: string; second: string } =>
-  isMorningKickoff(gameTime)
-    ? { first: "20:00", second: "22:00" }  // morning game → 8pm & 10pm the day before
-    : { first: "14:00", second: "16:00" }; // evening game → 2pm & 4pm same day
+// A game kicking off at 8pm or later is a "night" game.
+export const NIGHT_KICKOFF_HOUR = 20;
+
+export const isNightKickoff = (time: string): boolean => {
+  const h = Number((time || "").split(":")[0]);
+  return !isNaN(h) && h >= NIGHT_KICKOFF_HOUR;
+};
+
+// Hours before kickoff each check-in defaults to, per slot of the day. A night
+// game's players are still at work when an evening game's first check would go
+// out, so it asks earlier and leaves a wider gap to chase replacements in.
+const CHECK_LEAD_HOURS = {
+  night:   { first: 4, second: 2 },
+  evening: { first: 2, second: 1 },
+};
+
+// "HH:mm" → minutes since midnight; null if it isn't a time.
+const minutesOf = (time: string): number | null => {
+  const [h, m] = (time || "").split(":");
+  const hh = Number(h);
+  const mm = Number(m);
+  if (isNaN(hh) || isNaN(mm)) return null;
+  return hh * 60 + mm;
+};
+
+// Minutes since midnight → "HH:mm", wrapping rather than going negative.
+const hhmm = (mins: number): string => {
+  const w = ((mins % 1440) + 1440) % 1440;
+  return `${String(Math.floor(w / 60)).padStart(2, "0")}:${String(w % 60).padStart(2, "0")}`;
+};
+
+// Default time-of-day for each check-in.
+//   • morning game (< 12pm) → fixed 8pm & 10pm the DAY BEFORE (counting back
+//     from a 7am kickoff would land the checks in the middle of the night)
+//   • night game (>= 8pm)   → 4h & 2h before kickoff, same day
+//   • evening game          → 2h & 1h before kickoff, same day
+// Kickoffs come off a quarter-hour grid and the offsets are whole hours, so the
+// results always land on an option the time pickers actually offer.
+export const defaultCheckTimes = (gameTime: string): { first: string; second: string } => {
+  if (isMorningKickoff(gameTime)) return { first: "20:00", second: "22:00" };
+  const mins = minutesOf(gameTime);
+  if (mins === null) return { first: "14:00", second: "16:00" };
+  const lead = isNightKickoff(gameTime) ? CHECK_LEAD_HOURS.night : CHECK_LEAD_HOURS.evening;
+  return { first: hhmm(mins - lead.first * 60), second: hhmm(mins - lead.second * 60) };
+};
 
 // Combine a check-in date + time-of-day into the stored UTC instant (times are IST).
 export const checkInIso = (gameDate: string, gameTime: string, checkTime: string): string | null => {

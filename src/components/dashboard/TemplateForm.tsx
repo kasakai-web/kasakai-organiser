@@ -12,6 +12,7 @@ import { useState, useEffect, useRef } from "react";
 import "./CreateEventForm.css";
 import { buildApiUrl, getSession } from "@/utils/api";
 import { saveTemplate, updateTemplate, type Template, type Format } from "@/utils/templates";
+import { defaultCheckTimes } from "@/utils/checkins";
 
 const TIME_SLOT_OPTIONS = Array.from({ length: 96 }, (_, idx) => {
   const hours = Math.floor(idx / 4);
@@ -76,8 +77,14 @@ export function TemplateForm({ template, onClose, onSaved }: TemplateFormProps) 
 
   const [automationEnabled, setAutomationEnabled] = useState(template?.automationEnabled ?? false);
   const [customChecks, setCustomChecks] = useState<boolean>(!!(template?.firstCheckTime || template?.secondCheckTime));
-  const [firstCheckTime, setFirstCheckTime] = useState(template?.firstCheckTime ?? "14:00");
-  const [secondCheckTime, setSecondCheckTime] = useState(template?.secondCheckTime ?? "16:00");
+  // Seeded from the template's own kickoff so opening the override starts at what
+  // the automatic rule would have picked, rather than a fixed afternoon pair.
+  const [firstCheckTime, setFirstCheckTime] = useState(
+    template?.firstCheckTime ?? defaultCheckTimes(template?.defaultTimeOfDay ?? "18:00").first
+  );
+  const [secondCheckTime, setSecondCheckTime] = useState(
+    template?.secondCheckTime ?? defaultCheckTimes(template?.defaultTimeOfDay ?? "18:00").second
+  );
 
   useEffect(() => {
     const { token } = getSession();
@@ -346,7 +353,7 @@ export function TemplateForm({ template, onClose, onSaved }: TemplateFormProps) 
           </label>
           <label className="toggle-row" style={{ marginTop: 10 }}>
             <input type="checkbox" checked={customChecks} onChange={(ev) => setCustomChecks(ev.target.checked)} className="toggle-checkbox" />
-            <span className="toggle-label">Set custom check-in times (else auto: 2pm/4pm, or 8pm/10pm the day before for morning games)</span>
+            <span className="toggle-label">Set custom check-in times (else auto: 2h &amp; 1h before kickoff — 4h &amp; 2h for night games from 8pm, or 8pm/10pm the day before for morning games)</span>
           </label>
           {customChecks && (
             <div className="form-row" style={{ marginTop: 10 }}>

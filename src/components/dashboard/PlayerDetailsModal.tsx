@@ -4,7 +4,8 @@ import React, { useRef, useState } from "react";
 
 import { buildApiUrl, getAuthHeaders } from "@/utils/api";
 import { TeamDistributionPanel } from "@/components/dashboard/TeamDistributionPanel";
-import { formatIstTime, formatIstLongDate, upperMeridiem, KASAKAI_SIGNOFF } from "@/utils/formatTime";
+import { upperMeridiem } from "@/utils/formatTime";
+import { buildTeamsMessage } from "@/utils/teamsMessage";
 import { ConfirmationModal } from "@/components/ui/ConfirmationModal";
 import { ImageLightbox } from "@/components/ui/ImageLightbox";
 import { buildPlayerListMessage } from "@/utils/playerListMessage";
@@ -421,49 +422,18 @@ function downloadTeamExcel(result: {
 }
   const handleCopyTeams = () => {
     if (!teams) return;
-    const pd = teams.playerDetails || {};
-    const lines: string[] = [];
-
-    // v2 decides which side wears which colour AFTER balancing, so team A is not
-    // always red. Hardcoding it here would make the WhatsApp message contradict
-    // the portal — and send half the squad in the wrong shirt.
-    const colours = teams.colours || { A: "red", B: "blue" };
-    const heading = (side: "A" | "B") =>
-      colours[side] === "red" ? "🔴 *Red Team*" : "🔵 *Blue Team*";
-
-    lines.push(`⚽ *${gameName}*`);
-    if (scheduledAt) {
-      const d = new Date(scheduledAt);
-      lines.push(`📅 ${formatIstLongDate(d)} at ${formatIstTime(d)}`);
-    }
-    const venueParts = [venue, location].filter(Boolean);
-    if (venueParts.length) lines.push(`📍 ${venueParts.join(", ")}`);
-    if (format) lines.push(`🎮 Format: ${format}`);
-
-    lines.push("");
-    lines.push("─".repeat(28));
-
-    // Red first, then blue — the same order the portal and the downloaded sheet
-    // put them in, so an organiser reading the two side by side isn't checking
-    // a message whose halves are the other way round.
-    const sideOrder: ("A" | "B")[] = colours.A === "red" ? ["A", "B"] : ["B", "A"];
-    sideOrder.forEach((side, index) => {
-      const names = (side === "A" ? teams.teamA : teams.teamB) || [];
-      if (index > 0) lines.push("");
-      lines.push(`${heading(side)} (${names.length} players)`);
-      names.forEach((name: string, i: number) => {
-        const detail = pd[name];
-        lines.push(`${i + 1}. ${name}${detail ? ` (${detail})` : ""}`);
-      });
+    const text = buildTeamsMessage({
+      gameName,
+      scheduledAt,
+      reportingMinsBeforeGame,
+      venue,
+      location,
+      format,
+      teamA: teams.teamA,
+      teamB: teams.teamB,
+      colours: teams.colours,
     });
-
-    lines.push("─".repeat(28));
-    // Skill totals stay in the portal, not in the group chat — players comparing
-    // their side's number against the other's is an argument nobody needs.
-    lines.push("");
-    lines.push(KASAKAI_SIGNOFF);
-
-    navigator.clipboard.writeText(lines.join("\n")).then(() => {
+    navigator.clipboard.writeText(text).then(() => {
       setCopiedTeams(true);
       setTimeout(() => setCopiedTeams(false), 2500);
     });
@@ -1047,8 +1017,8 @@ function downloadTeamExcel(result: {
               teams={teams}
               onDistribute={handleDistribute}
               // Merged, not replaced: a move returns the teams, not the extras
-              // the distribute response carried (playerDetails, for one, which
-              // the WhatsApp copy reads).
+              // the distribute response carried (the balance stats and reasoning
+              // this panel renders above the lists).
               onTeamsChanged={(result) => setTeams((prev: any) => ({ ...prev, ...result }))}
               onRefresh={onRefresh}
               showStatus={showStatus}

@@ -38,3 +38,13 @@ export const formatIstLongDate = (value: string | number | Date): string =>
 
 /** Sign-off on shared messages. */
 export const KASAKAI_SIGNOFF = "- Team KasaKai";
+
+/** Short date in IST, e.g. "Tuesday, 4 Aug". No year — a game being shared in a
+ *  group chat is days away, and the year is length the reader doesn't need. */
+export const formatIstShortDate = (value: string | number | Date): string =>
+  new Date(value).toLocaleDateString("en-IN", {
+    timeZone: "Asia/Kolkata",
+    weekday: "long",
+    day: "numeric",
+    month: "short",
+  });
