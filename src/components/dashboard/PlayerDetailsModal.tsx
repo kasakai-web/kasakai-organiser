@@ -785,161 +785,163 @@ function downloadTeamExcel(result: {
 
         {/* ── Registered Players ── */}
         <div className="pdm-cards-scroll">
-          {players.length === 0 && !organiserIsPlaying ? (
+          {/* The empty state is a message, not a replacement for the list: an empty
+              game is exactly when an organiser wants to add their first guest, so
+              the cards list (which owns the + Add Guest button) always renders. */}
+          {roster.length === 0 && !organiserIsPlaying && (
             <div className="empty-state">
               <div className="empty-icon">👥</div>
               <p>No players registered yet</p>
             </div>
-          ) : (
-            <div className="pdm-cards-list">
-
-              {/* Organiser group: card (if playing) + organiser's guests */}
-              {(organiserIsPlaying || organiserGuests.length > 0 || (!isLocked && spotsLeft > 0)) && (
-                <div className="pdm-group">
-                  {organiserIsPlaying && (
-                    <div className="pdm-card pdm-card-organiser">
-                      <div className="pdm-slot-num">#1</div>
-                      <div className="pdm-avatar pdm-avatar-o">YOU</div>
-                      <div className="pdm-card-body">
-                        <div className="pdm-card-top">
-                          <div className="pdm-card-name">You (Organiser)</div>
-                          <span className="pdm-type-chip pdm-chip-organiser">Organiser</span>
-                        </div>
-                        <div className="pdm-card-tags">
-                          <span className="pdm-pos-tag" style={{ background: "rgba(200,255,62,0.12)", color: "#c8ff3e", border: "1px solid rgba(200,255,62,0.3)" }}>
-                            ⚽ Playing
-                          </span>
-                        </div>
-                      </div>
-                      {onToggleOrganiserPlaying && !isLocked && (
-                        <button
-                          onClick={onToggleOrganiserPlaying}
-                          title="Withdraw from game"
-                          style={{
-                            flexShrink: 0,
-                            alignSelf: "center",
-                            width: 28,
-                            height: 28,
-                            borderRadius: 6,
-                            background: "rgba(220,38,38,0.1)",
-                            border: "1px solid rgba(220,38,38,0.3)",
-                            color: "#f87171",
-                            fontSize: 14,
-                            lineHeight: 1,
-                            cursor: "pointer",
-                            display: "flex",
-                            alignItems: "center",
-                            justifyContent: "center",
-                          }}
-                        >
-                          ✕
-                        </button>
-                      )}
-                    </div>
-                  )}
-                  {organiserGuests.length > 0 && (
-                    <div className="pdm-guest-group">
-                      {organiserGuests.map((reg, i) => {
-                        const regId = reg._id || "";
-                        const slotNum = organiserCount + i + 1;
-                        return (
-                          <PlayerCard
-                            key={regId || `og-${i}`}
-                            reg={reg}
-                            slotNum={slotNum}
-                            type="guest"
-                            gameFeeInPaise={feeInPaise}
-                            playerNameById={playerNameById}
-                            onImageOpen={(src, name) => setLightbox({ src, name })}
-                            isProcessing={processingId === regId}
-                            onRemove={
-                              onRemoveRegistration && regId && !isLocked
-                                ? async () => {
-                                    const doRemove = async () => {
-                                      setProcessingId(regId);
-                                      try {
-                                        await onRemoveRegistration(regId);
-                                      } catch {
-                                        showStatus("error", "Failed to remove player. Please try again.");
-                                      } finally {
-                                        setProcessingId(null);
-                                      }
-                                    };
-                                    setConfirmMessage(`Remove ${reg.plusOneName} from your guest list?`);
-                                    confirmActionRef.current = doRemove;
-                                    setConfirmVisible(true);
-                                  }
-                                : undefined
-                            }
-                          />
-                        );
-                      })}
-                    </div>
-                  )}
-                  {!isLocked && spotsLeft > 0 && (
-                    <button
-                      onClick={() => { setPendingGuestName(""); setPendingGuestPosition("Any"); setPendingGuestTeam("No Preference"); setGuestModalOpen(true); }}
-                      style={{
-                        width: "100%", marginTop: 6, padding: "8px 0",
-                        background: "rgba(200,255,62,0.06)", border: "1px dashed rgba(200,255,62,0.3)",
-                        borderRadius: 8, color: "#c8ff3e", fontSize: 13, fontWeight: 600, cursor: "pointer",
-                      }}
-                    >
-                      + Add Guest
-                    </button>
-                  )}
-                </div>
-              )}
-
-              {/* Main players + their guests — grouped */}
-              {(() => {
-                let slot = organiserCount + organiserGuests.length;
-                return mainRegs.map((reg) => {
-                  slot++;
-                  const regId   = reg._id || "";
-                  const playerId = refId(reg.player) ?? "";
-                  const myGuests = guestsByPlayer.get(playerId) ?? [];
-
-                  return (
-                    <div className="pdm-group" key={regId || `mp-${slot}`}>
-                      <PlayerCard
-                        reg={reg}
-                        slotNum={slot}
-                        type="player"
-                        gameFeeInPaise={feeInPaise}
-                        playerNameById={playerNameById}
-                        onImageOpen={(src, name) => setLightbox({ src, name })}
-                        isProcessing={processingId === regId}
-                        onRemove={undefined}
-                      />
-                      {myGuests.length > 0 && (
-                        <div className="pdm-guest-group">
-                          {myGuests.map((gReg) => {
-                            slot++;
-                            const gId = gReg._id || "";
-                            return (
-                              <PlayerCard
-                                key={gId || `pg-${slot}`}
-                                reg={gReg}
-                                slotNum={slot}
-                                type="guest"
-                                gameFeeInPaise={feeInPaise}
-                                playerNameById={playerNameById}
-                                onImageOpen={(src, name) => setLightbox({ src, name })}
-                                isProcessing={processingId === gId}
-                                onRemove={undefined}
-                              />
-                            );
-                          })}
-                        </div>
-                      )}
-                    </div>
-                  );
-                });
-              })()}
-
-            </div>
           )}
+          <div className="pdm-cards-list">
+
+            {/* Organiser group: card (if playing) + organiser's guests */}
+            {(organiserIsPlaying || organiserGuests.length > 0 || (!isLocked && spotsLeft > 0)) && (
+              <div className="pdm-group">
+                {organiserIsPlaying && (
+                  <div className="pdm-card pdm-card-organiser">
+                    <div className="pdm-slot-num">#1</div>
+                    <div className="pdm-avatar pdm-avatar-o">YOU</div>
+                    <div className="pdm-card-body">
+                      <div className="pdm-card-top">
+                        <div className="pdm-card-name">You (Organiser)</div>
+                        <span className="pdm-type-chip pdm-chip-organiser">Organiser</span>
+                      </div>
+                      <div className="pdm-card-tags">
+                        <span className="pdm-pos-tag" style={{ background: "rgba(200,255,62,0.12)", color: "#c8ff3e", border: "1px solid rgba(200,255,62,0.3)" }}>
+                          ⚽ Playing
+                        </span>
+                      </div>
+                    </div>
+                    {onToggleOrganiserPlaying && !isLocked && (
+                      <button
+                        onClick={onToggleOrganiserPlaying}
+                        title="Withdraw from game"
+                        style={{
+                          flexShrink: 0,
+                          alignSelf: "center",
+                          width: 28,
+                          height: 28,
+                          borderRadius: 6,
+                          background: "rgba(220,38,38,0.1)",
+                          border: "1px solid rgba(220,38,38,0.3)",
+                          color: "#f87171",
+                          fontSize: 14,
+                          lineHeight: 1,
+                          cursor: "pointer",
+                          display: "flex",
+                          alignItems: "center",
+                          justifyContent: "center",
+                        }}
+                      >
+                        ✕
+                      </button>
+                    )}
+                  </div>
+                )}
+                {organiserGuests.length > 0 && (
+                  <div className="pdm-guest-group">
+                    {organiserGuests.map((reg, i) => {
+                      const regId = reg._id || "";
+                      const slotNum = organiserCount + i + 1;
+                      return (
+                        <PlayerCard
+                          key={regId || `og-${i}`}
+                          reg={reg}
+                          slotNum={slotNum}
+                          type="guest"
+                          gameFeeInPaise={feeInPaise}
+                          playerNameById={playerNameById}
+                          onImageOpen={(src, name) => setLightbox({ src, name })}
+                          isProcessing={processingId === regId}
+                          onRemove={
+                            onRemoveRegistration && regId && !isLocked
+                              ? async () => {
+                                  const doRemove = async () => {
+                                    setProcessingId(regId);
+                                    try {
+                                      await onRemoveRegistration(regId);
+                                    } catch {
+                                      showStatus("error", "Failed to remove player. Please try again.");
+                                    } finally {
+                                      setProcessingId(null);
+                                    }
+                                  };
+                                  setConfirmMessage(`Remove ${reg.plusOneName} from your guest list?`);
+                                  confirmActionRef.current = doRemove;
+                                  setConfirmVisible(true);
+                                }
+                              : undefined
+                          }
+                        />
+                      );
+                    })}
+                  </div>
+                )}
+                {!isLocked && spotsLeft > 0 && (
+                  <button
+                    onClick={() => { setPendingGuestName(""); setPendingGuestPosition("Any"); setPendingGuestTeam("No Preference"); setGuestModalOpen(true); }}
+                    style={{
+                      width: "100%", marginTop: 6, padding: "8px 0",
+                      background: "rgba(200,255,62,0.06)", border: "1px dashed rgba(200,255,62,0.3)",
+                      borderRadius: 8, color: "#c8ff3e", fontSize: 13, fontWeight: 600, cursor: "pointer",
+                    }}
+                  >
+                    + Add Guest
+                  </button>
+                )}
+              </div>
+            )}
+
+            {/* Main players + their guests — grouped */}
+            {(() => {
+              let slot = organiserCount + organiserGuests.length;
+              return mainRegs.map((reg) => {
+                slot++;
+                const regId   = reg._id || "";
+                const playerId = refId(reg.player) ?? "";
+                const myGuests = guestsByPlayer.get(playerId) ?? [];
+
+                return (
+                  <div className="pdm-group" key={regId || `mp-${slot}`}>
+                    <PlayerCard
+                      reg={reg}
+                      slotNum={slot}
+                      type="player"
+                      gameFeeInPaise={feeInPaise}
+                      playerNameById={playerNameById}
+                      onImageOpen={(src, name) => setLightbox({ src, name })}
+                      isProcessing={processingId === regId}
+                      onRemove={undefined}
+                    />
+                    {myGuests.length > 0 && (
+                      <div className="pdm-guest-group">
+                        {myGuests.map((gReg) => {
+                          slot++;
+                          const gId = gReg._id || "";
+                          return (
+                            <PlayerCard
+                              key={gId || `pg-${slot}`}
+                              reg={gReg}
+                              slotNum={slot}
+                              type="guest"
+                              gameFeeInPaise={feeInPaise}
+                              playerNameById={playerNameById}
+                              onImageOpen={(src, name) => setLightbox({ src, name })}
+                              isProcessing={processingId === gId}
+                              onRemove={undefined}
+                            />
+                          );
+                        })}
+                      </div>
+                    )}
+                  </div>
+                );
+              });
+            })()}
+
+          </div>
 
           {/* Waitlist Section — inside scroll area so it doesn't overflow */}
           {waitlist.length > 0 && (
