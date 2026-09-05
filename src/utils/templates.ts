@@ -7,6 +7,7 @@
 
 import { buildApiUrl, getSession } from "@/utils/api";
 import { shiftDate } from "@/utils/checkins";
+import type { BackoutPolicy } from "./backoutPolicy";
 
 export type Format = "5v5" | "6v6" | "7v7" | "8v8" | "9v9" | "10v10";
 
@@ -32,6 +33,7 @@ export interface Template {
   cutoffHoursBeforeGame?: number;
   feeInPaise?: number;
   backoutFeeInPaise?: number;
+  backoutPolicy?: Partial<BackoutPolicy> | null;
   minPlayers?: number;
   totalSlots?: number;
   allowSizeChange?: boolean;
@@ -153,6 +155,7 @@ export const templateToLastEventShape = (t: Template, dateYMD: string) => {
     durationMins: t.durationMins ?? 60,
     feeInPaise: t.feeInPaise ?? 0,
     backoutFeeInPaise: t.backoutFeeInPaise ?? 0,
+    backoutPolicy: t.backoutPolicy ?? null,
     cutoffHoursBeforeGame: t.cutoffHoursBeforeGame ?? 2,
     reportingMinsBeforeGame: t.reportingMinsBeforeGame ?? 30,
     minPlayers: t.minPlayers || 0,

@@ -5,6 +5,7 @@ import { Calendar, Minus, Plus, Check, ChevronDown, Info, Save } from "lucide-re
 import { buildApiUrl, getSession } from "@/utils/api";
 import { checkInDate, defaultCheckTimes, checkInIsoFromParts } from "@/utils/checkins";
 import { saveTemplate, listTemplates, prettyTime, type Template } from "@/utils/templates";
+import { fromStored, toPayload, describeForOrganiser, formatMins, WINDOW_CHOICES, GRACE_CHOICES, type BackoutPolicy } from "@/utils/backoutPolicy";
 
 const TIME_SLOT_OPTIONS = Array.from({ length: 96 }, (_, idx) => {
   const hours = Math.floor(idx / 4);
@@ -282,6 +283,8 @@ export function CreateEventForm({ lastEvent, presetDate, onClose, onCreate, onSu
   const [durationMins, setDuration] = useState(lastEvent?.durationMins ?? 60);
   const [feeInRs, setFeeInRs] = useState(lastEvent?.feeInPaise ? String(lastEvent.feeInPaise / 100) : "");
   const [backoutFeeInRs, setBackoutFeeInRs] = useState(lastEvent?.backoutFeeInPaise ? String(lastEvent.backoutFeeInPaise / 100) : "");
+  const [backoutPolicy, setBackoutPolicy] = useState(() => fromStored(lastEvent?.backoutPolicy));
+  const patchPolicy = (patch: Partial<BackoutPolicy>) => setBackoutPolicy((p) => ({ ...p, ...patch }));
   const [cutoffHours, setCutoffHours] = useState<number>(lastEvent?.cutoffHoursBeforeGame ?? 2);
   const [reportingMins, setReporting] = useState(lastEvent?.reportingMinsBeforeGame ?? 30);
   const [minPlayers, setMinPlayers] = useState<string>(
@@ -475,6 +478,7 @@ export function CreateEventForm({ lastEvent, presetDate, onClose, onCreate, onSu
     setCutoffHours(t.cutoffHoursBeforeGame ?? 2);
     setFeeInRs(t.feeInPaise ? String(t.feeInPaise / 100) : "");
     setBackoutFeeInRs(t.backoutFeeInPaise ? String(t.backoutFeeInPaise / 100) : "");
+    setBackoutPolicy(fromStored(t.backoutPolicy));
     setOrganiserPlaying(!!t.organiserIsPlaying);
     setAutomationEnabled(!!t.automationEnabled);
 
@@ -597,6 +601,7 @@ export function CreateEventForm({ lastEvent, presetDate, onClose, onCreate, onSu
         cutoffAt: cutoffAt.toISOString(),
         feeInRs: Number(feeInRs),
         backoutFeeInPaise: backoutFeeInRs === "" ? 0 : Math.round(Number(backoutFeeInRs) * 100),
+        backoutPolicy: toPayload(backoutPolicy),
         totalSlots: slots,
         minPlayers: Number(minPlayers) || slots,
         reportingMinsBeforeGame: Number(reportingMins),
@@ -657,6 +662,7 @@ export function CreateEventForm({ lastEvent, presetDate, onClose, onCreate, onSu
         cutoffHoursBeforeGame: Number(cutoffHours),
         feeInRs: feeInRs === "" ? 0 : Number(feeInRs),
         backoutFeeInRs: backoutFeeInRs === "" ? 0 : Number(backoutFeeInRs),
+        backoutPolicy: toPayload(backoutPolicy),
         minPlayers: Number(minPlayers) || 0,
         totalSlots: Number(maxPlayers) || slotsFromFormat(format),
         allowSizeChange,
@@ -1031,9 +1037,9 @@ export function CreateEventForm({ lastEvent, presetDate, onClose, onCreate, onSu
                 <Hint>{format === "Screening" ? "Max players allowed" : `Must be ≥ ${slotsFromFormat(format)} (format slots)`}</Hint>
               </div>
               <div>
-                <Label text="Backout Fee" />
+                <Label text="Cancellation Fee" />
                 <MoneyField value={backoutFeeInRs} onChange={setBackoutFeeInRs} placeholder="0" />
-                <Hint>Charged if a player backs out after the cutoff. Leave 0 for none.</Hint>
+                <Hint>Charged per slot given up — a player leaving with 2 guests pays it 3 times. Capped at what they paid.</Hint>
               </div>
               <div>
                 <Label text="Registration Cutoff" />
@@ -1047,7 +1053,132 @@ export function CreateEventForm({ lastEvent, presetDate, onClose, onCreate, onSu
                   onInc={() => setCutoffHours((v) => v + 1)}
                   decDisabled={cutoffHours <= 0}
                 />
-                <Hint>Registration closes this many hours before kick-off.</Hint>
+                <Hint>
+                  Once this passes, a <strong className="text-[#888]">full</strong> game stops taking joins — including the
+                  waitlist. A game still short of players stays open. If someone drops out, the slot reopens to everyone.
+                </Hint>
+              </div>
+            </div>
+
+            <SubSectionHeader title="Cancellation Policy" />
+            <div className="mb-10">
+              {/* The fee amount above is inert until it is given a window. Games
+                  created before this existed carry fees their players were never
+                  warned about, so nothing charges until an organiser says when. */}
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-6 md:gap-8 mb-8">
+                <div>
+                  <Label text="Fee applies within" />
+                  <select
+                    value={backoutPolicy.tiers.length ? -1 : backoutPolicy.windowMins}
+                    disabled={backoutPolicy.tiers.length > 0}
+                    onChange={(e) => patchPolicy({ windowMins: Number(e.target.value) })}
+                    className={`${inputCls()} disabled:opacity-40`}
+                  >
+                    {backoutPolicy.tiers.length > 0 && <option value={-1}>Using a sliding scale below</option>}
+                    {WINDOW_CHOICES.map((c) => (
+                      <option key={c.mins} value={c.mins}>{c.label}</option>
+                    ))}
+                  </select>
+                  <Hint>How close to kick-off a departure starts costing. Leaving earlier is always free.</Hint>
+                </div>
+                <div>
+                  <Label text="Free-change window" />
+                  <select
+                    value={backoutPolicy.graceMins}
+                    onChange={(e) => patchPolicy({ graceMins: Number(e.target.value) })}
+                    className={inputCls()}
+                  >
+                    {GRACE_CHOICES.map((c) => (
+                      <option key={c.mins} value={c.mins}>{c.label}</option>
+                    ))}
+                  </select>
+                  <Hint>A player who joins and immediately changes their mind is never charged.</Hint>
+                </div>
+              </div>
+
+              <div className="flex flex-col gap-5 mb-8">
+                <CheckboxRow
+                  label="No fee if the game falls through or changes"
+                  helper="Waives it when you cancel the game, move the kick-off, or switch format."
+                  checked={backoutPolicy.waiveOnCancel}
+                  onChange={() => patchPolicy({ waiveOnCancel: !backoutPolicy.waiveOnCancel })}
+                />
+              </div>
+
+              {/* Sliding scale. Optional, and it supersedes the single window
+                  above rather than blending with it — a half-applied scale is
+                  impossible to explain to the player being charged. */}
+              <div className="border border-[#222] rounded-2xl p-4 md:p-5 bg-[#0d0d0d]">
+                <div className="flex items-center justify-between gap-4 mb-1">
+                  <h4 className="text-[11px] font-bold text-[#888] uppercase tracking-[0.15em]">Sliding scale (optional)</h4>
+                  <button
+                    type="button"
+                    onClick={() => patchPolicy({
+                      tiers: [...backoutPolicy.tiers, { withinMins: 120, feeInPaise: 5000 }]
+                        .sort((a, b) => a.withinMins - b.withinMins),
+                    })}
+                    className="text-xs font-bold text-[#c4f042] hover:underline shrink-0"
+                  >
+                    + Add tier
+                  </button>
+                </div>
+                <p className="text-[#666] text-xs leading-relaxed mb-4">
+                  Charge more the later they leave — e.g. ₹25 within a day, ₹75 within 2 hours.
+                  Adding any tier replaces the single window above. Leaving earlier must never cost more.
+                </p>
+
+                {backoutPolicy.tiers.length === 0 ? (
+                  <p className="text-[#555] text-xs italic">No tiers — using the single window above.</p>
+                ) : (
+                  <div className="flex flex-col gap-3">
+                    {backoutPolicy.tiers.map((tier, i) => (
+                      <div key={i} className="flex items-center gap-2 md:gap-3">
+                        <span className="text-[#666] text-xs shrink-0 w-14">within</span>
+                        <select
+                          value={tier.withinMins}
+                          onChange={(e) => {
+                            const tiers = backoutPolicy.tiers.map((t, j) =>
+                              j === i ? { ...t, withinMins: Number(e.target.value) } : t);
+                            patchPolicy({ tiers: tiers.sort((a, b) => a.withinMins - b.withinMins) });
+                          }}
+                          className={`${inputCls()} flex-1 min-w-0`}
+                        >
+                          {WINDOW_CHOICES.filter((c) => c.mins > 0).map((c) => (
+                            <option key={c.mins} value={c.mins}>{c.label}</option>
+                          ))}
+                        </select>
+                        <span className="text-[#666] text-xs shrink-0">charge</span>
+                        <div className="w-28 md:w-32 shrink-0">
+                          <MoneyField
+                            value={String(tier.feeInPaise / 100)}
+                            onChange={(raw) => patchPolicy({
+                              tiers: backoutPolicy.tiers.map((t, j) =>
+                                j === i ? { ...t, feeInPaise: Math.max(0, Math.round(Number(raw) * 100) || 0) } : t),
+                            })}
+                            placeholder="0"
+                          />
+                        </div>
+                        <button
+                          type="button"
+                          aria-label={`Remove the ${formatMins(tier.withinMins)} tier`}
+                          onClick={() => patchPolicy({ tiers: backoutPolicy.tiers.filter((_, j) => j !== i) })}
+                          className="text-[#ff5a5f] text-lg leading-none px-2 hover:opacity-70 shrink-0"
+                        >
+                          ×
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+
+              {/* Read the policy back in one sentence, so it is checked as a whole
+                  rather than inferred from five separate controls. */}
+              <div className="mt-5 rounded-2xl bg-[#141414] border border-[#222] px-4 py-3.5">
+                <p className="text-xs text-[#aaa] leading-relaxed">
+                  <span className="font-bold text-[#c4f042]">Players will see: </span>
+                  {describeForOrganiser(backoutPolicy, backoutFeeInRs)}
+                </p>
               </div>
             </div>
 

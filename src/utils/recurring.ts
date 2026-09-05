@@ -9,6 +9,7 @@
 
 import { buildApiUrl, getSession } from "@/utils/api";
 import type { Format } from "@/utils/templates";
+import type { BackoutPolicy } from "./backoutPolicy";
 
 export type Freq = "daily" | "weekly" | "monthly";
 export type EndMode = "never" | "onDate" | "afterCount";
@@ -40,6 +41,7 @@ export interface SeriesGameDefaults {
   cutoffHoursBeforeGame?: number;
   feeInPaise?: number;
   backoutFeeInPaise?: number;
+  backoutPolicy?: Partial<BackoutPolicy> | null;
   minPlayers?: number;
   totalSlots?: number;
   allowSizeChange?: boolean;
@@ -80,6 +82,7 @@ export interface OccurrenceOverrides {
   cutoffHoursBeforeGame?: number | null;
   feeInPaise?: number | null;
   backoutFeeInPaise?: number | null;
+  backoutPolicy?: Partial<BackoutPolicy> | null;
   minPlayers?: number | null;
   totalSlots?: number | null;
   visibility?: "public" | "private" | null;

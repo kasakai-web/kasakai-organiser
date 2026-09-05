@@ -19,6 +19,7 @@ import {
   TITLE_TOKENS, TITLE_PATTERN_PRESETS,
   type RecurringSeries, type Freq, type EndMode, type SchedulePreview, type EditScope,
 } from "@/utils/recurring";
+import { fromStored, toPayload, describeForOrganiser, WINDOW_CHOICES, GRACE_CHOICES, type BackoutPolicy } from "@/utils/backoutPolicy";
 
 interface Turf { _id: string; name: string; location?: { city?: string } }
 
@@ -94,6 +95,8 @@ export function RecurringSeriesForm({ series, pivotOccurrenceId, onClose, onSave
   const [cutoffHours, setCutoffHours] = useState(d?.cutoffHoursBeforeGame ?? 2);
   const [feeInRs, setFeeInRs] = useState(d?.feeInPaise != null ? String(d.feeInPaise / 100) : "");
   const [backoutFeeInRs, setBackoutFeeInRs] = useState(d?.backoutFeeInPaise ? String(d.backoutFeeInPaise / 100) : "");
+  const [backoutPolicy, setBackoutPolicy] = useState(() => fromStored(d?.backoutPolicy));
+  const patchPolicy = (patch: Partial<BackoutPolicy>) => setBackoutPolicy((p) => ({ ...p, ...patch }));
   const [minPlayers, setMinPlayers] = useState(String(d?.minPlayers || Math.ceil(slotsFromFormat((d?.format as Format) ?? "6v6") / 2)));
   const [totalSlots, setTotalSlots] = useState(String(d?.totalSlots || slotsFromFormat((d?.format as Format) ?? "6v6")));
   const [organiserIsPlaying, setOrganiserIsPlaying] = useState(d?.organiserIsPlaying ?? false);
@@ -164,6 +167,7 @@ export function RecurringSeriesForm({ series, pivotOccurrenceId, onClose, onSave
     setCutoffHours(t.cutoffHoursBeforeGame ?? 2);
     setFeeInRs(String((t.feeInPaise ?? 0) / 100));
     setBackoutFeeInRs(t.backoutFeeInPaise ? String(t.backoutFeeInPaise / 100) : "");
+    setBackoutPolicy(fromStored(t.backoutPolicy));
     if (t.minPlayers) { minEdited.current = true; setMinPlayers(String(t.minPlayers)); }
     if (t.totalSlots) setTotalSlots(String(t.totalSlots));
     setOrganiserIsPlaying(!!t.organiserIsPlaying);
@@ -206,6 +210,7 @@ export function RecurringSeriesForm({ series, pivotOccurrenceId, onClose, onSave
       cutoffHoursBeforeGame: Number(cutoffHours),
       feeInRs: feeInRs === "" ? 0 : Number(feeInRs),
       backoutFeeInRs: backoutFeeInRs === "" ? 0 : Number(backoutFeeInRs),
+      backoutPolicy: toPayload(backoutPolicy),
       minPlayers: Number(minPlayers),
       totalSlots: Number(totalSlots),
       organiserIsPlaying,
@@ -216,7 +221,7 @@ export function RecurringSeriesForm({ series, pivotOccurrenceId, onClose, onSave
     startDate, endMode, endDate, maxOccurrences, blackouts, conflictMode, checkVenue,
     checkOrganiser, checkOverlap, horizonDays, leadDays, notifyOnCreate, notifyOnChange,
     notifyOnCancel, title, nameMode, titlePattern, visibility, requiresApproval, turf, format, durationMins,
-    reportingMins, cutoffHours, feeInRs, backoutFeeInRs, minPlayers, totalSlots,
+    reportingMins, cutoffHours, feeInRs, backoutFeeInRs, backoutPolicy, minPlayers, totalSlots,
     organiserIsPlaying, automationEnabled,
   ]);
 
@@ -602,12 +607,41 @@ export function RecurringSeriesForm({ series, pivotOccurrenceId, onClose, onSave
                 {errors.fee && <div className="field-error">{errors.fee}</div>}
               </div>
               <div className="form-group">
-                <label className="form-label"><span className="label-text">Back-out fee</span></label>
+                <label className="form-label"><span className="label-text">Cancellation fee</span></label>
                 <div className="input-with-prefix">
                   <span className="input-prefix">₹</span>
                   <input type="number" min="0" step="1" className="form-input" value={backoutFeeInRs} onChange={(ev) => setBackoutFeeInRs(ev.target.value)} />
                 </div>
+                <div className="field-hint">Per slot given up.</div>
               </div>
+              <div className="form-group">
+                <label className="form-label"><span className="label-text">Fee applies within</span></label>
+                <select
+                  className="form-select"
+                  value={backoutPolicy.tiers.length ? -1 : backoutPolicy.windowMins}
+                  disabled={backoutPolicy.tiers.length > 0}
+                  onChange={(ev) => patchPolicy({ windowMins: Number(ev.target.value) })}
+                >
+                  {backoutPolicy.tiers.length > 0 && <option value={-1}>Using a sliding scale</option>}
+                  {WINDOW_CHOICES.map((c) => <option key={c.mins} value={c.mins}>{c.label}</option>)}
+                </select>
+                {/* Inert without a window — see utils/backoutPolicy. */}
+                <div className="field-hint">No window, no fee.</div>
+              </div>
+              <div className="form-group">
+                <label className="form-label"><span className="label-text">Free-change window</span></label>
+                <select className="form-select" value={backoutPolicy.graceMins} onChange={(ev) => patchPolicy({ graceMins: Number(ev.target.value) })}>
+                  {GRACE_CHOICES.map((c) => <option key={c.mins} value={c.mins}>{c.label}</option>)}
+                </select>
+              </div>
+            </div>
+
+            <label className="toggle-row">
+              <input type="checkbox" className="toggle-checkbox" checked={backoutPolicy.waiveOnCancel} onChange={(ev) => patchPolicy({ waiveOnCancel: ev.target.checked })} />
+              <span className="toggle-label">No cancellation fee if the game falls through or changes</span>
+            </label>
+            <div className="field-hint" style={{ marginTop: 8 }}>
+              <strong>Players will see:</strong> {describeForOrganiser(backoutPolicy, backoutFeeInRs)}
             </div>
 
             <div className="form-row">

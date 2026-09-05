@@ -142,7 +142,7 @@ export function EditEventModal({
   const [secondCheckDate, setSecondCheckDate] = useState(istYMD(initialData.lifecycle?.secondCheckAt));
   const [secondCheckTime, setSecondCheckTime] = useState(istHHmm(initialData.lifecycle?.secondCheckAt));
 
-  /* ── Start-time edit (see Game-Time-Edit-Plan §3) ──
+  /* ── Start-time edit ──
      A check-in that has ALREADY run is settled — its moment has passed and the
      engine is done with it, so it is neither shown nor sent. A check-in still
      PENDING has to stay before kickoff, which is what the validation below and

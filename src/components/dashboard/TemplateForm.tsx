@@ -13,6 +13,7 @@ import "./CreateEventForm.css";
 import { buildApiUrl, getSession } from "@/utils/api";
 import { saveTemplate, updateTemplate, type Template, type Format } from "@/utils/templates";
 import { defaultCheckTimes } from "@/utils/checkins";
+import { fromStored, toPayload, describeForOrganiser, WINDOW_CHOICES, GRACE_CHOICES, type BackoutPolicy } from "@/utils/backoutPolicy";
 
 const TIME_SLOT_OPTIONS = Array.from({ length: 96 }, (_, idx) => {
   const hours = Math.floor(idx / 4);
@@ -58,6 +59,8 @@ export function TemplateForm({ template, onClose, onSaved }: TemplateFormProps) 
   const [cutoffHours, setCutoffHours] = useState(template?.cutoffHoursBeforeGame ?? 2);
   const [feeInRs, setFeeInRs] = useState(template?.feeInPaise ? String(template.feeInPaise / 100) : "");
   const [backoutFeeInRs, setBackoutFeeInRs] = useState(template?.backoutFeeInPaise ? String(template.backoutFeeInPaise / 100) : "");
+  const [backoutPolicy, setBackoutPolicy] = useState(() => fromStored(template?.backoutPolicy));
+  const patchPolicy = (patch: Partial<BackoutPolicy>) => setBackoutPolicy((p) => ({ ...p, ...patch }));
   const [minPlayers, setMinPlayers] = useState<string>(
     template?.minPlayers ? String(template.minPlayers) : String(Math.ceil(slotsFromFormat(initialFormat) / 2))
   );
@@ -144,6 +147,7 @@ export function TemplateForm({ template, onClose, onSaved }: TemplateFormProps) 
         cutoffHoursBeforeGame: Number(cutoffHours),
         feeInRs: Number(feeInRs),
         backoutFeeInRs: backoutFeeInRs === "" ? 0 : Number(backoutFeeInRs),
+        backoutPolicy: toPayload(backoutPolicy),
         minPlayers: Number(minPlayers),
         totalSlots: Number(maxPlayers),
         allowSizeChange,
@@ -288,13 +292,45 @@ export function TemplateForm({ template, onClose, onSaved }: TemplateFormProps) 
               {errors.minMax && <div className="field-error">{errors.minMax}</div>}
             </div>
           </div>
-          <div className="form-group">
-            <label className="form-label"><span className="label-text">Backout fee</span></label>
-            <div className="input-with-prefix">
-              <span className="input-prefix">₹</span>
-              <input type="number" min="0" step="1" placeholder="0" value={backoutFeeInRs} onChange={(ev) => setBackoutFeeInRs(ev.target.value)} className="form-input" />
+          <div className="form-row">
+            <div className="form-group">
+              <label className="form-label"><span className="label-text">Cancellation fee</span></label>
+              <div className="input-with-prefix">
+                <span className="input-prefix">₹</span>
+                <input type="number" min="0" step="1" placeholder="0" value={backoutFeeInRs} onChange={(ev) => setBackoutFeeInRs(ev.target.value)} className="form-input" />
+              </div>
+              <div className="field-hint">Per slot given up. Capped at what the player paid.</div>
             </div>
-            <div className="field-hint">Charged if a player backs out after the cutoff. Leave 0 for none.</div>
+            <div className="form-group">
+              <label className="form-label"><span className="label-text">Fee applies within</span></label>
+              <select
+                value={backoutPolicy.tiers.length ? -1 : backoutPolicy.windowMins}
+                disabled={backoutPolicy.tiers.length > 0}
+                onChange={(ev) => patchPolicy({ windowMins: Number(ev.target.value) })}
+                className="form-select"
+              >
+                {backoutPolicy.tiers.length > 0 && <option value={-1}>Using a sliding scale</option>}
+                {WINDOW_CHOICES.map((c) => <option key={c.mins} value={c.mins}>{c.label}</option>)}
+              </select>
+              {/* The amount above is inert without a window — see utils/backoutPolicy. */}
+              <div className="field-hint">No window, no fee. Leaving earlier is always free.</div>
+            </div>
+          </div>
+          <div className="form-row">
+            <div className="form-group">
+              <label className="form-label"><span className="label-text">Free-change window</span></label>
+              <select value={backoutPolicy.graceMins} onChange={(ev) => patchPolicy({ graceMins: Number(ev.target.value) })} className="form-select">
+                {GRACE_CHOICES.map((c) => <option key={c.mins} value={c.mins}>{c.label}</option>)}
+              </select>
+              <div className="field-hint">Grace period right after a player joins.</div>
+            </div>
+          </div>
+          <label className="toggle-row">
+            <input type="checkbox" checked={backoutPolicy.waiveOnCancel} onChange={(ev) => patchPolicy({ waiveOnCancel: ev.target.checked })} className="toggle-checkbox" />
+            <span className="toggle-text">No fee if the game falls through or changes</span>
+          </label>
+          <div className="field-hint" style={{ marginTop: 10 }}>
+            <strong>Players will see:</strong> {describeForOrganiser(backoutPolicy, backoutFeeInRs)}
           </div>
           <label className="toggle-row">
             <input type="checkbox" checked={organiserIsPlaying} onChange={(ev) => setOrganiserPlaying(ev.target.checked)} className="toggle-checkbox" />
