@@ -723,8 +723,6 @@
 .pdm-recording-input:disabled { opacity: .65; }
 
 .pdm-recording-save {
-  /* min-width: 76px;
-  height: 38px; */
   border: 1px solid rgba(200, 255, 62, .45);
   background: var(--lime, #c8ff3e);
   color: #090b05;
