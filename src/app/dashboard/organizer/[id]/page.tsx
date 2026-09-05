@@ -1515,6 +1515,7 @@ export default function OrganizerDashboard() {
           gameId={selectedGame._id}
           gameName={selectedGame.title}
           gameStatus={selectedGame.status}
+          matchRecording={selectedGame.matchRecording}
           players={selectedGame.registrations || []}
           waitlist={selectedGame.waitlist || []}
           guestWaitlist={selectedGame.guestWaitlist || []}

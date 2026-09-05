@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useRef, useState } from "react";
+import { Video } from "lucide-react";
 
 import { buildApiUrl, getAuthHeaders } from "@/utils/api";
 import { TeamDistributionPanel } from "@/components/dashboard/TeamDistributionPanel";
@@ -9,6 +10,7 @@ import { buildTeamsMessage } from "@/utils/teamsMessage";
 import { ConfirmationModal } from "@/components/ui/ConfirmationModal";
 import { ImageLightbox } from "@/components/ui/ImageLightbox";
 import { buildPlayerListMessage } from "@/utils/playerListMessage";
+import { isValidYouTubeVideoUrl } from "@/utils/youtubeUrl";
 
 const IMG_BASE = (process.env.NEXT_PUBLIC_API_BASE_URL || "http://localhost:5000/api/v1").replace(/\/api\/v1\/?$/, "");
 
@@ -70,6 +72,7 @@ interface PlayerDetailsModalProps {
   gameId: string;
   gameName: string;
   gameStatus?: string;
+  matchRecording?: string | null;
   players: Registration[];
   waitlist?: WaitlistEntry[];
   guestWaitlist?: GuestWaitlistEntry[];
@@ -146,6 +149,7 @@ export function PlayerDetailsModal({
   gameId,
   gameName,
   gameStatus,
+  matchRecording,
   players,
   waitlist = [],
   guestWaitlist = [],
@@ -176,6 +180,59 @@ export function PlayerDetailsModal({
   const [statusMsg, setStatusMsg] = useState<{ type: "success" | "error"; text: string } | null>(null);
   const [approvingId, setApprovingId] = useState<string | null>(null);
   const [lightbox, setLightbox] = useState<{ src: string; name: string } | null>(null);
+  const initialRecordingUrl = matchRecording?.trim() || "";
+  const [recordingUrl, setRecordingUrl] = useState(initialRecordingUrl);
+  const [recordingError, setRecordingError] = useState<string | null>(null);
+  const [savingRecording, setSavingRecording] = useState(false);
+
+  const scheduledTime = scheduledAt ? new Date(scheduledAt).getTime() : Number.NaN;
+  const canManageRecording =
+    Number.isFinite(scheduledTime) &&
+    scheduledTime <= Date.now() &&
+    (gameStatus === "confirmed" || gameStatus === "completed");
+
+  const validateRecordingUrl = (value: string) => {
+    const trimmed = value.trim();
+    if (!trimmed) return "Enter a YouTube video link.";
+    return isValidYouTubeVideoUrl(trimmed) ? null : "Enter a valid YouTube video link.";
+  };
+
+  const handleSaveRecording = async (event: React.FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+
+    const trimmed = recordingUrl.trim();
+    const validationError = validateRecordingUrl(trimmed);
+    if (validationError) {
+      setRecordingError(validationError);
+      return;
+    }
+
+    setSavingRecording(true);
+    setRecordingError(null);
+
+    try {
+      const res = await fetch(buildApiUrl(`/api/v1/games/organisers/${gameId}/recording`), {
+        method: "POST",
+        headers: getAuthHeaders(),
+        body: JSON.stringify({ matchRecording: trimmed }),
+      });
+      const data = await res.json();
+
+      if (!res.ok || !data.success) {
+        setRecordingError(data.message || "Could not save the match recording link.");
+        return;
+      }
+
+      const persistedUrl = data.data?.matchRecording?.trim() || "";
+      setRecordingUrl(persistedUrl);
+      showStatus("success", "Match recording link saved.");
+      if (data.data) onGameUpdate?.(data.data); else onRefresh?.();
+    } catch {
+      setRecordingError("Could not save the link. Check your connection and try again.");
+    } finally {
+      setSavingRecording(false);
+    }
+  };
 
   const showStatus = (type: "success" | "error", text: string) => {
     setStatusMsg({ type, text });
@@ -587,6 +644,33 @@ function downloadTeamExcel(result: {
             <button className="close-btn" onClick={onClose}>✕</button>
           </div>
         </div>
+
+        {canManageRecording && (
+          <form id={`match-recording-form-${gameId}`} className="pdm-recording-panel" onSubmit={handleSaveRecording} noValidate>
+            <label className={`pdm-recording-input-wrap${recordingError ? " has-error" : ""}`} htmlFor={`match-recording-${gameId}`}>
+              <Video className="pdm-recording-icon" size={14} strokeWidth={1.8} aria-hidden="true" />
+              <input
+                id={`match-recording-${gameId}`}
+                className="pdm-recording-input"
+                type="url"
+                inputMode="url"
+                autoComplete="url"
+                placeholder="Upload video link of the game..."
+                value={recordingUrl}
+                onChange={(event) => {
+                  setRecordingUrl(event.target.value);
+                  if (recordingError) setRecordingError(null);
+                }}
+                aria-invalid={Boolean(recordingError)}
+                aria-describedby={`match-recording-help-${gameId}`}
+                disabled={savingRecording}
+              />
+            </label>
+            <div id={`match-recording-help-${gameId}`} className="pdm-recording-feedback" aria-live="polite">
+              {recordingError}
+            </div>
+          </form>
+        )}
 
         {/* Stats Strip */}
         <div className="pdm-stats-strip">
@@ -1053,6 +1137,11 @@ function downloadTeamExcel(result: {
         </div>
 
         <div className="modal-footer">
+          {canManageRecording && (
+            <button className="pdm-recording-save" type="submit" form={`match-recording-form-${gameId}`} disabled={savingRecording}>
+              {savingRecording ? "Saving..." : "Save"}
+            </button>
+          )}
           <button className="btn-close" onClick={onClose}>
             Close
           </button>

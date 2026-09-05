@@ -671,6 +671,89 @@
   background: var(--border);
 }
 
+/* Match recording */
+.pdm-recording-panel {
+  padding: 10px 20px 8px;
+  background: #111112;
+  border-bottom: 1px solid rgba(255, 255, 255, .06);
+  flex-shrink: 0;
+}
+
+.pdm-recording-input-wrap {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: min(400px, 100%);
+  height: 34px;
+  padding: 0 10px;
+  border: 1px solid #34343a;
+  border-radius: 6px;
+  background: rgba(255, 255, 255, .025);
+  transition: border-color .18s, box-shadow .18s, background .18s;
+}
+
+.pdm-recording-icon {
+  flex-shrink: 0;
+  color: #77777f;
+  font-size: 11px;
+}
+
+.pdm-recording-input-wrap:focus-within {
+  border-color: rgba(200, 255, 62, .65);
+  background: rgba(0, 0, 0, .25);
+  box-shadow: 0 0 0 3px rgba(200, 255, 62, .08);
+}
+.pdm-recording-input-wrap.has-error {
+  border-color: rgba(248, 113, 113, .8);
+  box-shadow: 0 0 0 3px rgba(248, 113, 113, .08);
+}
+
+.pdm-recording-input {
+  min-width: 0;
+  flex: 1;
+  height: 100%;
+  border: 0;
+  background: transparent;
+  color: #fff;
+  font-size: 12px;
+  outline: none;
+}
+
+.pdm-recording-input::placeholder { color: #77777f; }
+.pdm-recording-input:disabled { opacity: .65; }
+
+.pdm-recording-save {
+  border: 1px solid rgba(200, 255, 62, .45);
+  background: var(--lime, #c8ff3e);
+  color: #090b05;
+  padding: 10px 20px;
+  cursor: pointer;
+  transition: transform .16s, box-shadow .16s, opacity .16s;
+  border-radius: 6px;
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.pdm-recording-save:hover:not(:disabled) {
+  transform: translateY(-1px);
+  box-shadow: 0 7px 18px rgba(200, 255, 62, .16);
+}
+.pdm-recording-save:disabled {
+  cursor: not-allowed;
+  opacity: .42;
+}
+
+.pdm-recording-feedback {
+  min-height: 15px;
+  margin-top: 4px;
+  color: #666;
+  font-size: 11px;
+  line-height: 1.35;
+}
+
+.pdm-recording-error { color: #f87171; }
+.pdm-recording-success { color: #4ade80; }
+
 /* Scrollable cards area */
 .pdm-cards-scroll {
   flex: 1;
