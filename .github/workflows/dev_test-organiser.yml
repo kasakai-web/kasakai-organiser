@@ -28,12 +28,19 @@ jobs:
           npm install
           npm run build --if-present
           npm run test --if-present
+        env:
+          NEXT_PUBLIC_APP_NAME: ${{secrets.NEXT_PUBLIC_APP_NAME}}
+          NEXT_PUBLIC_API_BASE_URL: ${{secrets.NEXT_PUBLIC_API_BASE_URL}}
+          NEXT_PUBLIC_GA_MEASUREMENT_ID: ${{secrets.NEXT_PUBLIC_GA_MEASUREMENT_ID}}
+          
+      - name: Zip artifact for deployment
+        run: zip next.zip ./* .next -qr
 
       - name: Upload artifact for deployment job
         uses: actions/upload-artifact@v4
         with:
           name: node-app
-          path: .
+          path: next.zip
 
   deploy:
     runs-on: ubuntu-latest
@@ -47,6 +54,9 @@ jobs:
         uses: actions/download-artifact@v4
         with:
           name: node-app
+          
+      - name: Unzip artifact for deployment
+        run: unzip next.zip
       
       - name: Login to Azure
         uses: azure/login@v2
