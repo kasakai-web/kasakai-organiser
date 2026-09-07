@@ -23,6 +23,29 @@ import { TeamSheetHistory } from "@/components/dashboard/TeamSheetHistory";
 // How many cards the Past Events tab reveals per scroll.
 const PAST_PAGE_SIZE = 20;
 
+// "2h ago" for the SOS log — an organiser about to send again is asking how long
+// ago the last ask went out, not the wall-clock time it happened.
+const timeAgo = (value: string | Date) => {
+  const mins = Math.round((Date.now() - new Date(value).getTime()) / 60000);
+  if (!Number.isFinite(mins)) return "";
+  if (mins < 1)  return "just now";
+  if (mins < 60) return `${mins}m ago`;
+  const hrs = Math.round(mins / 60);
+  if (hrs < 24)  return `${hrs}h ago`;
+  const days = Math.round(hrs / 24);
+  return days === 1 ? "yesterday" : `${days}d ago`;
+};
+
+// What the WhatsApp leg of one SOS did. In-app always goes out, so a row that is
+// not "sent" was still notified inside the app — the label says what is missing,
+// never that the player heard nothing.
+const SOS_WA_BADGE: Record<string, { label: string; color: string; bg: string; border: string }> = {
+  sent:      { label: "WhatsApp",   color: "#c8ff3e", bg: "rgba(200,255,62,0.10)",  border: "rgba(200,255,62,0.25)" },
+  failed:    { label: "WA failed",  color: "#f87171", bg: "rgba(248,113,113,0.10)", border: "rgba(248,113,113,0.28)" },
+  opted_out: { label: "In-app only", color: "#9aa",   bg: "rgba(255,255,255,0.05)", border: "#333" },
+  no_number: { label: "No number",  color: "#f59e0b", bg: "rgba(245,158,11,0.10)",  border: "rgba(245,158,11,0.28)" },
+};
+
 // Each tab has its own natural reading order: Upcoming starts with the next
 // fixture, Past starts with the one just played — that most recent game is what
 // an organiser opens the tab for (attendance, ratings, settlement). The two are
@@ -52,6 +75,12 @@ export default function OrganizerDashboard() {
     error?: string;
     regulars:   { id?: string; name: string; games: number; phone: string }[];
     recipients: { id: string; name: string; sub?: string; games?: number }[];
+    // Every SOS this game has already sent, newest first — the record of who was
+    // asked, when, and whether WhatsApp carried it.
+    log:        { id?: string; playerId?: string | null; name: string; phone?: string; sentAt: string; sentByName?: string | null; whatsapp: string }[];
+    // Player ids holding a seat right now: a logged recipient who is in this set
+    // answered the call, which is the only measure of whether an SOS worked.
+    seated:     string[];
   }>(null);
   // Private-game invitations
   const [inviteGameId, setInviteGameId] = useState<string | null>(null);
@@ -357,6 +386,9 @@ export default function OrganizerDashboard() {
       const data = await res.json();
       if (!res.ok || !data.success) { showToast("error", data.message || "Failed to send SOS"); return; }
       showToast("success", "SOS Sent", data.message || `Notified ${data.data?.notified ?? 0} player(s).`);
+      // Pull the game back so the SOS log this send just wrote is on the card the
+      // next time the modal opens.
+      await fetchGames({ silent: true });
     } catch {
       showToast("error", "Failed to send SOS. Please try again.");
     }
@@ -366,7 +398,12 @@ export default function OrganizerDashboard() {
   // suggestion), let the organiser edit that list — remove anyone, add anyone by
   // search — then send to exactly who is left.
   const requestSendSos = async (game: any) => {
-    setSosModal({ gameId: game._id, gameTitle: game.title, loading: true, regulars: [], recipients: [] });
+    // Who is in the game right now — read off the card, so a logged recipient who
+    // has since joined can be marked without another round trip.
+    const seated = (game.registrations || [])
+      .filter((r: any) => r.player && !r.plusOneName && !["refunded", "forfeited"].includes(r.paymentStatus))
+      .map((r: any) => String(r.player?._id || r.player));
+    setSosModal({ gameId: game._id, gameTitle: game.title, loading: true, regulars: [], recipients: [], log: [], seated });
     sosFind.reset();
     const { token } = getSession();
     if (!token) { clearSession(); router.replace("/login?role=organiser"); return; }
@@ -384,6 +421,7 @@ export default function OrganizerDashboard() {
         ...m,
         loading: false,
         regulars,
+        log: data.data?.sosLog || [],
         // Pre-selected, so the old one-tap "send to all regulars" is still one tap.
         recipients: regulars.filter((r) => r.id).map((r) => ({ id: r.id!, name: r.name, sub: r.phone, games: r.games })),
       } : m));
@@ -798,6 +836,15 @@ export default function OrganizerDashboard() {
         // Regulars the organiser removed (or that never made the cut) stay available
         // as one-tap chips — dropping someone is never a one-way door.
         const suggestions = sosModal.regulars.filter((r) => r.id && !chosen.has(r.id));
+        const seatedIds = new Set(sosModal.seated);
+        // The log arrives newest-first, so the first row for a player IS their most
+        // recent ask — which is what belongs beside their name in the picker, before
+        // the organiser pings the same person twice by accident.
+        const lastAsked = new Map<string, { sentAt: string }>();
+        for (const row of sosModal.log) {
+          const pid = row.playerId ? String(row.playerId) : "";
+          if (pid && !lastAsked.has(pid)) lastAsked.set(pid, row);
+        }
         const count = sosModal.recipients.length;
         const canSend = count > 0 && !sosModal.loading && !sosModal.sending;
         return (
@@ -890,11 +937,14 @@ export default function OrganizerDashboard() {
                 </div>
               ) : (
                 <div style={{ maxHeight: 260, overflowY: "auto", border: "1px solid #262626", borderRadius: 10 }}>
-                  {sosModal.recipients.map((r, i) => (
+                  {sosModal.recipients.map((r, i) => {
+                    const asked = lastAsked.get(r.id);
+                    const sub = [r.sub, asked ? `SOS sent ${timeAgo(asked.sentAt)}` : null].filter(Boolean).join(" · ");
+                    return (
                     <div key={r.id} style={{ display: "flex", alignItems: "center", gap: 10, justifyContent: "space-between", padding: "10px 12px", borderBottom: i < count - 1 ? "1px solid #1c1c1c" : "none" }}>
                       <div style={{ minWidth: 0 }}>
                         <div style={{ fontSize: 14, fontWeight: 600, color: "#eee", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{r.name}</div>
-                        {r.sub && <div style={{ fontSize: 11, color: "#777", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{r.sub}</div>}
+                        {sub && <div style={{ fontSize: 11, color: asked ? "#f59e0b" : "#777", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{sub}</div>}
                       </div>
                       <div style={{ flexShrink: 0, display: "flex", alignItems: "center", gap: 8 }}>
                         {typeof r.games === "number" && (
@@ -911,7 +961,46 @@ export default function OrganizerDashboard() {
                         >✕</button>
                       </div>
                     </div>
-                  ))}
+                    );
+                  })}
+                </div>
+              )}
+
+              {/* ── Already sent ──────────────────────────────────────────────
+                  An SOS leaves no invitation behind, so this log is the only
+                  record of who was asked. It is the answer to both questions a
+                  second send raises: who did we already ping, and did it land? */}
+              {sosModal.log.length > 0 && (
+                <div style={{ marginTop: 18 }}>
+                  <div style={{ fontSize: 12, fontWeight: 700, color: "#c8ff3e", textTransform: "uppercase", letterSpacing: 0.4, marginBottom: 8 }}>
+                    Already sent <span style={{ color: "#777" }}>({sosModal.log.length})</span>
+                  </div>
+                  <div style={{ maxHeight: 220, overflowY: "auto", border: "1px solid #262626", borderRadius: 10 }}>
+                    {sosModal.log.map((row, i) => {
+                      const wa = SOS_WA_BADGE[row.whatsapp] || SOS_WA_BADGE.sent;
+                      const joined = !!row.playerId && seatedIds.has(String(row.playerId));
+                      return (
+                        <div key={row.id || `${row.playerId || row.name}-${row.sentAt}-${i}`}
+                          style={{ display: "flex", alignItems: "center", gap: 10, justifyContent: "space-between", padding: "9px 12px", borderBottom: i < sosModal.log.length - 1 ? "1px solid #1c1c1c" : "none" }}>
+                          <div style={{ minWidth: 0 }}>
+                            <div style={{ fontSize: 13.5, fontWeight: 600, color: "#eee", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+                              {row.name}
+                              {joined && <span style={{ marginLeft: 7, fontSize: 10.5, fontWeight: 700, color: "#c8ff3e" }}>✓ JOINED</span>}
+                            </div>
+                            <div style={{ fontSize: 11, color: "#777", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+                              {[timeAgo(row.sentAt), row.phone, row.sentByName ? `by ${row.sentByName}` : null].filter(Boolean).join(" · ")}
+                            </div>
+                          </div>
+                          <span style={{ flexShrink: 0, fontSize: 10.5, fontWeight: 700, color: wa.color, background: wa.bg, border: `1px solid ${wa.border}`, borderRadius: 20, padding: "2px 9px" }}>
+                            {wa.label}
+                          </span>
+                        </div>
+                      );
+                    })}
+                  </div>
+                  <div style={{ fontSize: 11, color: "#777", marginTop: 6, lineHeight: 1.45 }}>
+                    Everyone listed got the in-app notification — the badge says what WhatsApp did with it.
+                  </div>
                 </div>
               )}
             </>
