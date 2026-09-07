@@ -31,7 +31,6 @@ jobs:
         env:
           NEXT_PUBLIC_APP_NAME: ${{secrets.NEXT_PUBLIC_APP_NAME}}
           NEXT_PUBLIC_API_BASE_URL: ${{secrets.NEXT_PUBLIC_API_BASE_URL}}
-          NEXT_PUBLIC_GA_MEASUREMENT_ID: ${{secrets.NEXT_PUBLIC_GA_MEASUREMENT_ID}}
           
       - name: Zip artifact for deployment
         run: zip next.zip ./* .next -qr
