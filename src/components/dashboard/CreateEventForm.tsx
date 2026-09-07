@@ -285,7 +285,7 @@ export function CreateEventForm({ lastEvent, presetDate, onClose, onCreate, onSu
   const [backoutFeeInRs, setBackoutFeeInRs] = useState(lastEvent?.backoutFeeInPaise ? String(lastEvent.backoutFeeInPaise / 100) : "");
   const [backoutPolicy, setBackoutPolicy] = useState(() => fromStored(lastEvent?.backoutPolicy));
   const patchPolicy = (patch: Partial<BackoutPolicy>) => setBackoutPolicy((p) => ({ ...p, ...patch }));
-  const [cutoffHours, setCutoffHours] = useState<number>(lastEvent?.cutoffHoursBeforeGame ?? 2);
+  const [cutoffHours, setCutoffHours] = useState<number>(lastEvent?.cutoffHoursBeforeGame ?? 0);
   const [reportingMins, setReporting] = useState(lastEvent?.reportingMinsBeforeGame ?? 30);
   const [minPlayers, setMinPlayers] = useState<string>(
     lastEvent?.minPlayers ? String(lastEvent.minPlayers) : String(Math.ceil(slotsFromFormat(initialFormat) / 2))
@@ -475,7 +475,7 @@ export function CreateEventForm({ lastEvent, presetDate, onClose, onCreate, onSu
     if (t.defaultTimeOfDay) setTime(t.defaultTimeOfDay);
     setDuration(t.durationMins ?? 60);
     setReporting(t.reportingMinsBeforeGame ?? 30);
-    setCutoffHours(t.cutoffHoursBeforeGame ?? 2);
+    setCutoffHours(t.cutoffHoursBeforeGame ?? 0);
     setFeeInRs(t.feeInPaise ? String(t.feeInPaise / 100) : "");
     setBackoutFeeInRs(t.backoutFeeInPaise ? String(t.backoutFeeInPaise / 100) : "");
     setBackoutPolicy(fromStored(t.backoutPolicy));
