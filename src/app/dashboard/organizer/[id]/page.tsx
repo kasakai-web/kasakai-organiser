@@ -1622,9 +1622,12 @@ export default function OrganizerDashboard() {
             await handleRemoveRegistration(selectedGame._id, regId);
           }}
           onRefresh={() => refreshSelectedGame(false)}
+          // Merged, not replaced: callers send either a full game (add-player,
+          // add-guest, approve) or just the fields they changed, and a partial
+          // patch must not blank out the rest of the game.
           onGameUpdate={(updated) => {
-            setGames((prev) => prev.map((g) => g._id === updated._id ? updated : g));
-            setSelectedGame((prev: any) => prev?._id === updated._id ? updated : prev);
+            setGames((prev) => prev.map((g) => g._id === updated._id ? { ...g, ...updated } : g));
+            setSelectedGame((prev: any) => prev?._id === updated._id ? { ...prev, ...updated } : prev);
           }}
           isRefreshing={modalRefreshing}
           onClose={() => {
