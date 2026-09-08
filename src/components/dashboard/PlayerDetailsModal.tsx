@@ -180,8 +180,17 @@ export function PlayerDetailsModal({
   const [statusMsg, setStatusMsg] = useState<{ type: "success" | "error"; text: string } | null>(null);
   const [approvingId, setApprovingId] = useState<string | null>(null);
   const [lightbox, setLightbox] = useState<{ src: string; name: string } | null>(null);
-  const initialRecordingUrl = matchRecording?.trim() || "";
-  const [recordingUrl, setRecordingUrl] = useState(initialRecordingUrl);
+  const savedRecordingUrl = matchRecording?.trim() || "";
+  const [recordingUrl, setRecordingUrl] = useState(savedRecordingUrl);
+  // The modal stays mounted across the 15 s background poll, so the field has to
+  // reconcile when the stored value actually changes — otherwise it keeps showing
+  // whatever it was born with. Comparing against the last synced value, rather
+  // than re-syncing every render, leaves an unsaved edit alone.
+  const [syncedRecordingUrl, setSyncedRecordingUrl] = useState(savedRecordingUrl);
+  if (savedRecordingUrl !== syncedRecordingUrl) {
+    setSyncedRecordingUrl(savedRecordingUrl);
+    setRecordingUrl(savedRecordingUrl);
+  }
   const [recordingError, setRecordingError] = useState<string | null>(null);
   const [savingRecording, setSavingRecording] = useState(false);
 
@@ -226,7 +235,10 @@ export function PlayerDetailsModal({
       const persistedUrl = data.data?.matchRecording?.trim() || "";
       setRecordingUrl(persistedUrl);
       showStatus("success", "Match recording link saved.");
-      if (data.data) onGameUpdate?.(data.data); else onRefresh?.();
+      // Saving a link changes one scalar, so patch that field rather than
+      // swapping in a whole game — the roster in state is already populated
+      // and a replacement would only risk losing it.
+      onGameUpdate?.({ _id: gameId, matchRecording: persistedUrl });
     } catch {
       setRecordingError("Could not save the link. Check your connection and try again.");
     } finally {
