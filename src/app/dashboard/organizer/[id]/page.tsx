@@ -1248,14 +1248,13 @@ export default function OrganizerDashboard() {
                       const awaitingPayment = inv.status === 'approved_unpaid';
                       // The player's wallet does not currently cover the fee.
                       //
-                      // This used to BLOCK approval: while the wallet was the only
-                      // way to pay, approving someone who could not pay stranded
-                      // them in a state nothing could clear. It no longer does —
-                      // an approval the wallet cannot cover parks at
-                      // 'approved_unpaid' and the player settles it by card. So
-                      // this is now a heads-up, not a gate: refusing to approve a
-                      // player with an empty wallet would reimpose exactly the
-                      // mandatory recharge the checkout removed.
+                      // This used to BLOCK approval, which stranded anyone who
+                      // could not pay in a state nothing could clear. It no longer
+                      // does — an approval the wallet cannot cover parks at
+                      // 'approved_unpaid' and the player tops up and settles it
+                      // themselves. So this is a heads-up, not a gate: refusing to
+                      // approve a player with an empty wallet would only make them
+                      // recharge before you had even said yes.
                       const willNeedToPay = !awaitingPayment && inv.canAfford === false;
                       const shortfall = Math.round((inv.walletShortfallPaise || 0) / 100);
                       return (
@@ -1267,8 +1266,8 @@ export default function OrganizerDashboard() {
                               ? "Approved — waiting for the player to complete payment"
                               : willNeedToPay
                                 ? (shortfall > 0
-                                    ? `Wallet is short by ₹${shortfall} — they'll be asked to pay the rest once you approve.`
-                                    : "Wallet won't cover the fee — they'll be asked to pay once you approve.")
+                                    ? `Wallet is short by ₹${shortfall} — they'll be asked to top up once you approve.`
+                                    : "Wallet won't cover the fee — they'll be asked to top up once you approve.")
                                 : invitedByText(inv)}
                           </div>
                         </div>
