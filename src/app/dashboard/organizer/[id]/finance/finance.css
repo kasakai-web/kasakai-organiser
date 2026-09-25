@@ -52,6 +52,7 @@
 .fin-col-lime { color: #c8ff3e; }
 .fin-col-red { color: #f87171; }
 .fin-col-muted { color: #8b8b93; }
+.fin-col-amber { color: #e9b338; }
 
 .fin-counts-row {
   display: flex;
@@ -282,6 +283,11 @@
   background: rgba(248, 113, 113, 0.08);
 }
 
+.fin-chip-pass {
+  border-color: rgba(167, 139, 250, 0.35);
+  background: rgba(167, 139, 250, 0.09);
+}
+
 .fin-chip-val {
   font-size: 13px;
   font-weight: 800;
@@ -403,6 +409,7 @@
 .fin-dot-green { background: #4ade80; }
 .fin-dot-lime { background: #c8ff3e; }
 .fin-dot-gray { background: #7a7a84; }
+.fin-dot-pass { background: #a78bfa; }
 
 .fin-slot-grid {
   display: flex;
@@ -815,4 +822,84 @@
   .fin-game-nums { gap: 12px; }
   .fin-num-val { font-size: 13px; }
   .fin-game-header { flex-wrap: wrap; }
+}
+
+
+/* ── Covered by passes (§9 disclosure) ──────────────────────────────────────
+   Its own block rather than a fourth hero card: a covered seat is money never
+   collected, not money refunded, and sitting it beside "Refunded" would invite
+   exactly the arithmetic the split exists to prevent. */
+.fin-pass-row {
+  background: #111114;
+  border: 1px solid rgba(167, 139, 250, 0.25);
+  border-radius: 12px;
+  padding: 14px 16px;
+}
+
+.fin-pass-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+
+.fin-pass-icon { font-size: 14px; line-height: 1; }
+
+.fin-pass-title {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: #a78bfa;
+}
+
+.fin-pass-count {
+  margin-left: auto;
+  font-size: 11px;
+  font-weight: 700;
+  color: #8a8a93;
+  font-family: var(--mono, monospace);
+}
+
+.fin-pass-nums {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.fin-pass-num {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+
+.fin-pass-num-lbl {
+  font-size: 10.5px;
+  text-transform: uppercase;
+  letter-spacing: 0.07em;
+  color: #70707a;
+  font-weight: 700;
+}
+
+.fin-pass-num-val {
+  font-size: 17px;
+  font-weight: 800;
+  font-family: var(--mono, monospace);
+  color: #f4efe8;
+  line-height: 1.1;
+}
+
+.fin-pass-note {
+  margin: 12px 0 0;
+  font-size: 11.5px;
+  line-height: 1.55;
+  color: #7f7f89;
+}
+
+@media (max-width: 640px) {
+  .fin-pass-nums {
+    grid-template-columns: 1fr;
+    gap: 10px;
+  }
 }

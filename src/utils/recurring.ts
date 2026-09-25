@@ -46,6 +46,8 @@ export interface SeriesGameDefaults {
   totalSlots?: number;
   allowSizeChange?: boolean;
   organiserIsPlaying?: boolean;
+  /** Organiser consent to pass holders on the games this series makes (§9). */
+  acceptsPasses?: boolean;
   automationEnabled?: boolean;
   firstCheckTime?: string | null;
   secondCheckTime?: string | null;

@@ -125,6 +125,10 @@ export function EditEventModal({
   // with no alternate (e.g. the format review asked the organiser to define one)
   // can still have its brand-new alternate fee set here.
   const hadAlternate = Boolean(lastAlt && lastAlt.format);
+  // Organiser consent to pass holders (§9). Absent on every game created before
+  // the flag existed, which must read as YES.
+  const [acceptsPasses, setAcceptsPasses] = useState(initialData.acceptsPasses !== false);
+
   const [allowSizeChange, setAllowSizeChange] = useState(Boolean(initialData.allowSizeChange));
   const [altFormat, setAltFormat] = useState<Format>((lastAlt?.format as Format) ?? "5v5");
   const [altTurf, setAltTurf] = useState<string>(lastAlt?.turf?._id || (typeof lastAlt?.turf === "string" ? lastAlt.turf : ""));
@@ -358,6 +362,7 @@ export function EditEventModal({
         minPlayers: Number(minPlayers),
         reportingMinsBeforeGame: Number(reportingMins),
         requiresApproval,
+        acceptsPasses,
         lifecycle,
       };
       // IST-anchored, and only when the organiser actually moved it — the backend
@@ -494,6 +499,27 @@ export function EditEventModal({
                   background: "rgba(233,179,56,0.08)", border: "1px solid rgba(233,179,56,0.3)", color: "#e9b338",
                 }}>
                   ⚠️ Turning approval off will auto-approve your {pendingRequestsCount} pending request{pendingRequestsCount !== 1 ? "s" : ""} in order — filling open slots and charging each their fee. Any that don&apos;t fit stay pending.
+                </div>
+              )}
+            </Field>
+            <Field label="KasaKai passes">
+              <label style={{ display: "flex", alignItems: "center", gap: 10, cursor: "pointer" }}>
+                <input type="checkbox" checked={acceptsPasses}
+                  onChange={(e) => setAcceptsPasses(e.target.checked)}
+                  style={{ width: 17, height: 17, accentColor: "#c8ff3e", flexShrink: 0 }} />
+                <span style={{ fontSize: 13, color: "#ddd" }}>Accept pass holders on this game</span>
+              </label>
+              <div style={{ fontSize: 11, color: "#666", marginTop: 4 }}>
+                {acceptsPasses
+                  ? "A pass holder plays without paying at the till — this game collects nothing for that slot. Every covered seat is listed in your Financials."
+                  : "Pass holders pay the full fee here, like anyone else."}
+              </div>
+              {initialData.acceptsPasses !== false && !acceptsPasses && (
+                <div style={{
+                  marginTop: 8, padding: "9px 12px", borderRadius: 8, fontSize: 12, lineHeight: 1.5,
+                  background: "rgba(233,179,56,0.08)", border: "1px solid rgba(233,179,56,0.3)", color: "#e9b338",
+                }}>
+                  ⚠️ This only affects players who join from now on. Anyone already seated on a pass keeps their slot.
                 </div>
               )}
             </Field>

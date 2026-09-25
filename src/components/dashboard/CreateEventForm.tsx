@@ -293,6 +293,13 @@ export function CreateEventForm({ lastEvent, presetDate, onClose, onCreate, onSu
   const [maxPlayers, setMaxPlayers] = useState<string>(lastEvent?.totalSlots ? String(lastEvent.totalSlots) : String(slotsFromFormat(initialFormat)));
   const minPlayersEdited = useRef(!!lastEvent?.minPlayers);
 
+  // Organiser consent to pass holders. A covered seat is a fee this organiser
+  // never collects, so it is theirs to refuse — see the Passes section below.
+  // A prefill (last event or template) wins; otherwise the profile-wide default
+  // is fetched and applied, unless the organiser has already touched the switch.
+  const [acceptsPasses, setAcceptsPasses] = useState<boolean>(lastEvent?.acceptsPasses !== false);
+  const passesTouched = useRef(lastEvent?.acceptsPasses !== undefined);
+
   const [allowSizeChange, setAllowSizeChange] = useState(lastEvent?.allowSizeChange ?? false);
   const lastAlt = (lastEvent?.alternateFormats && lastEvent.alternateFormats[0]) || null;
   const [altFormat, setAltFormat] = useState<Format>((lastAlt?.format as Format) ?? "5v5");
@@ -385,6 +392,22 @@ export function CreateEventForm({ lastEvent, presetDate, onClose, onCreate, onSu
         }
       })
       .catch(console.error);
+  }, []);
+
+  useEffect(() => {
+    // The organiser's profile-wide pass default. Best-effort: if it cannot be
+    // read the switch simply stays on, which is what every game in the database
+    // already does.
+    const { token } = getSession();
+    if (!token || passesTouched.current) return;
+    fetch(buildApiUrl("/api/v1/organisers/me"), { headers: { Authorization: `Bearer ${token}` } })
+      .then((r) => r.json())
+      .then((d) => {
+        if (d?.success && !passesTouched.current && d.data?.defaultAcceptsPasses === false) {
+          setAcceptsPasses(false);
+        }
+      })
+      .catch(() => {});
   }, []);
 
   useEffect(() => {
@@ -481,6 +504,10 @@ export function CreateEventForm({ lastEvent, presetDate, onClose, onCreate, onSu
     setBackoutPolicy(fromStored(t.backoutPolicy));
     setOrganiserPlaying(!!t.organiserIsPlaying);
     setAutomationEnabled(!!t.automationEnabled);
+    // A template made for a premium fixture must not quietly re-open it to
+    // covered seats every time it is used.
+    passesTouched.current = true;
+    setAcceptsPasses(t.acceptsPasses !== false);
 
     // The format effect re-runs on a format change and clamps these — flagging min
     // as edited keeps the template's number instead of the half-of-slots default.
@@ -606,6 +633,7 @@ export function CreateEventForm({ lastEvent, presetDate, onClose, onCreate, onSu
         minPlayers: Number(minPlayers) || slots,
         reportingMinsBeforeGame: Number(reportingMins),
         allowSizeChange,
+        acceptsPasses,
         organiserIsPlaying,
         organiserGuests,
         community: null,
@@ -666,6 +694,7 @@ export function CreateEventForm({ lastEvent, presetDate, onClose, onCreate, onSu
         minPlayers: Number(minPlayers) || 0,
         totalSlots: Number(maxPlayers) || slotsFromFormat(format),
         allowSizeChange,
+        acceptsPasses,
         organiserIsPlaying,
         automationEnabled,
         firstCheckTime,
@@ -1180,6 +1209,24 @@ export function CreateEventForm({ lastEvent, presetDate, onClose, onCreate, onSu
                   {describeForOrganiser(backoutPolicy, backoutFeeInRs)}
                 </p>
               </div>
+            </div>
+
+            <SubSectionHeader title="Passes" />
+            <div className="mb-10">
+              <CheckboxRow
+                label="Accept KasaKai pass holders"
+                helper={
+                  <>
+                    A pass holder plays without paying at the till, so this game collects{" "}
+                    <strong className="text-[#888]">nothing</strong> for that slot — the platform covers it in
+                    your Financials, where every covered seat is listed. Leave it on unless this is a fixture
+                    you need full-price. Turning it off later never removes a pass holder who has already
+                    joined.
+                  </>
+                }
+                checked={acceptsPasses}
+                onChange={() => { passesTouched.current = true; setAcceptsPasses((v) => !v); }}
+              />
             </div>
 
             <SubSectionHeader title="Format Change" />
