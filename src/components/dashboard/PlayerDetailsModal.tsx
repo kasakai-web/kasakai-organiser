@@ -38,6 +38,11 @@ interface Registration {
   signedUpAt?: string;
   paymentStatus?: string;
   amountPaidPaise?: number;
+  // What a KasaKai pass covered on this seat, frozen at the moment it was
+  // granted. The ONE honest answer to "did this player pay?" — the old
+  // heuristic (paid + ₹0 on a game with a fee) also caught an organiser's free
+  // slot and missed a PARTIAL cover entirely.
+  passBenefitPaise?: number;
   optedOut?: boolean;
   optedOutAt?: string;
   optedOutReason?: "self" | "format_change" | null;
@@ -1453,11 +1458,39 @@ const PAYMENT_BADGE: Record<string, { label: string; bg: string; color: string }
   forfeited:     { label: "Forfeited",bg: "rgba(248,113,113,0.12)", color: "#f87171" },
 };
 
-function PaymentBadge({ status, amountPaise, gameFeeInPaise }: { status?: string; amountPaise?: number; gameFeeInPaise?: number }) {
+function PaymentBadge({ status, amountPaise, passBenefitPaise, gameFeeInPaise }: {
+  status?: string; amountPaise?: number; passBenefitPaise?: number; gameFeeInPaise?: number;
+}) {
   if (!status) return null;
-  // Pass-covered: paid status but ₹0 on a game that has a fee
-  const isPassCovered = status === "paid" && amountPaise === 0 && (gameFeeInPaise || 0) > 0;
-  if (isPassCovered) {
+  // Read the seat's OWN record of what a pass covered rather than inferring it
+  // from "paid ₹0". The inference was wrong in both directions: an organiser's
+  // free slot looked like a pass, and a pass that covered only PART of the fee
+  // looked like an ordinary payment. Someone counting cash at the turf needs
+  // the difference.
+  const covered = passBenefitPaise || 0;
+  if (covered > 0) {
+    const partial = (amountPaise || 0) > 0;
+    return (
+      <span
+        title={partial
+          ? `A pass covered ₹${covered / 100}; they paid the remaining ₹${(amountPaise || 0) / 100}.`
+          : `A pass covered the full ₹${covered / 100}.`}
+        style={{
+          background: "rgba(167,139,250,0.12)", color: "#a78bfa",
+          border: "1px solid rgba(167,139,250,0.35)",
+          borderRadius: 4, padding: "2px 7px",
+          fontSize: 10, fontWeight: 700, letterSpacing: "0.04em",
+          display: "inline-flex", alignItems: "center", gap: 4,
+        }}
+      >
+        🎟 {partial ? "Part pass" : "Pass"}
+        <span style={{ opacity: 0.8 }}>₹{covered / 100}</span>
+      </span>
+    );
+  }
+  // A ₹0 "paid" seat on a game that charges is the organiser's own free slot —
+  // named as one now that a pass names itself.
+  if (status === "paid" && !amountPaise && (gameFeeInPaise || 0) > 0) {
     return (
       <span style={{
         background: "rgba(200,255,62,0.1)", color: "#c8ff3e",
@@ -1466,7 +1499,7 @@ function PaymentBadge({ status, amountPaise, gameFeeInPaise }: { status?: string
         fontSize: 10, fontWeight: 700, letterSpacing: "0.04em",
         display: "inline-flex", alignItems: "center", gap: 4,
       }}>
-        🎟 Pass
+        Free slot
       </span>
     );
   }
@@ -1585,7 +1618,8 @@ function PlayerCard({
                 border: "1px solid rgba(245,158,11,0.3)",
               }}>Not Attending</span>
             ) : (
-              <PaymentBadge status={reg.paymentStatus} amountPaise={reg.amountPaidPaise} gameFeeInPaise={gameFeeInPaise} />
+              <PaymentBadge status={reg.paymentStatus} amountPaise={reg.amountPaidPaise}
+                passBenefitPaise={reg.passBenefitPaise} gameFeeInPaise={gameFeeInPaise} />
             )}
             <span className={`pdm-type-chip ${isGuest ? "pdm-chip-guest" : "pdm-chip-player"}`}>
               {isGuest ? "Guest" : "Player"}

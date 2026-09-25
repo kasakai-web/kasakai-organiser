@@ -32,6 +32,9 @@ type OrganiserProfile = {
   defaultFeeInPaise?: number;
   defaultFormat?: "5v5" | "6v6" | "7v7" | "8v8" | "9v9" | "10v10";
   defaultCutoffHours?: number;
+  /** Whether NEW games accept pass holders (§9). A default only — it never
+   *  edits a game that already exists. */
+  defaultAcceptsPasses?: boolean;
   defaultTurfId?: string;
   notificationSettings?: {
     whatsapp?: boolean;
@@ -142,6 +145,7 @@ export default function OrganiserProfilePage() {
     defaultFeeInPaise: 0,
     defaultFormat: "6v6",
     defaultCutoffHours: 24,
+    defaultAcceptsPasses: true,
     defaultTurfId: "",
     notificationSettings: { whatsapp: true, sms: true, push: true },
     approvalStatus: "pending",
@@ -227,6 +231,7 @@ export default function OrganiserProfilePage() {
         defaultFeeInPaise: o.defaultFeeInPaise || 0,
         defaultFormat: o.defaultFormat || "6v6",
         defaultCutoffHours: o.defaultCutoffHours || 24,
+        defaultAcceptsPasses: o.defaultAcceptsPasses !== false,
         defaultTurfId: o.defaultTurfId || "",
         notificationSettings: {
           whatsapp: o.notificationSettings?.whatsapp ?? true,
@@ -385,6 +390,7 @@ export default function OrganiserProfilePage() {
           defaultFeeInPaise: profile.defaultFeeInPaise,
           defaultFormat: profile.defaultFormat,
           defaultCutoffHours: profile.defaultCutoffHours,
+          defaultAcceptsPasses: profile.defaultAcceptsPasses !== false,
           defaultTurfId: profile.defaultTurfId || undefined,
           notificationSettings: profile.notificationSettings,
           playerSkill: profile.playerSkill,
@@ -739,6 +745,25 @@ export default function OrganiserProfilePage() {
                 <label className="op-label">Default Turf ID</label>
                 <input className="op-input" value={profile.defaultTurfId || ""} onChange={(e) => setProfile({ ...profile, defaultTurfId: e.target.value })} placeholder="Turf ID (optional)" />
               </div>
+            </div>
+            {/* A covered seat is a fee this organiser never collects, so refusing
+                one is theirs to do. Set here once rather than on every game —
+                each game still carries its own switch, and changing this never
+                edits a game that already exists. */}
+            <div className="op-notif-row">
+              <div>
+                <div className="op-notif-label">Accept KasaKai pass holders</div>
+                <div className="op-notif-desc">
+                  A pass holder plays without paying at the till, so the game collects nothing for that
+                  slot. Every covered seat is listed in your Financials. Applies to new games — you can
+                  still switch it per game.
+                </div>
+              </div>
+              <button type="button"
+                className={`op-toggle ${profile.defaultAcceptsPasses !== false ? "on" : "off"}`}
+                onClick={() => setProfile({ ...profile, defaultAcceptsPasses: profile.defaultAcceptsPasses === false })}>
+                <span className="op-toggle-knob" />
+              </button>
             </div>
           </div>
 

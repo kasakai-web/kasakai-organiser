@@ -70,6 +70,9 @@ export function TemplateForm({ template, onClose, onSaved }: TemplateFormProps) 
   const minEdited = useRef(!!template?.minPlayers);
   const [organiserIsPlaying, setOrganiserPlaying] = useState(template?.organiserIsPlaying ?? false);
 
+  // Organiser consent to pass holders, carried by the blueprint (§9) so a
+  // template made for a premium fixture does not re-open it every time it runs.
+  const [acceptsPasses, setAcceptsPasses] = useState(template?.acceptsPasses !== false);
   const [allowSizeChange, setAllowSizeChange] = useState(template?.allowSizeChange ?? false);
   const lastAlt = template?.alternateFormats?.[0] || null;
   const [altFormat, setAltFormat] = useState<Format>((lastAlt?.format as Format) ?? "5v5");
@@ -151,6 +154,7 @@ export function TemplateForm({ template, onClose, onSaved }: TemplateFormProps) 
         minPlayers: Number(minPlayers),
         totalSlots: Number(maxPlayers),
         allowSizeChange,
+        acceptsPasses,
         organiserIsPlaying,
         automationEnabled,
         firstCheckTime: customChecks ? firstCheckTime : null,
@@ -336,6 +340,14 @@ export function TemplateForm({ template, onClose, onSaved }: TemplateFormProps) 
             <input type="checkbox" checked={organiserIsPlaying} onChange={(ev) => setOrganiserPlaying(ev.target.checked)} className="toggle-checkbox" />
             <span className="toggle-label">I play in these games (uses 1 slot)</span>
           </label>
+          <label className="toggle-row">
+            <input type="checkbox" checked={acceptsPasses} onChange={(ev) => setAcceptsPasses(ev.target.checked)} className="toggle-checkbox" />
+            <span className="toggle-label">Accept KasaKai pass holders</span>
+          </label>
+          <div className="field-hint">
+            A pass holder plays without paying at the till, so these games collect nothing for that slot.
+            Every covered seat is listed in your Financials.
+          </div>
         </div>
 
         <div className="form-section">

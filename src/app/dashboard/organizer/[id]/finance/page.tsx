@@ -21,8 +21,15 @@ interface GameFinance {
   status: string;
   feeInPaise: number;
   turfName?: string;
+  acceptsPasses?: boolean;
   revenuePaise: number;
   refundedPaise: number;
+  // What a KasaKai pass covered on this game. `passCoveredPaise` is the fee you
+  // did not collect; `passReimbursablePaise` is the slice KasaKai owes you back.
+  passSeats: number;
+  passCoveredPaise: number;
+  passReimbursablePaise: number;
+  passSlots: PlayerSlot[];
   paidPlayers: PlayerSlot[];
   paidGuests: PlayerSlot[];
   orgFreeSlots: PlayerSlot[];
@@ -37,6 +44,10 @@ interface FinanceSummary {
   totalPaidGuests: number;
   totalOrgFreeSlots: number;
   totalOrgFreeGuests: number;
+  totalPassSeats: number;
+  totalPassCoveredPaise: number;
+  totalPassReimbursablePaise: number;
+  totalPassBornePaise: number;
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -159,7 +170,7 @@ export default function OrgFinancePage() {
       <div className="dashboard-header-section">
         <div className="header-left">
           <h1 className="dashboard-title">Financials</h1>
-          <p className="dashboard-subtitle">Revenue · Paid players · Free slots · Refunds — across all your games</p>
+          <p className="dashboard-subtitle">Revenue · Paid players · Pass-covered slots · Free slots · Refunds — across all your games</p>
         </div>
       </div>
 
@@ -194,6 +205,45 @@ export default function OrgFinancePage() {
                   <div className="fin-hero-val fin-col-red">{rs(summary.totalRefundedPaise)}</div>
                   <div className="fin-hero-sub">returned to players</div>
                 </div>
+              </div>
+
+              {/* Covered by passes.
+                  Deliberately NOT folded into Net Revenue: a covered seat is
+                  money never collected, not money refunded, and netting the two
+                  would hide the transfer inside a number that already existed.
+                  Shown even at zero, because "passes cost you nothing this
+                  period" is an answer and a missing row is not. */}
+              <div className="fin-pass-row">
+                <div className="fin-pass-head">
+                  <span className="fin-pass-icon">🎟</span>
+                  <span className="fin-pass-title">Covered by KasaKai passes</span>
+                  <span className="fin-pass-count">
+                    {summary.totalPassSeats} slot{summary.totalPassSeats === 1 ? "" : "s"}
+                  </span>
+                </div>
+                <div className="fin-pass-nums">
+                  <div className="fin-pass-num">
+                    <span className="fin-pass-num-lbl">Fee not collected</span>
+                    <span className="fin-pass-num-val">{rs(summary.totalPassCoveredPaise)}</span>
+                  </div>
+                  <div className="fin-pass-num">
+                    <span className="fin-pass-num-lbl">Reimbursable to you</span>
+                    <span className="fin-pass-num-val fin-col-lime">{rs(summary.totalPassReimbursablePaise)}</span>
+                  </div>
+                  <div className="fin-pass-num">
+                    <span className="fin-pass-num-lbl">Borne by you</span>
+                    <span className={`fin-pass-num-val ${summary.totalPassBornePaise > 0 ? "fin-col-amber" : "fin-col-muted"}`}>
+                      {rs(summary.totalPassBornePaise)}
+                    </span>
+                  </div>
+                </div>
+                <p className="fin-pass-note">
+                  {summary.totalPassSeats === 0
+                    ? "No pass holder has taken a slot in your games yet."
+                    : summary.totalPassReimbursablePaise > 0
+                      ? "Reimbursements are settled outside the app for now — quote these figures when you raise them."
+                      : "These passes are organiser-funded, so nothing is owed back. Turn passes off per game, or for all new games in your profile, if you'd rather collect the full fee."}
+                </p>
               </div>
 
               {/* Player counts row */}
@@ -296,6 +346,12 @@ export default function OrgFinancePage() {
                             <span className="fin-chip-lbl">refunded</span>
                           </div>
                         )}
+                        {game.passSeats > 0 && (
+                          <div className="fin-stat-chip fin-chip-pass">
+                            <span className="fin-chip-val">{rs(game.passCoveredPaise)}</span>
+                            <span className="fin-chip-lbl">on passes</span>
+                          </div>
+                        )}
                         <div className="fin-stat-chip">
                           <span className="fin-chip-val">{paidCnt + freeCnt}</span>
                           <span className="fin-chip-lbl">slots</span>
@@ -334,13 +390,35 @@ export default function OrgFinancePage() {
                             <span className="fin-detail-money-lbl">Free slots</span>
                             <span className="fin-detail-money-val fin-col-muted">{freeCnt}</span>
                           </div>
+                          {game.passSeats > 0 && (
+                            <>
+                              <div className="fin-detail-money-item">
+                                <span className="fin-detail-money-lbl">On passes</span>
+                                <span className="fin-detail-money-val">{rs(game.passCoveredPaise)}</span>
+                              </div>
+                              <div className="fin-detail-money-item">
+                                <span className="fin-detail-money-lbl">Reimbursable</span>
+                                <span className="fin-detail-money-val fin-col-lime">{rs(game.passReimbursablePaise)}</span>
+                              </div>
+                            </>
+                          )}
+                          {game.acceptsPasses === false && (
+                            <div className="fin-detail-money-item">
+                              <span className="fin-detail-money-lbl">Passes</span>
+                              <span className="fin-detail-money-val fin-col-muted">Off</span>
+                            </div>
+                          )}
                         </div>
 
                         {/* Slot sections */}
-                        {(paidCnt > 0 || freeCnt > 0) ? (
+                        {(paidCnt > 0 || freeCnt > 0 || game.passSeats > 0) ? (
                           <div className="fin-slot-sections">
                             <SlotSection title="Paid Players"          dotClass="fin-dot-green" slots={game.paidPlayers}  paid />
                             <SlotSection title="Paid Plus-Ones"        dotClass="fin-dot-lime"  slots={game.paidGuests}   paid />
+                            {/* Named, and with what each one cost — the whole
+                                point of the disclosure is that "who played on a
+                                pass?" is answerable. */}
+                            <SlotSection title="On a KasaKai Pass"     dotClass="fin-dot-pass"  slots={game.passSlots || []} paid />
                             <SlotSection title="Free Players (Org)"    dotClass="fin-dot-gray"  slots={game.orgFreeSlots}  paid={false} />
                             <SlotSection title="Free Guests (Org)"     dotClass="fin-dot-gray"  slots={game.orgFreeGuests} paid={false} />
                           </div>

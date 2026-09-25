@@ -38,6 +38,8 @@ export interface Template {
   totalSlots?: number;
   allowSizeChange?: boolean;
   organiserIsPlaying?: boolean;
+  /** Organiser consent to pass holders on games made from this blueprint (§9). */
+  acceptsPasses?: boolean;
   alternateFormats?: TemplateAltFormat[];
   automationEnabled?: boolean;
   firstCheckTime?: string | null;
@@ -162,6 +164,9 @@ export const templateToLastEventShape = (t: Template, dateYMD: string) => {
     totalSlots: t.totalSlots || 0,
     allowSizeChange: !!t.allowSizeChange,
     organiserIsPlaying: !!t.organiserIsPlaying,
+    // Absent on a blueprint written before the flag existed, which must read as
+    // YES — that is what every game already in the database does.
+    acceptsPasses: t.acceptsPasses !== false,
     alternateFormats: t.allowSizeChange ? (t.alternateFormats || []) : [],
     lifecycle: { automationEnabled: !!t.automationEnabled },
     organiserGuests: [],
