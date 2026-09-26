@@ -199,6 +199,10 @@ export default function DashboardLayout({
       setActiveSection("player-ratings");
       return;
     }
+    if (pathname.includes("/dashboard/organizer/") && pathname.endsWith("/past-events")) {
+      setActiveSection("past-events");
+      return;
+    }
     if (pathname.includes("/dashboard/organizer/") && pathname.endsWith("/finance")) {
       setActiveSection("finance");
       return;
@@ -328,6 +332,16 @@ export default function DashboardLayout({
               }}
             >
               <span className="sidebar-icon">🗂</span>My Games
+            </button>
+            <button
+              className={`sidebar-link ${activeSection === 'past-events' ? 'active' : ''}`}
+              onClick={() => {
+                setActiveSection("past-events");
+                setSidebarOpen(false);
+                if (userId) router.push(`/dashboard/organizer/${userId}/past-events`);
+              }}
+            >
+              <span className="sidebar-icon">🕘</span>Past Games
             </button>
             <button
               className={`sidebar-link ${activeSection === 'templates' ? 'active' : ''}`}
