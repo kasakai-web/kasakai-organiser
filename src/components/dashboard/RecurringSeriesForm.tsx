@@ -20,6 +20,8 @@ import {
   type RecurringSeries, type Freq, type EndMode, type SchedulePreview, type EditScope,
 } from "@/utils/recurring";
 import { fromStored, toPayload, describeForOrganiser, WINDOW_CHOICES, GRACE_CHOICES, type BackoutPolicy } from "@/utils/backoutPolicy";
+import { hostSlotsFromStored, hostSlotsToPayload, hostSlotsError, type HostSlotsForm } from "@/utils/hosts";
+import { HostSpotsFields } from "@/components/dashboard/HostSpotsFields";
 
 interface Turf { _id: string; name: string; location?: { city?: string } }
 
@@ -103,6 +105,8 @@ export function RecurringSeriesForm({ series, pivotOccurrenceId, onClose, onSave
   // Organiser consent to pass holders (§9). The series owns its own copy, like
   // every other game setting here — absent reads as YES.
   const [acceptsPasses, setAcceptsPasses] = useState(d?.acceptsPasses !== false);
+  // Host spots, owned by the series like the rest — each game gets its own copy.
+  const [hostSlots, setHostSlots] = useState<HostSlotsForm>(() => hostSlotsFromStored(d?.hostSlots));
   const [automationEnabled, setAutomationEnabled] = useState(d?.automationEnabled ?? false);
 
   const [notifyOnCreate, setNotifyOnCreate] = useState(series?.notifyOrganiser?.onCreate ?? true);
@@ -175,6 +179,7 @@ export function RecurringSeriesForm({ series, pivotOccurrenceId, onClose, onSave
     if (t.totalSlots) setTotalSlots(String(t.totalSlots));
     setOrganiserIsPlaying(!!t.organiserIsPlaying);
     setAcceptsPasses(t.acceptsPasses !== false);
+    setHostSlots(hostSlotsFromStored(t.hostSlots));
     setAutomationEnabled(!!t.automationEnabled);
   };
 
@@ -219,6 +224,7 @@ export function RecurringSeriesForm({ series, pivotOccurrenceId, onClose, onSave
       totalSlots: Number(totalSlots),
       organiserIsPlaying,
       acceptsPasses,
+      hostSlots: hostSlotsToPayload(hostSlots),
       automationEnabled,
     },
   }), [
@@ -227,7 +233,7 @@ export function RecurringSeriesForm({ series, pivotOccurrenceId, onClose, onSave
     checkOrganiser, checkOverlap, horizonDays, leadDays, notifyOnCreate, notifyOnChange,
     notifyOnCancel, title, nameMode, titlePattern, visibility, requiresApproval, turf, format, durationMins,
     reportingMins, cutoffHours, feeInRs, backoutFeeInRs, backoutPolicy, minPlayers, totalSlots,
-    organiserIsPlaying, acceptsPasses, automationEnabled,
+    organiserIsPlaying, acceptsPasses, hostSlots, automationEnabled,
   ]);
 
   // Debounced preview. Every keystroke in the rule would otherwise be a request,
@@ -283,6 +289,8 @@ export function RecurringSeriesForm({ series, pivotOccurrenceId, onClose, onSave
     if (Number(minPlayers) < 2) e.squad = "Minimum players must be at least 2";
     else if (Number(totalSlots) < slots) e.squad = `Max players must be at least ${slots} for ${format}`;
     else if (Number(minPlayers) > Number(totalSlots)) e.squad = "Minimum cannot exceed maximum";
+    const hostErr = hostSlotsError(hostSlots, { feeRs: Number(feeInRs) || 0, totalSlots: Number(totalSlots) || slots, organiserIsPlaying });
+    if (hostErr) e.hosts = hostErr;
     if (Object.keys(e).length > 0) { setErrors(e); return; }
 
     setErrors({});
@@ -692,6 +700,19 @@ export function RecurringSeriesForm({ series, pivotOccurrenceId, onClose, onSave
               <input type="checkbox" className="toggle-checkbox" checked={automationEnabled} onChange={(ev) => setAutomationEnabled(ev.target.checked)} />
               <span className="toggle-label">Auto-confirm / auto-cancel at the second check-in</span>
             </label>
+          </div>
+
+          {/* ── Host spots ─────────────────────────────────────────── */}
+          <div className="form-section">
+            <h3 className="section-title">Host spots</h3>
+            <HostSpotsFields
+              value={hostSlots}
+              onChange={setHostSlots}
+              feeRs={Number(feeInRs) || 0}
+              totalSlots={Number(totalSlots) || slotsFromFormat(format)}
+              organiserIsPlaying={organiserIsPlaying}
+            />
+            {errors.hosts && <div className="field-error">{errors.hosts}</div>}
           </div>
 
           {/* ── Conflicts & generation ─────────────────────────────── */}

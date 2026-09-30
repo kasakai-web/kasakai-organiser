@@ -11,6 +11,7 @@ import { ConfirmationModal } from "@/components/ui/ConfirmationModal";
 import { ImageLightbox } from "@/components/ui/ImageLightbox";
 import { buildPlayerListMessage } from "@/utils/playerListMessage";
 import { isValidYouTubeVideoUrl } from "@/utils/youtubeUrl";
+import type { HostInfo } from "@/utils/hosts";
 
 const IMG_BASE = (process.env.NEXT_PUBLIC_API_BASE_URL || "http://localhost:5000/api/v1").replace(/\/api\/v1\/?$/, "");
 
@@ -43,6 +44,10 @@ interface Registration {
   // heuristic (paid + ₹0 on a game with a fee) also caught an organiser's free
   // slot and missed a PARTIAL cover entirely.
   passBenefitPaise?: number;
+  // One of the game's host spots, booked by one of your approved hosts, and
+  // what the host discount took off it (frozen at booking).
+  seatType?: "standard" | "host";
+  hostDiscountPaise?: number;
   optedOut?: boolean;
   optedOutAt?: string;
   optedOutReason?: "self" | "format_change" | null;
@@ -96,6 +101,8 @@ interface PlayerDetailsModalProps {
   feeInPaise?: number;
   format?: string;
   reportingMinsBeforeGame?: number;
+  /** The game's host spots and who is running it (the backend's hostInfo). */
+  hostInfo?: HostInfo | null;
 }
 
 const POS_LABEL: Record<string, string> = {
@@ -173,6 +180,7 @@ export function PlayerDetailsModal({
   feeInPaise,
   format,
   reportingMinsBeforeGame,
+  hostInfo = null,
 }: PlayerDetailsModalProps) {
   const isLocked = gameStatus === 'completed' || gameStatus === 'cancelled';
 
@@ -593,10 +601,16 @@ function downloadTeamExcel(result: {
   const activeRegs = players.filter(
     (r) => !r.backedOutAt && !r.removedAt && !r.optedOut && !['refunded', 'forfeited'].includes(r.paymentStatus || '')
   );
+  // Host spots: filled from the rows on screen, held until the release time the
+  // game was given. Held ones are not free for anybody but a host — yourself
+  // included — so they come off "Available".
+  const hostTotal = hostInfo?.enabled ? hostInfo.total : 0;
+  const hostFilled = activeRegs.filter((r) => r.seatType === "host" && !r.plusOneName).length;
+  const hostHeld = hostTotal > 0 && !hostInfo?.released ? Math.max(0, hostTotal - hostFilled) : 0;
   // Derive from the registrations we're displaying (single source of truth) so the
   // count always matches the player/guest list shown below — rather than a
   // separately-broadcast spotsRemaining that can momentarily disagree.
-  const spotsLeft = Math.max(0, totalSlots - activeRegs.length - organiserCount);
+  const spotsLeft = Math.max(0, totalSlots - activeRegs.length - organiserCount - hostHeld);
   const totalCollectedPaise = players.reduce(
     (sum, r) => sum + (r.paymentStatus === "paid" || r.paymentStatus === "wallet_locked" ? (r.amountPaidPaise || 0) : 0),
     0
@@ -731,6 +745,15 @@ function downloadTeamExcel(result: {
             </span>
             <span className="pdm-stat-lbl">Available</span>
           </div>
+          {hostTotal > 0 && (
+            <>
+              <div className="pdm-stat-div" />
+              <div className="pdm-stat" title={hostHeld > 0 ? `${hostHeld} held for your hosts` : hostInfo?.released ? "Unbooked host spots are open to everyone now" : undefined}>
+                <span className="pdm-stat-val" style={{ color: "#c8ff3e" }}>{hostFilled}/{hostTotal}</span>
+                <span className="pdm-stat-lbl">Host spots</span>
+              </div>
+            </>
+          )}
           {waitlist.length > 0 && (
             <>
               <div className="pdm-stat-div" />
@@ -1624,6 +1647,19 @@ function PlayerCard({
             <span className={`pdm-type-chip ${isGuest ? "pdm-chip-guest" : "pdm-chip-player"}`}>
               {isGuest ? "Guest" : "Player"}
             </span>
+            {!isGuest && reg.seatType === "host" && (
+              <span
+                title={reg.hostDiscountPaise ? `Host spot — ₹${reg.hostDiscountPaise / 100} off` : "Host spot"}
+                style={{
+                  fontSize: 9, fontWeight: 700, letterSpacing: "0.08em",
+                  textTransform: "uppercase", padding: "3px 8px", borderRadius: 20,
+                  background: "rgba(200,255,62,0.12)", color: "#c8ff3e",
+                  border: "1px solid rgba(200,255,62,0.3)",
+                }}
+              >
+                🎖 Host
+              </span>
+            )}
           </div>
         </div>
 

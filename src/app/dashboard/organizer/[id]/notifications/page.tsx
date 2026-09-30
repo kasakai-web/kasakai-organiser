@@ -60,6 +60,12 @@ const TYPE_ICON: Record<string, string> = {
   guest_request_rejected: "🚫",
   co_organiser_added:     "🤝",
   co_organiser_changed:   "🤝",
+  host_approved:          "🎖️",
+  host_rejected:          "🚫",
+  host_ended:             "🎖️",
+  facilitator_accepted:   "🧭",
+  facilitator_declined:   "🧭",
+  game_staff_action:      "🧭",
   system:                 "ℹ️",
 };
 
@@ -97,6 +103,12 @@ const TYPE_COLOR: Record<string, string> = {
   guest_request_rejected: "rgba(239,68,68,0.14)",
   co_organiser_added:     "rgba(200,255,62,0.14)",
   co_organiser_changed:   "rgba(200,255,62,0.14)",
+  host_approved:          "rgba(200,255,62,0.14)",
+  host_rejected:          "rgba(239,68,68,0.14)",
+  host_ended:             "rgba(245,158,11,0.14)",
+  facilitator_accepted:   "rgba(74,222,128,0.14)",
+  facilitator_declined:   "rgba(245,158,11,0.14)",
+  game_staff_action:      "rgba(96,165,250,0.14)",
   system:                 "rgba(148,163,184,0.14)",
 };
 

@@ -6,6 +6,8 @@ import { buildApiUrl, getSession } from "@/utils/api";
 import { checkInDate, defaultCheckTimes, checkInIsoFromParts } from "@/utils/checkins";
 import { saveTemplate, listTemplates, prettyTime, type Template } from "@/utils/templates";
 import { fromStored, toPayload, describeForOrganiser, formatMins, WINDOW_CHOICES, GRACE_CHOICES, type BackoutPolicy } from "@/utils/backoutPolicy";
+import { hostSlotsFromStored, hostSlotsToPayload, hostSlotsError, listMyHosts, type HostSlotsForm } from "@/utils/hosts";
+import { HostSpotsFields } from "@/components/dashboard/HostSpotsFields";
 
 const TIME_SLOT_OPTIONS = Array.from({ length: 96 }, (_, idx) => {
   const hours = Math.floor(idx / 4);
@@ -60,6 +62,7 @@ const TAB_FOR_ERROR: Record<string, Tab> = {
   date: "Event Details",
   feeInRs: "Configuration",
   minMax: "Configuration",
+  hosts: "Configuration",
   alt: "Configuration",
   checks: "Check-in & Guests",
 };
@@ -300,6 +303,13 @@ export function CreateEventForm({ lastEvent, presetDate, onClose, onCreate, onSu
   const [acceptsPasses, setAcceptsPasses] = useState<boolean>(lastEvent?.acceptsPasses !== false);
   const passesTouched = useRef(lastEvent?.acceptsPasses !== undefined);
 
+  // Host spots — seats held for this organiser's approved hosts, at a discount,
+  // until a release time. Prefilled from the last event or a template like
+  // everything else. `approvedHosts` only drives the "recommend one first" hint.
+  const [hostSlots, setHostSlots] = useState<HostSlotsForm>(() => hostSlotsFromStored(lastEvent?.hostSlots));
+  const [approvedHosts, setApprovedHosts] = useState<number | null>(null);
+  const [hostsHref, setHostsHref] = useState<string | undefined>(undefined);
+
   const [allowSizeChange, setAllowSizeChange] = useState(lastEvent?.allowSizeChange ?? false);
   const lastAlt = (lastEvent?.alternateFormats && lastEvent.alternateFormats[0]) || null;
   const [altFormat, setAltFormat] = useState<Format>((lastAlt?.format as Format) ?? "5v5");
@@ -411,6 +421,16 @@ export function CreateEventForm({ lastEvent, presetDate, onClose, onCreate, onSu
   }, []);
 
   useEffect(() => {
+    // Best-effort: without it the hint simply doesn't show. The session is only
+    // readable in the browser, so the Hosts link is resolved here too.
+    const { userId } = getSession();
+    if (userId) setHostsHref(`/dashboard/organizer/${userId}/hosts`);
+    listMyHosts()
+      .then((rows) => setApprovedHosts(rows.filter((r) => r.status === "approved").length))
+      .catch(() => {});
+  }, []);
+
+  useEffect(() => {
     if (!tmplPickerOpen) return;
     const onDown = (e: MouseEvent) => {
       const el = e.target as HTMLElement | null;
@@ -508,6 +528,7 @@ export function CreateEventForm({ lastEvent, presetDate, onClose, onCreate, onSu
     // covered seats every time it is used.
     passesTouched.current = true;
     setAcceptsPasses(t.acceptsPasses !== false);
+    setHostSlots(hostSlotsFromStored(t.hostSlots));
 
     // The format effect re-runs on a format change and clamps these — flagging min
     // as edited keeps the template's number instead of the half-of-slots default.
@@ -565,6 +586,10 @@ export function CreateEventForm({ lastEvent, presetDate, onClose, onCreate, onSu
     if (orgSlot + organiserGuestCount > cap) {
       newErrors.submit = `You + ${organiserGuestCount} guest${organiserGuestCount !== 1 ? "s" : ""} exceeds the max of ${cap} players. Reduce guests or increase the player limit.`;
     }
+    const hostErr = hostSlotsError(hostSlots, { feeRs: Number(feeInRs) || 0, totalSlots: cap, organiserIsPlaying });
+    if (hostErr) newErrors.hosts = hostErr;
+    else if (hostSlots.count + orgSlot + organiserGuestCount > cap)
+      newErrors.hosts = `${hostSlots.count} host spot${hostSlots.count !== 1 ? "s" : ""} plus your own seat and guests is more than the ${cap} player limit.`;
     if (allowSizeChange) {
       const altSlots = slotsFromFormat(altFormat);
       if (altFormat === format)
@@ -634,6 +659,7 @@ export function CreateEventForm({ lastEvent, presetDate, onClose, onCreate, onSu
         reportingMinsBeforeGame: Number(reportingMins),
         allowSizeChange,
         acceptsPasses,
+        hostSlots: hostSlotsToPayload(hostSlots),
         organiserIsPlaying,
         organiserGuests,
         community: null,
@@ -695,6 +721,7 @@ export function CreateEventForm({ lastEvent, presetDate, onClose, onCreate, onSu
         totalSlots: Number(maxPlayers) || slotsFromFormat(format),
         allowSizeChange,
         acceptsPasses,
+        hostSlots: hostSlotsToPayload(hostSlots),
         organiserIsPlaying,
         automationEnabled,
         firstCheckTime,
@@ -1209,6 +1236,23 @@ export function CreateEventForm({ lastEvent, presetDate, onClose, onCreate, onSu
                   {describeForOrganiser(backoutPolicy, backoutFeeInRs)}
                 </p>
               </div>
+            </div>
+
+            <SubSectionHeader title="Host spots" />
+            <div className="mb-10">
+              <HostSpotsFields
+                value={hostSlots}
+                onChange={(next) => {
+                  setHostSlots(next);
+                  if (errors.hosts) setErrors((prev) => { const next2 = { ...prev }; delete next2.hosts; return next2; });
+                }}
+                feeRs={Number(feeInRs) || 0}
+                totalSlots={hardCap}
+                organiserIsPlaying={organiserIsPlaying}
+                approvedHosts={approvedHosts}
+                hostsHref={hostsHref}
+              />
+              {errors.hosts && <FieldError>{errors.hosts}</FieldError>}
             </div>
 
             <SubSectionHeader title="Passes" />

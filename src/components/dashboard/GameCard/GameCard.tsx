@@ -2,8 +2,9 @@
 
 import { useLayoutEffect, useMemo, useRef, useState } from "react";
 import "./GameCard.css";
-import {Lock,Calendar,Star,Clock,MapPin,Users,Trophy,CheckCircle2,Timer,ChevronDown,Pencil,RefreshCw,TriangleAlert,Undo2,CircleCheck,CircleX,CircleCheckBig, UserPlus,History,} from "lucide-react";
+import {Lock,Calendar,Star,Clock,MapPin,Users,Trophy,CheckCircle2,Timer,ChevronDown,Pencil,RefreshCw,TriangleAlert,Undo2,CircleCheck,CircleX,CircleCheckBig, UserPlus,History,Award,} from "lucide-react";
 import { filledCount } from "@/utils/playerCount";
+import type { HostInfo } from "@/utils/hosts";
 
 interface GameCardProps {
   game: any;
@@ -21,6 +22,8 @@ interface GameCardProps {
   onInvite?: () => void;
   onManageCoOrgs?: () => void;
   onTeamHistory?: () => void;
+  /** Ask one of your approved hosts to run this game without playing. */
+  onFacilitators?: () => void;
 }
 
 const getStatusConfig = (status: string) => {
@@ -79,7 +82,7 @@ const formatTime = (d: Date) =>
     })
     .toUpperCase();
 
-function GameCard({game,variant = "upcoming",isMenuOpen,onToggleMenu,onPlayers,onEdit,onConfirm,onWithdraw,onCancel,onSwitch,onSOS,onComplete,onInvite,onManageCoOrgs,onTeamHistory,
+function GameCard({game,variant = "upcoming",isMenuOpen,onToggleMenu,onPlayers,onEdit,onConfirm,onWithdraw,onCancel,onSwitch,onSOS,onComplete,onInvite,onManageCoOrgs,onTeamHistory,onFacilitators,
 }: GameCardProps) {
   const status = getStatusConfig(game.status);
   const isPast = variant === "past";
@@ -106,6 +109,22 @@ function GameCard({game,variant = "upcoming",isMenuOpen,onToggleMenu,onPlayers,o
   // Every live game can be invited to — public games are browsable AND invitable,
   // so the entry (invite + manage link + requests) is offered until the game closes.
   const showInvite = !isClosed;
+
+  // Host spots and who is running the game on the day (the backend's hostInfo).
+  const hostInfo: HostInfo | undefined = game.hostInfo;
+  const liveFacilitators = (game.facilitators || []).filter(
+    (f: any) => f.status === "invited" || f.status === "accepted"
+  ).length;
+  const hostLine = hostInfo && (hostInfo.enabled || hostInfo.runBy?.length)
+    ? [
+        hostInfo.enabled
+          ? `Host spots ${hostInfo.filled}/${hostInfo.total}${hostInfo.released ? " · opened to all" : hostInfo.held ? ` · ${hostInfo.held} held` : ""}`
+          : null,
+        hostInfo.runBy?.length
+          ? `Run by ${hostInfo.runBy.map((r) => `${r.name}${r.role === "facilitator" ? " (facilitator)" : ""}`).join(", ")}`
+          : null,
+      ].filter(Boolean).join(" · ")
+    : null;
 
   const gDay = new Date(game.scheduledAt).toLocaleDateString("en-IN", { timeZone: "Asia/Kolkata"});
   const fmt = (value: string | Date) => {
@@ -231,6 +250,13 @@ function GameCard({game,variant = "upcoming",isMenuOpen,onToggleMenu,onPlayers,o
                 </span>
               </div>
             )}
+
+          {hostLine && (
+            <div className="detail-row" title="Host spots and who is running this game on the day">
+              <Award size={15} />
+              <span>{hostLine}</span>
+            </div>
+          )}
         </div>
       </div>
 
@@ -442,6 +468,19 @@ function GameCard({game,variant = "upcoming",isMenuOpen,onToggleMenu,onPlayers,o
                       Complete
                     </button>
                   )}
+
+                {/* Facilitators: approved hosts asked to run the game without a spot */}
+                {canEditGame && onFacilitators && !isClosed && (
+                  <button
+                    className="co-org-item"
+                    onClick={onFacilitators}
+                    title="Ask one of your hosts to run this game"
+                  >
+                    <Award size={16} />
+                    Facilitators
+                    {liveFacilitators > 0 && <span>{liveFacilitators}</span>}
+                  </button>
+                )}
 
                 {/* Co-organiser management — owner and edit co-organisers */}
                 {canEditGame && onManageCoOrgs && (

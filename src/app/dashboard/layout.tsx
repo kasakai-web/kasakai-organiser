@@ -203,6 +203,10 @@ export default function DashboardLayout({
       setActiveSection("finance");
       return;
     }
+    if (pathname.includes("/dashboard/organizer/") && pathname.endsWith("/hosts")) {
+      setActiveSection("hosts");
+      return;
+    }
     setActiveSection("games");
   }, [pathname]);
 
@@ -360,6 +364,19 @@ export default function DashboardLayout({
               }}
             >
               <span className="sidebar-icon">⭐</span>Player Ratings
+            </button>
+            {/* Players you trust to run your games on the day — recommended here,
+                approved by KasaKai, then bookable into host spots or asked to
+                facilitate. */}
+            <button
+              className={`sidebar-link ${activeSection === 'hosts' ? 'active' : ''}`}
+              onClick={() => {
+                setActiveSection("hosts");
+                setSidebarOpen(false);
+                if (userId) router.push(`/dashboard/organizer/${userId}/hosts`);
+              }}
+            >
+              <span className="sidebar-icon">🎖</span>Hosts
             </button>
             <button
               className={`sidebar-link ${activeSection === 'finance' ? 'active' : ''}`}

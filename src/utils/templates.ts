@@ -8,6 +8,7 @@
 import { buildApiUrl, getSession } from "@/utils/api";
 import { shiftDate } from "@/utils/checkins";
 import type { BackoutPolicy } from "./backoutPolicy";
+import type { StoredHostSlots } from "./hosts";
 
 export type Format = "5v5" | "6v6" | "7v7" | "8v8" | "9v9" | "10v10";
 
@@ -40,6 +41,8 @@ export interface Template {
   organiserIsPlaying?: boolean;
   /** Organiser consent to pass holders on games made from this blueprint (§9). */
   acceptsPasses?: boolean;
+  /** Host spots every game made from this blueprint starts with. */
+  hostSlots?: StoredHostSlots | null;
   alternateFormats?: TemplateAltFormat[];
   automationEnabled?: boolean;
   firstCheckTime?: string | null;
@@ -167,6 +170,7 @@ export const templateToLastEventShape = (t: Template, dateYMD: string) => {
     // Absent on a blueprint written before the flag existed, which must read as
     // YES — that is what every game already in the database does.
     acceptsPasses: t.acceptsPasses !== false,
+    hostSlots: t.hostSlots ?? null,
     alternateFormats: t.allowSizeChange ? (t.alternateFormats || []) : [],
     lifecycle: { automationEnabled: !!t.automationEnabled },
     organiserGuests: [],

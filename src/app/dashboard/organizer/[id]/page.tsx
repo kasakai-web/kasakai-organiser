@@ -17,6 +17,7 @@ import { usePlayerSearch, type PlayerSearchResult } from "@/hooks/usePlayerSearc
 import "../../organizer-dashboard.css"; 
 import GameCard from "@/components/dashboard/GameCard/GameCard";
 import CoOrganiserModal from "@/components/dashboard/CoOrganiserModal";
+import FacilitatorsModal from "@/components/dashboard/FacilitatorsModal";
 import { TeamSheetHistory } from "@/components/dashboard/TeamSheetHistory";
 
 
@@ -100,6 +101,7 @@ export default function OrganizerDashboard() {
   const [showPostGameModal, setShowPostGameModal] = useState(false);
   const [postGameTarget, setPostGameTarget] = useState<any>(null);
   const [coOrgGame, setCoOrgGame] = useState<any>(null);
+  const [facilitatorGame, setFacilitatorGame] = useState<any>(null);
   const [teamHistoryGame, setTeamHistoryGame] = useState<any>(null);
   const [cancelTargetGame, setCancelTargetGame] = useState<any>(null);
   const [cancelMessage, setCancelMessage] = useState("");
@@ -1513,6 +1515,7 @@ export default function OrganizerDashboard() {
                 onCancel={() => openCancelModal(game)}
                 onInvite={()=>openInviteModal(game)}
                 onManageCoOrgs={() => { setCoOrgGame(game); setOpenMenuGameId(null); }}
+                onFacilitators={() => { setFacilitatorGame(game); setOpenMenuGameId(null); }}
                 onTeamHistory={() => { setTeamHistoryGame(game); setOpenMenuGameId(null); }}
               />
               ))}
@@ -1606,6 +1609,15 @@ export default function OrganizerDashboard() {
         />
       )}
 
+      {facilitatorGame && (
+        <FacilitatorsModal
+          gameId={facilitatorGame._id}
+          gameTitle={facilitatorGame.title}
+          onClose={() => setFacilitatorGame(null)}
+          onChanged={() => fetchGames({ silent: true })}
+        />
+      )}
+
       {showPlayersModal && selectedGame && (
         <PlayerDetailsModal
           gameId={selectedGame._id}
@@ -1624,6 +1636,7 @@ export default function OrganizerDashboard() {
           feeInPaise={selectedGame.feeInPaise}
           format={selectedGame.format}
           reportingMinsBeforeGame={selectedGame.reportingMinsBeforeGame}
+          hostInfo={selectedGame.hostInfo || null}
           onToggleOrganiserPlaying={() => handleOrganiserWithdraw(selectedGame._id)}
           onRemoveRegistration={async (regId) => {
             await handleRemoveRegistration(selectedGame._id, regId);
