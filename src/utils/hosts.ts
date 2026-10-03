@@ -147,7 +147,19 @@ export interface HostRecord {
     totalGamesPlayed?: number; noShowCount?: number; backoutCount?: number;
   } | null;
   stats?: { hosted: number; facilitated: number; upcoming: number } | null;
+  /** 'recommended' — yours; 'assigned' — KasaKai extended someone else's approved host to your games. */
+  relation?: "recommended" | "assigned";
+  /** You removed this host from your games; everyone else they cover keeps them. */
+  blocked?: boolean;
+  scope?: "organiser" | "organisers" | "all";
+  /** "All organisers" / "4 organisers" / "Bilal only". */
+  scopeLabel?: string;
+  recommendedBy?: { _id: string; name: string } | null;
 }
+
+/** Will removing this host END it (your own, scoped to you alone), or only take them off your games? */
+export const removingEndsHost = (h: HostRecord) =>
+  h.relation !== "assigned" && (h.scope ?? "organiser") === "organiser";
 
 export const listMyHosts = async (): Promise<HostRecord[]> => (await authFetch("/api/v1/organisers/hosts")).data || [];
 
@@ -156,6 +168,9 @@ export const recommendHost = async (playerId: string, note: string) =>
 
 export const endHost = async (approvalId: string, reason?: string) =>
   (await authFetch(`/api/v1/organisers/hosts/${approvalId}`, { method: "DELETE", body: JSON.stringify({ reason }) })).data;
+
+export const unblockHost = async (approvalId: string) =>
+  (await authFetch(`/api/v1/organisers/hosts/${approvalId}/unblock`, { method: "POST" })).data;
 
 export interface FacilitatorEntry {
   _id: string;

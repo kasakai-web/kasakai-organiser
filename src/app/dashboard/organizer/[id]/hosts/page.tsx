@@ -16,7 +16,7 @@ import { usePlayerSearch, type PlayerSearchResult } from "@/hooks/usePlayerSearc
 import { Toast, useToast } from "@/components/ui/Toast";
 import { ConfirmationModal } from "@/components/ui/ConfirmationModal";
 import { resolveImageUrl } from "@/utils/api";
-import { listMyHosts, recommendHost, endHost, type HostRecord } from "@/utils/hosts";
+import { listMyHosts, recommendHost, endHost, unblockHost, removingEndsHost, type HostRecord } from "@/utils/hosts";
 import "../../../organizer-dashboard.css";
 
 const fmtDate = (iso?: string | null) =>
@@ -71,6 +71,7 @@ export default function HostsPage() {
   const [ending, setEnding] = useState<HostRecord | null>(null);
   const [endBusy, setEndBusy] = useState(false);
   const [showHistory, setShowHistory] = useState(false);
+  const [unblocking, setUnblocking] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     try {
@@ -86,7 +87,8 @@ export default function HostsPage() {
   useEffect(() => { if (isAuthorized) load(); }, [isAuthorized, load]);
 
   const groups = useMemo(() => ({
-    approved: hosts.filter((h) => h.status === "approved"),
+    approved: hosts.filter((h) => h.status === "approved" && !h.blocked),
+    removed: hosts.filter((h) => h.status === "approved" && h.blocked),
     pending: hosts.filter((h) => h.status === "pending"),
     past: hosts.filter((h) => h.status === "rejected" || h.status === "ended"),
   }), [hosts]);
@@ -118,13 +120,31 @@ export default function HostsPage() {
     setEndBusy(true);
     try {
       await endHost(ending._id);
-      showToast("success", ending.status === "pending" ? "Recommendation withdrawn" : "Host ended", ending.player?.name, 2500);
+      showToast(
+        "success",
+        ending.status === "pending" ? "Recommendation withdrawn" : removingEndsHost(ending) ? "Host ended" : "Removed from your games",
+        ending.player?.name,
+        2500,
+      );
       setEnding(null);
       load();
     } catch (err) {
       showToast("error", "Couldn't update", err instanceof Error ? err.message : undefined, 3500);
     } finally {
       setEndBusy(false);
+    }
+  };
+
+  const addBack = async (h: HostRecord) => {
+    setUnblocking(h._id);
+    try {
+      await unblockHost(h._id);
+      showToast("success", "Added back", `${h.player?.name} can host your games again.`, 2500);
+      load();
+    } catch (err) {
+      showToast("error", "Couldn't update", err instanceof Error ? err.message : undefined, 3500);
+    } finally {
+      setUnblocking(null);
     }
   };
 
@@ -137,8 +157,10 @@ export default function HostsPage() {
           <h1 className="dashboard-title">Hosts</h1>
           <p className="dashboard-subtitle">
             Players you trust to run your games on the day — check-in, teams and wrap-up. Recommend them here;
-            KasaKai approves. An approved host can book the host spots in your games at your discount, or be
-            asked to facilitate a game without playing.
+            KasaKai approves, and may also make them a host for other organisers. KasaKai can add other
+            organisers&apos; approved hosts to your games too, and you can remove any of them from your games.
+            An approved host can book the host spots in your games at your discount, or be asked to facilitate a
+            game without playing.
           </p>
         </div>
       </div>
@@ -177,7 +199,7 @@ export default function HostsPage() {
                           {p.phone || ""}{typeof p.totalGamesPlayed === "number" ? ` · ${p.totalGamesPlayed} games` : ""}
                         </span>
                       </span>
-                      {already && <span className="text-[10px] text-[#c8ff3e] uppercase tracking-widest">Already yours</span>}
+                      {already && <span className="text-[10px] text-[#c8ff3e] uppercase tracking-widest">Already listed</span>}
                     </button>
                   );
                 })}
@@ -227,13 +249,35 @@ export default function HostsPage() {
                   Hosted {h.stats?.hosted ?? 0} · facilitated {h.stats?.facilitated ?? 0}
                   {h.stats?.upcoming ? <span className="text-[#c8ff3e]"> · {h.stats.upcoming} upcoming</span> : null}
                   <span> · since {fmtDate(h.decidedAt)}</span>
+                  <span className="block mt-1">{originLabel(h)}</span>
                 </div>
                 <button type="button" className="text-xs text-[#f87171] hover:underline" onClick={() => setEnding(h)}>
-                  End
+                  {removingEndsHost(h) ? "End" : "Remove from my games"}
                 </button>
               </Row>
             ))}
           </Section>
+
+          {groups.removed.length > 0 && (
+            <Section title={`Removed from your games (${groups.removed.length})`}>
+              {groups.removed.map((h) => (
+                <Row key={h._id} host={h} muted>
+                  <div className="text-xs text-[#888]">
+                    Can&apos;t book host spots or facilitate in your games.
+                    <span className="block mt-1">{originLabel(h)}</span>
+                  </div>
+                  <button
+                    type="button"
+                    className="text-xs text-[#c8ff3e] hover:underline disabled:opacity-50"
+                    disabled={unblocking === h._id}
+                    onClick={() => addBack(h)}
+                  >
+                    {unblocking === h._id ? "Adding…" : "Add back"}
+                  </button>
+                </Row>
+              ))}
+            </Section>
+          )}
 
           <Section title={`Waiting for KasaKai (${groups.pending.length})`}>
             {groups.pending.length === 0 && <Empty>Nothing waiting.</Empty>}
@@ -276,13 +320,21 @@ export default function HostsPage() {
 
       <ConfirmationModal
         open={!!ending}
-        title={ending?.status === "pending" ? "Withdraw recommendation?" : "End this host?"}
+        title={
+          ending?.status === "pending" ? "Withdraw recommendation?"
+          : ending && removingEndsHost(ending) ? "End this host?"
+          : "Remove from your games?"
+        }
         message={
           ending?.status === "pending"
             ? `${ending?.player?.name} won't be considered. They were never told they were recommended.`
-            : `${ending?.player?.name} loses the host tools straight away and any facilitator slots in your upcoming games. Host spots they already booked stay theirs — you can remove them from the roster if you want someone else there.`
+            : ending && removingEndsHost(ending)
+              ? `${ending?.player?.name} loses the host tools straight away and any facilitator slots in your upcoming games. Host spots they already booked stay theirs — you can remove them from the roster if you want someone else there.`
+              : `${ending?.player?.name} can no longer book host spots or facilitate in your games, and loses any facilitator slots in your upcoming games. They stay a host for the other organisers KasaKai approved them for. Host spots they already booked in your games stay theirs. You can add them back later.`
         }
-        confirmLabel={ending?.status === "pending" ? "Withdraw" : "End host"}
+        confirmLabel={
+          ending?.status === "pending" ? "Withdraw" : ending && removingEndsHost(ending) ? "End host" : "Remove"
+        }
         loading={endBusy}
         onConfirm={confirmEnd}
         onCancel={() => setEnding(null)}
@@ -291,6 +343,16 @@ export default function HostsPage() {
       {toast && <Toast type={toast.type} title={toast.title} subtitle={toast.subtitle} onClose={hideToast} />}
     </div>
   );
+}
+
+/** Where this host came from, and how far KasaKai's approval reaches. */
+function originLabel(h: HostRecord) {
+  if (h.relation === "assigned") {
+    return `Added by KasaKai · recommended by ${h.recommendedBy?.name || "another organiser"} · host for ${(h.scopeLabel || "").toLowerCase()}`;
+  }
+  return (h.scope ?? "organiser") === "organiser"
+    ? "Recommended by you"
+    : `Recommended by you · KasaKai approved them for ${(h.scopeLabel || "").toLowerCase()}`;
 }
 
 function Section({ title, children }: { title: string; children: React.ReactNode }) {
