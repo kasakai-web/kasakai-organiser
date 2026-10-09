@@ -14,6 +14,8 @@ import { buildApiUrl, getSession } from "@/utils/api";
 import { saveTemplate, updateTemplate, type Template, type Format } from "@/utils/templates";
 import { defaultCheckTimes } from "@/utils/checkins";
 import { fromStored, toPayload, describeForOrganiser, WINDOW_CHOICES, GRACE_CHOICES, type BackoutPolicy } from "@/utils/backoutPolicy";
+import { hostSlotsFromStored, hostSlotsToPayload, hostSlotsError, type HostSlotsForm } from "@/utils/hosts";
+import { HostSpotsFields } from "@/components/dashboard/HostSpotsFields";
 
 const TIME_SLOT_OPTIONS = Array.from({ length: 96 }, (_, idx) => {
   const hours = Math.floor(idx / 4);
@@ -73,6 +75,8 @@ export function TemplateForm({ template, onClose, onSaved }: TemplateFormProps) 
   // Organiser consent to pass holders, carried by the blueprint (§9) so a
   // template made for a premium fixture does not re-open it every time it runs.
   const [acceptsPasses, setAcceptsPasses] = useState(template?.acceptsPasses !== false);
+  // Host spots every game made from this template starts with.
+  const [hostSlots, setHostSlots] = useState<HostSlotsForm>(() => hostSlotsFromStored(template?.hostSlots));
   const [allowSizeChange, setAllowSizeChange] = useState(template?.allowSizeChange ?? false);
   const lastAlt = template?.alternateFormats?.[0] || null;
   const [altFormat, setAltFormat] = useState<Format>((lastAlt?.format as Format) ?? "5v5");
@@ -133,6 +137,8 @@ export function TemplateForm({ template, onClose, onSaved }: TemplateFormProps) 
       else if (feeInRs !== "" && Number(altFee) >= Number(feeInRs)) e.alt = `Alternate fee must be less than the main fee (₹${feeInRs})`;
     }
     if (customChecks && firstCheckTime >= secondCheckTime) e.checks = "Second check-in must be after the first";
+    const hostErr = hostSlotsError(hostSlots, { feeRs: Number(feeInRs) || 0, totalSlots: Number(maxPlayers) || slots, organiserIsPlaying });
+    if (hostErr) e.hosts = hostErr;
     if (Object.keys(e).length > 0) { setErrors(e); return; }
 
     setLoading(true);
@@ -155,6 +161,7 @@ export function TemplateForm({ template, onClose, onSaved }: TemplateFormProps) 
         totalSlots: Number(maxPlayers),
         allowSizeChange,
         acceptsPasses,
+        hostSlots: hostSlotsToPayload(hostSlots),
         organiserIsPlaying,
         automationEnabled,
         firstCheckTime: customChecks ? firstCheckTime : null,
@@ -348,6 +355,18 @@ export function TemplateForm({ template, onClose, onSaved }: TemplateFormProps) 
             A pass holder plays without paying at the till, so these games collect nothing for that slot.
             Every covered seat is listed in your Financials.
           </div>
+        </div>
+
+        <div className="form-section">
+          <h3 className="section-title">Host spots</h3>
+          <HostSpotsFields
+            value={hostSlots}
+            onChange={setHostSlots}
+            feeRs={Number(feeInRs) || 0}
+            totalSlots={Number(maxPlayers) || slots}
+            organiserIsPlaying={organiserIsPlaying}
+          />
+          {errors.hosts && <div className="field-error">{errors.hosts}</div>}
         </div>
 
         <div className="form-section">

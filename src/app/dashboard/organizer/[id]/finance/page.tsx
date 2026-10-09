@@ -30,6 +30,11 @@ interface GameFinance {
   passCoveredPaise: number;
   passReimbursablePaise: number;
   passSlots: PlayerSlot[];
+  // Host spots booked by your approved hosts, and what your host discount took
+  // off them. Money not charged — shown beside revenue, never netted into it.
+  hostSeats?: number;
+  hostDiscountPaise?: number;
+  hostSlots?: { name: string; amountPaidPaise: number; discountPaise: number }[];
   paidPlayers: PlayerSlot[];
   paidGuests: PlayerSlot[];
   orgFreeSlots: PlayerSlot[];
@@ -48,6 +53,8 @@ interface FinanceSummary {
   totalPassCoveredPaise: number;
   totalPassReimbursablePaise: number;
   totalPassBornePaise: number;
+  totalHostSeats?: number;
+  totalHostDiscountPaise?: number;
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -246,6 +253,30 @@ export default function OrgFinancePage() {
                 </p>
               </div>
 
+              {/* Host discounts — your own arrangement with your hosts, disclosed
+                  the same way as passes and for the same reason. Only shown once
+                  a host has actually taken a host spot. */}
+              {(summary.totalHostSeats ?? 0) > 0 && (
+                <div className="fin-pass-row">
+                  <div className="fin-pass-head">
+                    <span className="fin-pass-icon">🎖</span>
+                    <span className="fin-pass-title">Host discounts</span>
+                    <span className="fin-pass-count">
+                      {summary.totalHostSeats} host spot{summary.totalHostSeats === 1 ? "" : "s"}
+                    </span>
+                  </div>
+                  <div className="fin-pass-nums">
+                    <div className="fin-pass-num">
+                      <span className="fin-pass-num-lbl">Discount given</span>
+                      <span className="fin-pass-num-val">{rs(summary.totalHostDiscountPaise ?? 0)}</span>
+                    </div>
+                  </div>
+                  <p className="fin-pass-note">
+                    What your hosts didn&apos;t pay for running your games. Already reflected in Collected.
+                  </p>
+                </div>
+              )}
+
               {/* Player counts row */}
               <div className="fin-counts-row">
                 <div className="fin-count-item">
@@ -352,6 +383,12 @@ export default function OrgFinancePage() {
                             <span className="fin-chip-lbl">on passes</span>
                           </div>
                         )}
+                        {(game.hostDiscountPaise ?? 0) > 0 && (
+                          <div className="fin-stat-chip fin-chip-pass">
+                            <span className="fin-chip-val">{rs(game.hostDiscountPaise ?? 0)}</span>
+                            <span className="fin-chip-lbl">host discount</span>
+                          </div>
+                        )}
                         <div className="fin-stat-chip">
                           <span className="fin-chip-val">{paidCnt + freeCnt}</span>
                           <span className="fin-chip-lbl">slots</span>
@@ -402,6 +439,12 @@ export default function OrgFinancePage() {
                               </div>
                             </>
                           )}
+                          {(game.hostSeats ?? 0) > 0 && (
+                            <div className="fin-detail-money-item">
+                              <span className="fin-detail-money-lbl">Host discount</span>
+                              <span className="fin-detail-money-val">{rs(game.hostDiscountPaise ?? 0)}</span>
+                            </div>
+                          )}
                           {game.acceptsPasses === false && (
                             <div className="fin-detail-money-item">
                               <span className="fin-detail-money-lbl">Passes</span>
@@ -419,6 +462,13 @@ export default function OrgFinancePage() {
                                 point of the disclosure is that "who played on a
                                 pass?" is answerable. */}
                             <SlotSection title="On a KasaKai Pass"     dotClass="fin-dot-pass"  slots={game.passSlots || []} paid />
+                            {/* What each host paid for their host spot. */}
+                            <SlotSection
+                              title="Host spots"
+                              dotClass="fin-dot-lime"
+                              slots={(game.hostSlots || []).map((h) => ({ name: h.name, amountPaise: h.amountPaidPaise }))}
+                              paid
+                            />
                             <SlotSection title="Free Players (Org)"    dotClass="fin-dot-gray"  slots={game.orgFreeSlots}  paid={false} />
                             <SlotSection title="Free Guests (Org)"     dotClass="fin-dot-gray"  slots={game.orgFreeGuests} paid={false} />
                           </div>

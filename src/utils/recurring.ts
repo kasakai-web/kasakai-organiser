@@ -10,6 +10,7 @@
 import { buildApiUrl, getSession } from "@/utils/api";
 import type { Format } from "@/utils/templates";
 import type { BackoutPolicy } from "./backoutPolicy";
+import type { StoredHostSlots } from "./hosts";
 
 export type Freq = "daily" | "weekly" | "monthly";
 export type EndMode = "never" | "onDate" | "afterCount";
@@ -48,6 +49,8 @@ export interface SeriesGameDefaults {
   organiserIsPlaying?: boolean;
   /** Organiser consent to pass holders on the games this series makes (§9). */
   acceptsPasses?: boolean;
+  /** Host spots every game this series makes starts with. */
+  hostSlots?: StoredHostSlots | null;
   automationEnabled?: boolean;
   firstCheckTime?: string | null;
   secondCheckTime?: string | null;

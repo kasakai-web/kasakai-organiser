@@ -4,6 +4,8 @@ import React, { useEffect, useMemo, useRef, useState } from "react";
 import { buildApiUrl, getSession } from "@/utils/api";
 import { checkInIsoFromParts, istYMD, istHHmm, sameMinute } from "@/utils/checkins";
 import { isActiveReg } from "@/utils/playerCount";
+import { hostSlotsFromStored, hostSlotsToPayload, hostSlotsError, type HostSlotsForm } from "@/utils/hosts";
+import { HostSpotsFields } from "@/components/dashboard/HostSpotsFields";
 
 interface Turf { _id: string; name: string; location: { city: string } }
 
@@ -128,6 +130,15 @@ export function EditEventModal({
   // Organiser consent to pass holders (§9). Absent on every game created before
   // the flag existed, which must read as YES.
   const [acceptsPasses, setAcceptsPasses] = useState(initialData.acceptsPasses !== false);
+
+  // Host spots. Only sent when touched: the config is re-checked against the
+  // roster on every save that carries it, and an untouched one has nothing to
+  // say. The count can't go below the host spots already booked.
+  const [hostSlots, setHostSlots] = useState<HostSlotsForm>(() => hostSlotsFromStored(initialData.hostSlots));
+  const hostSlotsTouched = useRef(false);
+  const bookedHostSeats = (initialData.registrations || []).filter(
+    (r: any) => isActiveReg(r) && r.seatType === "host" && !r.plusOneName
+  ).length;
 
   const [allowSizeChange, setAllowSizeChange] = useState(Boolean(initialData.allowSizeChange));
   const [altFormat, setAltFormat] = useState<Format>((lastAlt?.format as Format) ?? "5v5");
@@ -299,6 +310,10 @@ export function EditEventModal({
     if (!date) newErrors.date = "Date is required";
     if (Number(minPlayers) > Number(totalSlots))
       newErrors.minMax = "Min players cannot exceed total slots";
+    if (hostSlotsTouched.current) {
+      const hostErr = hostSlotsError(hostSlots, { feeRs: Number(feeInRs) || 0, totalSlots: Number(totalSlots), organiserIsPlaying: organiserPlaying });
+      if (hostErr) newErrors.hosts = hostErr;
+    }
     // Alternate format: valid min/max and a fee strictly below the main fee.
     // Only validated when the section is actually shown (an alternate existed at
     // creation) — otherwise a hidden section could block submit with an unseeable error.
@@ -365,6 +380,7 @@ export function EditEventModal({
         acceptsPasses,
         lifecycle,
       };
+      if (hostSlotsTouched.current) payload.hostSlots = hostSlotsToPayload(hostSlots);
       // IST-anchored, and only when the organiser actually moved it — the backend
       // treats an absent start time as "leave it alone".
       if (timeChanged) payload.scheduledAt = scheduledIso;
@@ -625,6 +641,26 @@ export function EditEventModal({
                   }} />
               </Field>
             </div>
+          </Section>
+
+          {/* ── Host spots — editable while the game is live. The discount is frozen
+                on every host seat already booked, so changing it re-prices nobody. ── */}
+          <Section
+            title="Host spots"
+            collapsible
+            defaultOpen={hostSlots.count > 0}
+            forceOpen={!!errors.hosts}
+            summary={hostSlots.count > 0 ? `${hostSlots.count} held${bookedHostSeats ? ` · ${bookedHostSeats} booked` : ""}` : "None"}
+          >
+            <HostSpotsFields
+              value={hostSlots}
+              onChange={(next) => { hostSlotsTouched.current = true; setHostSlots(next); }}
+              feeRs={Number(feeInRs) || 0}
+              totalSlots={Number(totalSlots)}
+              organiserIsPlaying={organiserPlaying}
+              minCount={bookedHostSeats}
+            />
+            {errors.hosts && <div style={{ fontSize: 11, color: "#f87171" }}>{errors.hosts}</div>}
           </Section>
 
           {/* ── Format Change — shown ONLY when an alternate format was defined at
