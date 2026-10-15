@@ -142,10 +142,15 @@ function teamInfo(raw?: string): { label: string; cls: string } | null {
 
 function fmtDate(iso?: string) {
   if (!iso) return null;
-  return new Date(iso).toLocaleDateString("en-IN", {
+  // "12 Oct 2026, 7:45 pm" — the organiser needs WHEN a seat was booked, not just the day.
+  return new Date(iso).toLocaleString("en-IN", {
     day: "2-digit",
     month: "short",
     year: "numeric",
+    hour: "numeric",
+    minute: "2-digit",
+    hour12: true,
+    timeZone: "Asia/Kolkata",
   });
 }
 
