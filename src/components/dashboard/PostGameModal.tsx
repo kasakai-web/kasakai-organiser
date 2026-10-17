@@ -13,6 +13,8 @@ export interface Registration {
   player?: { _id: string; name: string; phone?: string; profileImage?: string };
   plusOneName?: string | null;
   attended?: "present" | "absent" | "not_marked";
+  // "assumed" — the automatic completion marked them present; nobody checked.
+  attendanceSource?: "assumed" | "marked" | null;
   // Tombstone / settlement markers — a row with any of these holds no seat, so
   // it must never reach attendance or rating even though it stays in the array.
   backedOutAt?: string | null;
@@ -40,6 +42,9 @@ export interface Game {
   turf?: { name?: string };
   registrations: Registration[];
   attendanceMarked?: boolean;
+  status?: string;
+  // "auto" — completed by the lifecycle job after the game, everyone assumed present.
+  completedBy?: "organiser" | "staff" | "auto" | null;
 }
 
 type AttendanceStatus = "present" | "absent";
@@ -311,11 +316,13 @@ export function PostGameModal({ game, onClose, onDone }: Props) {
     const { token } = getSession();
     if (!token) { setSavingRatings(false); return; }
     try {
-      // Only what the organiser touched, or a player they had never rated. An
-      // untouched pre-filled row carries no new information, and sending it would
-      // tell the player they had been "rated" again for nothing.
+      // What the organiser touched, plus every rated player not yet rated FOR
+      // THIS GAME. An untouched carried-over rating is the organiser saying "still
+      // true tonight": the server records the game against it (which is what
+      // takes the game out of Ratings pending on the Past Events page) and, the
+      // values being unchanged, neither bumps the revision nor notifies anyone.
       const payload = ratingList
-        .filter((r) => dirty[r.playerId] || !r.existing)
+        .filter((r) => dirty[r.playerId] || (isRated(r) && !r.existing?.ratedInThisGame))
         .map((r) => ({
           playerId:          r.playerId,
           conductRating:     r.conductRating,
@@ -473,11 +480,16 @@ export function PostGameModal({ game, onClose, onDone }: Props) {
   const isRated = (r: PlayerRatingDraft) => (r.conductRating ?? 0) > 0 && (r.gameplayRating ?? 0) > 0;
   const ratedCount = ratingList.filter(isRated).length;
 
-  // What Save would actually send: edits, plus anyone rated here for the first
-  // time. Zero means the pass is already recorded and Save has nothing to do.
+  // What Save would actually send: edits, plus anyone rated but not yet for this
+  // game. Zero means the pass is already recorded and Save has nothing to do.
   const pendingCount = ratingList.filter(
-    (r) => dirty[r.playerId] || (!r.existing && isRated(r))
+    (r) => dirty[r.playerId] || (isRated(r) && !r.existing?.ratedInThisGame)
   ).length;
+
+  // Completed by the lifecycle job and not reviewed yet: everyone on screen is
+  // present because the system assumed it, not because anybody checked.
+  const autoAssumed = game.completedBy === "auto" && !game.attendanceMarked;
+  const alreadyCompleted = game.status === "completed";
 
   // "Rated 12 Jul · 4 games" — enough to recognise the opinion as yours.
   const standingNote = (r: PlayerRatingDraft) => {
@@ -529,6 +541,12 @@ export function PostGameModal({ game, onClose, onDone }: Props) {
 
         {step === "attendance" && (
           <div className="pgm-body">
+            {autoAssumed && (
+              <div className="pgm-guests-note" style={{ margin: "12px 24px 0" }}>
+                This game was completed automatically after it ended, with everyone marked
+                present. Mark anyone who didn&apos;t turn up, then confirm.
+              </div>
+            )}
             <div className="pgm-summary-row">
               <div className="pgm-chip-group">
                 <span className="pgm-summary-chip present">{presentCount} Present</span>
@@ -584,7 +602,13 @@ export function PostGameModal({ game, onClose, onDone }: Props) {
             <div className="pgm-footer">
               <button className="pgm-btn-secondary" onClick={onClose}>Cancel</button>
               <button className="pgm-btn-primary" onClick={handleSaveAttendance} disabled={savingAttendance}>
-                {savingAttendance ? "Saving…" : "Save Attendance & Complete Game →"}
+                {savingAttendance
+                  ? "Saving…"
+                  : !alreadyCompleted
+                    ? "Save Attendance & Complete Game →"
+                    : absentCount === 0
+                      ? "Confirm All Present →"
+                      : "Save Attendance →"}
               </button>
             </div>
           </div>

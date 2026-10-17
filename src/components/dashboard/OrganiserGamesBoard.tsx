@@ -58,6 +58,17 @@ const SOS_WA_BADGE: Record<string, { label: string; color: string; bg: string; b
 // Each view has its own natural reading order: Upcoming starts with the next
 // fixture, Past starts with the one just played — that most recent game is what
 // an organiser opens the page for (attendance, ratings, settlement).
+// The Past Events groups, in the order the work happens. Counts come from the
+// server (`postGame` on the my-games response), as does the filtering.
+type PostGameGroup = "needs_decision" | "attendance_review" | "ratings_pending" | "done";
+type PostGameSummary = { counts: Record<string, number>; attention: number; windowDays: number };
+const POST_GAME_GROUPS: { key: PostGameGroup; label: string; hint: string; attention: boolean }[] = [
+  { key: "needs_decision",    label: "Needs a decision",  attention: true,  hint: "Never confirmed, so not completed automatically — complete or cancel" },
+  { key: "attendance_review", label: "Attendance review", attention: true,  hint: "Attendance not confirmed yet — auto-completed games have everyone assumed present" },
+  { key: "ratings_pending",   label: "Ratings pending",   attention: true,  hint: "Some players who played are not rated for this game" },
+  { key: "done",              label: "All done",          attention: false, hint: "Nothing left to do" },
+];
+
 const DEFAULT_SORT: Record<GamesView, string> = { upcoming: 'date-asc', past: 'date-desc' };
 
 // Paged fetches can overlap by a row when games move between pages (a game
@@ -145,6 +156,14 @@ export default function OrganiserGamesBoard({ view }: { view: GamesView }) {
   const [filterFormat, setFilterFormat] = useState('all');
   const defaultSort = DEFAULT_SORT[view];
   const [sortBy, setSortBy] = useState(defaultSort);
+  // Past Events group (backend utils/postGameState.js). Seeded from
+  // ?postGame= so the "game auto-completed" notification lands on its group.
+  const [postGameFilter, setPostGameFilter] = useState('all');
+  const [postGameSummary, setPostGameSummary] = useState<PostGameSummary | null>(null);
+  useEffect(() => {
+    const wanted = new URLSearchParams(window.location.search).get('postGame');
+    if (view === 'past' && wanted && POST_GAME_GROUPS.some((g) => g.key === wanted)) setPostGameFilter(wanted);
+  }, [view]);
 
   // ── Server-side paging ────────────────────────────────────────────────────
   // Both views arrive a page at a time, so the filter bar is applied by the
@@ -155,7 +174,10 @@ export default function OrganiserGamesBoard({ view }: { view: GamesView }) {
     const t = setTimeout(() => setDebouncedSearch(searchQuery), 300);
     return () => clearTimeout(t);
   }, [searchQuery]);
-  const listQuery = new URLSearchParams({ q: debouncedSearch.trim(), status: filterStatus, format: filterFormat, sort: sortBy }).toString();
+  const listQuery = new URLSearchParams({
+    q: debouncedSearch.trim(), status: filterStatus, format: filterFormat, sort: sortBy,
+    ...(view === 'past' && postGameFilter !== 'all' ? { postGame: postGameFilter } : {}),
+  }).toString();
   const listQueryRef   = useRef(listQuery);
   const pagesLoadedRef = useRef(1);
   const [paging, setPaging]     = useState<{ hasMore: boolean; total: number } | null>(null);
@@ -273,6 +295,7 @@ export default function OrganiserGamesBoard({ view }: { view: GamesView }) {
         setPaging({ hasMore: !!data.hasMore, total: data.total ?? nextGames.length });
         setScopeFormats(Array.isArray(data.formats) ? data.formats : null);
         setAlertGames(Array.isArray(data.alerts) ? data.alerts : null);
+        setPostGameSummary(data.postGame ?? null);
         setFetchError(null);  
 
         // "lastEvent" pre-fills the create form with the most recently CREATED
@@ -838,7 +861,7 @@ export default function OrganiserGamesBoard({ view }: { view: GamesView }) {
   const filteredUpcoming = upcomingGames;
   const filteredPast     = pastGames;
   const shownGames       = view === 'upcoming' ? filteredUpcoming : filteredPast;
-  const hasActiveFilters = !!(searchQuery || filterStatus !== 'all' || filterFormat !== 'all' || sortBy !== defaultSort);
+  const hasActiveFilters = !!(searchQuery || filterStatus !== 'all' || filterFormat !== 'all' || sortBy !== defaultSort || postGameFilter !== 'all');
   const listTotal        = paging?.total ?? shownGames.length;
 
   // What the decision pop-up looks at: the server's alert games, with any that
@@ -846,7 +869,7 @@ export default function OrganiserGamesBoard({ view }: { view: GamesView }) {
   const loadedById = new Map(games.map((g) => [g._id, g]));
   const lifecycleGames = alertGames ? alertGames.map((a) => loadedById.get(a._id) ?? a) : games;
 
-  const clearFilters = () => { setSearchQuery(''); setFilterStatus('all'); setFilterFormat('all'); setSortBy(defaultSort); };
+  const clearFilters = () => { setSearchQuery(''); setFilterStatus('all'); setFilterFormat('all'); setSortBy(defaultSort); setPostGameFilter('all'); };
 
   const handleLogout = () => {
   clearSession(); // ✅ better than localStorage.clear()
@@ -1484,9 +1507,42 @@ export default function OrganiserGamesBoard({ view }: { view: GamesView }) {
             </span>
             <span className="tab-text">Past Events</span>
             <span className="tab-badge">{scopeCounts?.past ?? pastGames.length}</span>
+            {(postGameSummary?.attention ?? 0) > 0 && (
+              <span className="tab-badge tab-badge-attention" title="Past games waiting on you — a decision, attendance or ratings">
+                {postGameSummary!.attention} to review
+              </span>
+            )}
           </Link>
         </div>
       </div>
+
+      {/* Past Events groups — what is left to do after each game. Outside the
+          filter bar's games.length guard: a group with nothing in it still has
+          to be leavable. */}
+      {view === 'past' && postGameSummary && (
+        <div className="postgame-groups" role="group" aria-label="Filter past games by what is left to do">
+          <button
+            type="button"
+            className={`postgame-group ${postGameFilter === 'all' ? 'active' : ''}`}
+            onClick={() => setPostGameFilter('all')}
+          >
+            All
+          </button>
+          {POST_GAME_GROUPS.map((g) => (
+            <button
+              key={g.key}
+              type="button"
+              title={g.hint}
+              className={`postgame-group ${g.attention ? 'attention' : ''} ${postGameFilter === g.key ? 'active' : ''}`}
+              onClick={() => setPostGameFilter(g.key)}
+            >
+              {g.label}
+              <span className="postgame-group-count">{postGameSummary.counts[g.key] ?? 0}</span>
+            </button>
+          ))}
+          <span className="postgame-groups-note">Last {postGameSummary.windowDays} days</span>
+        </div>
+      )}
 
       {/* Filter / Search Bar */}
       {!loading && games.length > 0 && (
@@ -1668,6 +1724,7 @@ export default function OrganiserGamesBoard({ view }: { view: GamesView }) {
                     setPostGameTarget(game);
                     setShowPostGameModal(true);
                   }}
+                  onCancel={() => openCancelModal(game)}
                   onTeamHistory={() => { setTeamHistoryGame(game); setOpenMenuGameId(null); }}
                 />
               ))}
@@ -1768,7 +1825,9 @@ export default function OrganiserGamesBoard({ view }: { view: GamesView }) {
       {showPostGameModal && postGameTarget && (
         <PostGameModal
           game={postGameTarget}
-          onClose={() => { setShowPostGameModal(false); setPostGameTarget(null); }}
+          // Attendance may already have been saved on the way out, which moves
+          // the game to its next group — refresh rather than wait for the poll.
+          onClose={() => { setShowPostGameModal(false); setPostGameTarget(null); fetchGames({ silent: true }); }}
           onDone={() => {
             setShowPostGameModal(false);
             setPostGameTarget(null);
