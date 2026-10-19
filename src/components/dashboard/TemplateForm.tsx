@@ -13,7 +13,7 @@ import "./CreateEventForm.css";
 import { buildApiUrl, getSession } from "@/utils/api";
 import { saveTemplate, updateTemplate, type Template, type Format } from "@/utils/templates";
 import { defaultCheckTimes } from "@/utils/checkins";
-import { fromStored, toPayload, describeForOrganiser, WINDOW_CHOICES, GRACE_CHOICES, type BackoutPolicy } from "@/utils/backoutPolicy";
+import { fromStored, toPayload, describeForOrganiser, WINDOW_CHOICES, GRACE_CHOICES, choicesWith, switchUnit, clampPercent, type BackoutPolicy, type FeeUnit } from "@/utils/backoutPolicy";
 import { hostSlotsFromStored, hostSlotsToPayload, hostSlotsError, type HostSlotsForm } from "@/utils/hosts";
 import { HostSpotsFields } from "@/components/dashboard/HostSpotsFields";
 
@@ -305,12 +305,23 @@ export function TemplateForm({ template, onClose, onSaved }: TemplateFormProps) 
           </div>
           <div className="form-row">
             <div className="form-group">
+              <label className="form-label"><span className="label-text">Charge as</span></label>
+              <select className="form-select" value={backoutPolicy.feeUnit} onChange={(ev) => setBackoutPolicy((p) => switchUnit(p, ev.target.value as FeeUnit))}>
+                <option value="flat">Fixed amount (₹)</option>
+                <option value="percent">Share of slot price (%)</option>
+              </select>
+            </div>
+            <div className="form-group">
               <label className="form-label"><span className="label-text">Cancellation fee</span></label>
               <div className="input-with-prefix">
-                <span className="input-prefix">₹</span>
-                <input type="number" min="0" step="1" placeholder="0" value={backoutFeeInRs} onChange={(ev) => setBackoutFeeInRs(ev.target.value)} className="form-input" />
+                <span className="input-prefix">{backoutPolicy.feeUnit === "percent" ? "%" : "₹"}</span>
+                {backoutPolicy.feeUnit === "percent" ? (
+                  <input type="number" min="0" max="100" step="1" placeholder="0" className="form-input" value={backoutPolicy.feePercent || ""} onChange={(ev) => patchPolicy({ feePercent: clampPercent(ev.target.value) })} />
+                ) : (
+                  <input type="number" min="0" step="1" placeholder="0" value={backoutFeeInRs} onChange={(ev) => setBackoutFeeInRs(ev.target.value)} className="form-input" />
+                )}
               </div>
-              <div className="field-hint">Per slot given up. Capped at what the player paid.</div>
+              <div className="field-hint">{backoutPolicy.feeUnit === "percent" ? "Per slot given up, as a share of what that slot cost." : "Per slot given up. Capped at what the player paid."}</div>
             </div>
             <div className="form-group">
               <label className="form-label"><span className="label-text">Fee applies within</span></label>
@@ -321,7 +332,7 @@ export function TemplateForm({ template, onClose, onSaved }: TemplateFormProps) 
                 className="form-select"
               >
                 {backoutPolicy.tiers.length > 0 && <option value={-1}>Using a sliding scale</option>}
-                {WINDOW_CHOICES.map((c) => <option key={c.mins} value={c.mins}>{c.label}</option>)}
+                {choicesWith(WINDOW_CHOICES, backoutPolicy.tiers.length ? -1 : backoutPolicy.windowMins).map((c) => <option key={c.mins} value={c.mins}>{c.label}</option>)}
               </select>
               {/* The amount above is inert without a window — see utils/backoutPolicy. */}
               <div className="field-hint">No window, no fee. Leaving earlier is always free.</div>
@@ -331,7 +342,7 @@ export function TemplateForm({ template, onClose, onSaved }: TemplateFormProps) 
             <div className="form-group">
               <label className="form-label"><span className="label-text">Free-change window</span></label>
               <select value={backoutPolicy.graceMins} onChange={(ev) => patchPolicy({ graceMins: Number(ev.target.value) })} className="form-select">
-                {GRACE_CHOICES.map((c) => <option key={c.mins} value={c.mins}>{c.label}</option>)}
+                {choicesWith(GRACE_CHOICES, backoutPolicy.graceMins).map((c) => <option key={c.mins} value={c.mins}>{c.label}</option>)}
               </select>
               <div className="field-hint">Grace period right after a player joins.</div>
             </div>
@@ -341,7 +352,7 @@ export function TemplateForm({ template, onClose, onSaved }: TemplateFormProps) 
             <span className="toggle-text">No fee if the game falls through or changes</span>
           </label>
           <div className="field-hint" style={{ marginTop: 10 }}>
-            <strong>Players will see:</strong> {describeForOrganiser(backoutPolicy, backoutFeeInRs)}
+            <strong>Players will see:</strong> {describeForOrganiser(backoutPolicy, backoutFeeInRs, feeInRs)}
           </div>
           <label className="toggle-row">
             <input type="checkbox" checked={organiserIsPlaying} onChange={(ev) => setOrganiserPlaying(ev.target.checked)} className="toggle-checkbox" />
