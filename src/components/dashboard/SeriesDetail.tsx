@@ -437,15 +437,10 @@ export function SeriesDetail({ series, occurrences, organiserId, onRefresh, onEd
                   onChange={(e) => setField("cutoffHoursBeforeGame", e.target.value)} />
               </label>
 
-              {/* A rupee override is inert on a series charging a percentage — the
-                  engine reads feePercent there — so it is not offered. */}
               <label className="rec-ov-field">
                 <span className="form-label">Backout fee (₹)</span>
                 <input type="number" min={0} step={1} className="form-input" value={draft.backoutFeeInRs}
-                  disabled={sd.backoutPolicy?.feeUnit === "percent"}
-                  placeholder={sd.backoutPolicy?.feeUnit === "percent"
-                    ? `${sd.backoutPolicy.feePercent ?? 0}% (set on the series)`
-                    : String((sd.backoutFeeInPaise || 0) / 100)}
+                  placeholder={String((sd.backoutFeeInPaise || 0) / 100)}
                   onChange={(e) => setField("backoutFeeInRs", e.target.value)} />
               </label>
 

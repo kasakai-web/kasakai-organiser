@@ -66,18 +66,6 @@ const getStatusConfig = (status: string) => {
   }
 };
 
-// Where a played game stands — the backend's `postGame` (utils/postGameState.js).
-// `cta` is the one thing left to do, offered beside Actions so it is never
-// buried in the menu.
-type PostGameState = "in_progress" | "needs_decision" | "attendance_review" | "ratings_pending" | "done" | "archived";
-const POST_GAME_BADGE: Partial<Record<PostGameState, { label: string; className: string; title: string }>> = {
-  in_progress:       { label: "Completing soon",    className: "info",      title: "Will be completed automatically 30 minutes after it ends" },
-  needs_decision:    { label: "Needs a decision",   className: "attention", title: "Never confirmed, so it was not completed automatically — complete it if it was played, or cancel it to refund the players" },
-  attendance_review: { label: "Review attendance",  className: "attention", title: "Attendance has not been confirmed" },
-  ratings_pending:   { label: "Ratings pending",    className: "attention", title: "Some players who played have not been rated for this game" },
-  done:              { label: "All done",           className: "done",      title: "Attendance confirmed and every player rated" },
-};
-
 const KNOWN_FORMATS = ["5v5", "6v6", "7v7", "8v8", "9v9", "11v11"];
 
 const getFormatClass = (format: string) => {
@@ -109,19 +97,6 @@ function GameCard({game,variant = "upcoming",isMenuOpen,onToggleMenu,onPlayers,o
   const presentCount =game.registrations?.filter((r: any) => r.attended === "present").length || 0; 
 
   const isPrivate = game.visibility === "private";
-
-  const postGame: { state: PostGameState; ratingsPending: number } | null = isPast ? game.postGame ?? null : null;
-  const postGameBadge = postGame ? POST_GAME_BADGE[postGame.state] : undefined;
-  const autoCompleted = game.completedBy === "auto" && !game.attendanceMarked;
-  const postGameCta = !canEditGame || !postGame
-    ? null
-    : postGame.state === "needs_decision"
-      ? "Complete"
-      : postGame.state === "attendance_review"
-        ? "Review attendance"
-        : postGame.state === "ratings_pending"
-          ? `Rate ${postGame.ratingsPending} player${postGame.ratingsPending === 1 ? "" : "s"}`
-          : null;
 
   // Actionable join requests awaiting the organiser's decision (public & private).
   const pendingCount = (game.invitations || []).filter((i: any) => i.status === "pending").length;
@@ -237,16 +212,6 @@ function GameCard({game,variant = "upcoming",isMenuOpen,onToggleMenu,onPlayers,o
                 Co-organiser · {isViewer ? "View" : "Edit"}
               </span>
             )}
-            {postGameBadge && (
-              <span className={`postgame-state ${postGameBadge.className}`} title={postGameBadge.title}>
-                {postGameBadge.label}
-              </span>
-            )}
-            {autoCompleted && (
-              <span className="postgame-state info" title="Completed by KasaKai 30 minutes after the game ended, with every player assumed present">
-                Auto-completed
-              </span>
-            )}
           </div>
 
           <div className="detail-row">
@@ -357,11 +322,6 @@ function GameCard({game,variant = "upcoming",isMenuOpen,onToggleMenu,onPlayers,o
       </div>
 
       <div className="game-actions">
-        {postGameCta && (
-          <button type="button" className="postgame-cta" onClick={onComplete}>
-            {postGameCta}
-          </button>
-        )}
         <button
           className={`action-btn ${isMenuOpen ? "active" : ""}`}
           onClick={onToggleMenu}
@@ -424,15 +384,6 @@ function GameCard({game,variant = "upcoming",isMenuOpen,onToggleMenu,onPlayers,o
                   >
                     <Star size={16} />
                     Ratings
-                  </button>
-                )}
-
-                {/* A game that was never confirmed may never have been played —
-                    cancelling it refunds everyone, which completing would rule out. */}
-                {canEditGame && onCancel && !["completed", "cancelled"].includes(game.status) && (
-                  <button className="danger-item" onClick={onCancel} title="Cancel Game & refund players">
-                    <CircleX size={16} />
-                    Cancel
                   </button>
                 )}
               </>

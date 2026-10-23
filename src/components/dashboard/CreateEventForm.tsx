@@ -5,7 +5,7 @@ import { Calendar, Minus, Plus, Check, ChevronDown, Info, Save } from "lucide-re
 import { buildApiUrl, getSession } from "@/utils/api";
 import { checkInDate, defaultCheckTimes, checkInIsoFromParts } from "@/utils/checkins";
 import { saveTemplate, listTemplates, prettyTime, type Template } from "@/utils/templates";
-import { fromStored, toPayload, describeForOrganiser, formatMins, WINDOW_CHOICES, GRACE_CHOICES, choicesWith, newTier, switchUnit, clampPercent, type BackoutPolicy } from "@/utils/backoutPolicy";
+import { fromStored, toPayload, describeForOrganiser, formatMins, WINDOW_CHOICES, GRACE_CHOICES, type BackoutPolicy } from "@/utils/backoutPolicy";
 import { hostSlotsFromStored, hostSlotsToPayload, hostSlotsError, listMyHosts, type HostSlotsForm } from "@/utils/hosts";
 import { HostSpotsFields } from "@/components/dashboard/HostSpotsFields";
 
@@ -223,17 +223,14 @@ const MoneyField = ({
   onChange,
   placeholder,
   invalid,
-  symbol = "₹",
 }: {
   value: string;
   onChange: (raw: string) => void;
   placeholder?: string;
   invalid?: boolean;
-  /** "%" for a percentage cancellation fee; the field is otherwise identical. */
-  symbol?: string;
 }) => (
   <div className="relative flex items-center">
-    <span className="absolute left-0 pl-5 h-full flex items-center text-[#888] font-bold border-r border-[#2a2a2a] pr-4 pointer-events-none">{symbol}</span>
+    <span className="absolute left-0 pl-5 h-full flex items-center text-[#888] font-bold border-r border-[#2a2a2a] pr-4 pointer-events-none">₹</span>
     <input
       type="number"
       min="0"
@@ -1096,40 +1093,9 @@ export function CreateEventForm({ lastEvent, presetDate, onClose, onCreate, onSu
                 <Hint>{format === "Screening" ? "Max players allowed" : `Must be ≥ ${slotsFromFormat(format)} (format slots)`}</Hint>
               </div>
               <div>
-                <div className="flex items-center justify-between gap-3">
-                  <Label text="Cancellation Fee" />
-                  {/* Rupees or a share of the slot's price — one unit for the whole
-                      policy, sliding scale included, so the scale can be checked
-                      to slide the right way. */}
-                  <div className="flex mb-2.5 rounded-lg border border-[#2a2a2a] overflow-hidden text-xs font-bold" role="group" aria-label="Fee unit">
-                    {(["flat", "percent"] as const).map((u) => (
-                      <button
-                        key={u}
-                        type="button"
-                        aria-pressed={backoutPolicy.feeUnit === u}
-                        onClick={() => setBackoutPolicy((p) => switchUnit(p, u))}
-                        className={`px-3 py-1 transition-colors ${backoutPolicy.feeUnit === u ? "bg-[#c4f042] text-black" : "text-[#888] hover:text-white"}`}
-                      >
-                        {u === "flat" ? "₹" : "%"}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-                {backoutPolicy.feeUnit === "percent" ? (
-                  <MoneyField
-                    symbol="%"
-                    value={backoutPolicy.feePercent ? String(backoutPolicy.feePercent) : ""}
-                    onChange={(raw) => patchPolicy({ feePercent: clampPercent(raw) })}
-                    placeholder="0"
-                  />
-                ) : (
-                  <MoneyField value={backoutFeeInRs} onChange={setBackoutFeeInRs} placeholder="0" />
-                )}
-                <Hint>
-                  {backoutPolicy.feeUnit === "percent"
-                    ? "A share of what each slot cost — 50% of a ₹200 slot is ₹100. Charged per slot given up; a discounted host slot pays the share of its own price."
-                    : "Charged per slot given up — a player leaving with 2 guests pays it 3 times. Capped at what they paid."}
-                </Hint>
+                <Label text="Cancellation Fee" />
+                <MoneyField value={backoutFeeInRs} onChange={setBackoutFeeInRs} placeholder="0" />
+                <Hint>Charged per slot given up — a player leaving with 2 guests pays it 3 times. Capped at what they paid.</Hint>
               </div>
               <div>
                 <Label text="Registration Cutoff" />
@@ -1165,7 +1131,7 @@ export function CreateEventForm({ lastEvent, presetDate, onClose, onCreate, onSu
                     className={`${inputCls()} disabled:opacity-40`}
                   >
                     {backoutPolicy.tiers.length > 0 && <option value={-1}>Using a sliding scale below</option>}
-                    {choicesWith(WINDOW_CHOICES, backoutPolicy.tiers.length ? -1 : backoutPolicy.windowMins).map((c) => (
+                    {WINDOW_CHOICES.map((c) => (
                       <option key={c.mins} value={c.mins}>{c.label}</option>
                     ))}
                   </select>
@@ -1178,7 +1144,7 @@ export function CreateEventForm({ lastEvent, presetDate, onClose, onCreate, onSu
                     onChange={(e) => patchPolicy({ graceMins: Number(e.target.value) })}
                     className={inputCls()}
                   >
-                    {choicesWith(GRACE_CHOICES, backoutPolicy.graceMins).map((c) => (
+                    {GRACE_CHOICES.map((c) => (
                       <option key={c.mins} value={c.mins}>{c.label}</option>
                     ))}
                   </select>
@@ -1204,7 +1170,7 @@ export function CreateEventForm({ lastEvent, presetDate, onClose, onCreate, onSu
                   <button
                     type="button"
                     onClick={() => patchPolicy({
-                      tiers: [...backoutPolicy.tiers, newTier()]
+                      tiers: [...backoutPolicy.tiers, { withinMins: 120, feeInPaise: 5000 }]
                         .sort((a, b) => a.withinMins - b.withinMins),
                     })}
                     className="text-xs font-bold text-[#c4f042] hover:underline shrink-0"
@@ -1213,7 +1179,7 @@ export function CreateEventForm({ lastEvent, presetDate, onClose, onCreate, onSu
                   </button>
                 </div>
                 <p className="text-[#666] text-xs leading-relaxed mb-4">
-                  Charge more the later they leave — e.g. {backoutPolicy.feeUnit === "percent" ? "25% within a day, 100% within 2 hours" : "₹25 within a day, ₹75 within 2 hours"}.
+                  Charge more the later they leave — e.g. ₹25 within a day, ₹75 within 2 hours.
                   Adding any tier replaces the single window above. Leaving earlier must never cost more.
                 </p>
 
@@ -1233,32 +1199,20 @@ export function CreateEventForm({ lastEvent, presetDate, onClose, onCreate, onSu
                           }}
                           className={`${inputCls()} flex-1 min-w-0`}
                         >
-                          {choicesWith(WINDOW_CHOICES, tier.withinMins).filter((c) => c.mins > 0).map((c) => (
+                          {WINDOW_CHOICES.filter((c) => c.mins > 0).map((c) => (
                             <option key={c.mins} value={c.mins}>{c.label}</option>
                           ))}
                         </select>
                         <span className="text-[#666] text-xs shrink-0">charge</span>
                         <div className="w-28 md:w-32 shrink-0">
-                          {backoutPolicy.feeUnit === "percent" ? (
-                            <MoneyField
-                              symbol="%"
-                              value={String(tier.percent)}
-                              onChange={(raw) => patchPolicy({
-                                tiers: backoutPolicy.tiers.map((t, j) =>
-                                  j === i ? { ...t, percent: clampPercent(raw) } : t),
-                              })}
-                              placeholder="0"
-                            />
-                          ) : (
-                            <MoneyField
-                              value={String(tier.feeInPaise / 100)}
-                              onChange={(raw) => patchPolicy({
-                                tiers: backoutPolicy.tiers.map((t, j) =>
-                                  j === i ? { ...t, feeInPaise: Math.max(0, Math.round(Number(raw) * 100) || 0) } : t),
-                              })}
-                              placeholder="0"
-                            />
-                          )}
+                          <MoneyField
+                            value={String(tier.feeInPaise / 100)}
+                            onChange={(raw) => patchPolicy({
+                              tiers: backoutPolicy.tiers.map((t, j) =>
+                                j === i ? { ...t, feeInPaise: Math.max(0, Math.round(Number(raw) * 100) || 0) } : t),
+                            })}
+                            placeholder="0"
+                          />
                         </div>
                         <button
                           type="button"
@@ -1279,7 +1233,7 @@ export function CreateEventForm({ lastEvent, presetDate, onClose, onCreate, onSu
               <div className="mt-5 rounded-2xl bg-[#141414] border border-[#222] px-4 py-3.5">
                 <p className="text-xs text-[#aaa] leading-relaxed">
                   <span className="font-bold text-[#c4f042]">Players will see: </span>
-                  {describeForOrganiser(backoutPolicy, backoutFeeInRs, feeInRs)}
+                  {describeForOrganiser(backoutPolicy, backoutFeeInRs)}
                 </p>
               </div>
             </div>
