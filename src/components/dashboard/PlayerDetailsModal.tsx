@@ -15,6 +15,19 @@ import type { HostInfo } from "@/utils/hosts";
 
 const IMG_BASE = (process.env.NEXT_PUBLIC_API_BASE_URL || "http://localhost:5000/api/v1").replace(/\/api\/v1\/?$/, "");
 
+// What happens to the players' video + feedback WhatsApp after a video is saved
+// (`videoFeedback` on the save response). Null when there is nothing to add.
+// Same wording as the player app's host screen (utils/hosting.ts there).
+const videoFeedbackText = (status?: string | null) => {
+  switch (status) {
+    case "sending":             return "The players who played are being sent the video and a feedback link on WhatsApp.";
+    case "awaiting_attendance": return "Players get it on WhatsApp once attendance is marked, or in 2 hours if it isn't.";
+    case "awaiting_completion": return "Players get it on WhatsApp after the game is marked completed and attendance is in.";
+    case "sent":                return "Players already got the earlier link on WhatsApp. It isn't sent again.";
+    default:                    return null;
+  }
+};
+
 interface Registration {
   _id?: string;
   player?: { _id?: string; name?: string; phone?: string; email?: string; profileImage?: string };
@@ -247,7 +260,8 @@ export function PlayerDetailsModal({
 
       const persistedUrl = data.data?.matchRecording?.trim() || "";
       setRecordingUrl(persistedUrl);
-      showStatus("success", "Match recording link saved.");
+      const whatsappNote = videoFeedbackText(data.data?.videoFeedback);
+      showStatus("success", whatsappNote ? `Match recording link saved. ${whatsappNote}` : "Match recording link saved.", whatsappNote ? 6000 : 3500);
       // Saving a link changes one scalar, so patch that field rather than
       // swapping in a whole game — the roster in state is already populated
       // and a replacement would only risk losing it.
@@ -259,9 +273,9 @@ export function PlayerDetailsModal({
     }
   };
 
-  const showStatus = (type: "success" | "error", text: string) => {
+  const showStatus = (type: "success" | "error", text: string, ms = 3500) => {
     setStatusMsg({ type, text });
-    setTimeout(() => setStatusMsg(null), 3500);
+    setTimeout(() => setStatusMsg(null), ms);
   };
 
   const approveWaitlistEntry = async (waitlistId: string) => {

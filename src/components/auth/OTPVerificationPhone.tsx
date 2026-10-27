@@ -148,6 +148,9 @@ export function OTPVerificationPhone({ phone, email, role, mode, onVerified, onB
                 key={index}
                 id={`otp-${index}`}
                 type="text"
+                inputMode="numeric"
+                pattern="[0-9]*"
+                autoComplete={index === 0 ? "one-time-code" : "off"}
                 maxLength={1}
                 value={digit}
                 onChange={(e) => handleOtpChange(index, e.target.value)}
