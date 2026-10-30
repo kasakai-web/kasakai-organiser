@@ -155,10 +155,15 @@ function teamInfo(raw?: string): { label: string; cls: string } | null {
 
 function fmtDate(iso?: string) {
   if (!iso) return null;
-  return new Date(iso).toLocaleDateString("en-IN", {
+  // "12 Oct 2026, 7:45 pm" — the organiser needs WHEN a seat was booked, not just the day.
+  return new Date(iso).toLocaleString("en-IN", {
     day: "2-digit",
     month: "short",
     year: "numeric",
+    hour: "numeric",
+    minute: "2-digit",
+    hour12: true,
+    timeZone: "Asia/Kolkata",
   });
 }
 
@@ -207,18 +212,14 @@ export function PlayerDetailsModal({
   const [approvingId, setApprovingId] = useState<string | null>(null);
   const [lightbox, setLightbox] = useState<{ src: string; name: string } | null>(null);
   const savedRecordingUrl = matchRecording?.trim() || "";
-  const [recordingUrl, setRecordingUrl] = useState(savedRecordingUrl);
-  // The modal stays mounted across the 15 s background poll, so the field has to
-  // reconcile when the stored value actually changes — otherwise it keeps showing
-  // whatever it was born with. Comparing against the last synced value, rather
-  // than re-syncing every render, leaves an unsaved edit alone.
-  const [syncedRecordingUrl, setSyncedRecordingUrl] = useState(savedRecordingUrl);
-  if (savedRecordingUrl !== syncedRecordingUrl) {
-    setSyncedRecordingUrl(savedRecordingUrl);
-    setRecordingUrl(savedRecordingUrl);
-  }
+  // The modal stays mounted across the 15 s background poll, so only the unsaved
+  // edit lives in state (null until the organiser types). The field falls back to
+  // whatever is stored now, and a poll never overwrites an edit in progress.
+  const [recordingDraft, setRecordingDraft] = useState<string | null>(null);
+  const recordingUrl = recordingDraft ?? savedRecordingUrl;
   const [recordingError, setRecordingError] = useState<string | null>(null);
   const [savingRecording, setSavingRecording] = useState(false);
+  const recordingChanged = recordingUrl.trim() !== savedRecordingUrl;
 
   const scheduledTime = scheduledAt ? new Date(scheduledAt).getTime() : Number.NaN;
   const canManageRecording =
@@ -234,6 +235,7 @@ export function PlayerDetailsModal({
 
   const handleSaveRecording = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
+    if (!recordingChanged) return;
 
     const trimmed = recordingUrl.trim();
     const validationError = validateRecordingUrl(trimmed);
@@ -259,7 +261,7 @@ export function PlayerDetailsModal({
       }
 
       const persistedUrl = data.data?.matchRecording?.trim() || "";
-      setRecordingUrl(persistedUrl);
+      setRecordingDraft(null);
       const whatsappNote = videoFeedbackText(data.data?.videoFeedback);
       showStatus("success", whatsappNote ? `Match recording link saved. ${whatsappNote}` : "Match recording link saved.", whatsappNote ? 6000 : 3500);
       // Saving a link changes one scalar, so patch that field rather than
@@ -703,7 +705,7 @@ function downloadTeamExcel(result: {
                 placeholder="Upload video link of the game..."
                 value={recordingUrl}
                 onChange={(event) => {
-                  setRecordingUrl(event.target.value);
+                  setRecordingDraft(event.target.value);
                   if (recordingError) setRecordingError(null);
                 }}
                 aria-invalid={Boolean(recordingError)}
@@ -1192,7 +1194,7 @@ function downloadTeamExcel(result: {
 
         <div className="modal-footer">
           {canManageRecording && (
-            <button className="pdm-recording-save" type="submit" form={`match-recording-form-${gameId}`} disabled={savingRecording}>
+            <button className="pdm-recording-save" type="submit" form={`match-recording-form-${gameId}`} disabled={savingRecording || !recordingChanged}>
               {savingRecording ? "Saving..." : "Save"}
             </button>
           )}

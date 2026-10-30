@@ -134,6 +134,7 @@
 
 .title-row {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   gap: 10px;
 }
@@ -280,9 +281,56 @@
 .game-card .game-actions {
   margin-left: auto;
   position: relative;
-  display: block;
+  display: flex;
+  align-items: center;
   justify-content: normal;
-  gap: 0;
+  gap: 8px;
+}
+
+/* Post-game state on a past card (utils/postGameState.js on the backend). */
+.postgame-state {
+  flex-shrink: 0;
+  font-size: 10.5px;
+  font-weight: 700;
+  letter-spacing: 0.2px;
+  padding: 2px 9px;
+  border-radius: 20px;
+  white-space: nowrap;
+}
+
+.postgame-state.attention {
+  color: #fbbf24;
+  background: rgba(251, 191, 36, 0.1);
+  border: 1px solid rgba(251, 191, 36, 0.3);
+}
+
+.postgame-state.done {
+  color: #4ade80;
+  background: rgba(74, 222, 128, 0.08);
+  border: 1px solid rgba(74, 222, 128, 0.25);
+}
+
+.postgame-state.info {
+  color: #a5b4fc;
+  background: rgba(165, 180, 252, 0.08);
+  border: 1px solid rgba(165, 180, 252, 0.25);
+}
+
+/* The one thing left to do on a past game, beside Actions. */
+.game-card .postgame-cta {
+  height: 46px;
+  padding: 0 16px;
+  border-radius: 10px;
+  border: 1px solid #c8ff3e;
+  background: #c8ff3e;
+  color: #0c0c0c;
+  font-weight: 700;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.game-card .postgame-cta:hover {
+  filter: brightness(0.92);
 }
 
 .dropdown-wrapper {
@@ -583,6 +631,11 @@ background: rgb(255, 255, 0,0.15);
 
   .game-card .action-btn {
     width: 100%;
+    flex: 1 1 0;
+  }
+
+  .game-card .postgame-cta {
+    flex: 1 1 0;
   }
 
   .actions-dropdown {
