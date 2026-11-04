@@ -116,7 +116,29 @@ interface PlayerDetailsModalProps {
   reportingMinsBeforeGame?: number;
   /** The game's host spots and who is running it (the backend's hostInfo). */
   hostInfo?: HostInfo | null;
+  /** What the automatic team distribution is doing to this game, read off the game. */
+  autoTeamsState?: AutoTeamsState | null;
+  /** The game has a distribution to look at (Game.teamDistributionRun). */
+  hasTeams?: boolean;
 }
+
+/**
+ * The automation's state for one game, as far as an organiser needs to see it.
+ *
+ * Two things here used to be invisible outside the database: teams the
+ * organiser changed by hand after they went out (which pause every automatic
+ * update until published) and a failed automatic send.
+ */
+export type AutoTeamsState = {
+  on: boolean;
+  /** The teams went out at least once — by the automation or by hand. */
+  announced: boolean;
+  teamsPublished: boolean;
+  /** The automation's own change still owed an announcement — it retries that itself. */
+  awaitingPublish?: string | null;
+  failedAt?: string | null;
+  failReason?: string | null;
+};
 
 const POS_LABEL: Record<string, string> = {
   goalkeeper: "GK",
@@ -199,8 +221,24 @@ export function PlayerDetailsModal({
   format,
   reportingMinsBeforeGame,
   hostInfo = null,
+  autoTeamsState = null,
+  hasTeams = false,
 }: PlayerDetailsModalProps) {
   const isLocked = gameStatus === 'completed' || gameStatus === 'cancelled';
+
+  // ── Automatic teams: paused behind unpublished changes, or failing ─────────
+  // Paused = the teams went out, were changed by hand since, and the change was
+  // not published. The automation leaves those teams alone (they are the
+  // organiser's), so newcomers, format changes and uneven sides all wait.
+  const autoOn = Boolean(autoTeamsState?.on) && !isLocked;
+  const autoPaused = autoOn
+    && Boolean(autoTeamsState?.announced)
+    && !autoTeamsState?.teamsPublished
+    && !autoTeamsState?.awaitingPublish;
+  const autoFailure = autoOn && autoTeamsState?.failedAt && autoTeamsState?.failReason
+    ? autoTeamsState.failReason
+    : null;
+  const [publishingChanges, setPublishingChanges] = useState(false);
 
   const [teams, setTeams] = useState<any>(null);
   const [showAddPlayer, setShowAddPlayer] = useState(false);
@@ -278,6 +316,37 @@ export function PlayerDetailsModal({
   const showStatus = (type: "success" | "error", text: string, ms = 3500) => {
     setStatusMsg({ type, text });
     setTimeout(() => setStatusMsg(null), ms);
+  };
+
+  // Publish the teams exactly as they stand — no redistribution. Only the
+  // players whose shirt changed are messaged, and publishing is what lets the
+  // automation pick the game up again.
+  const publishCurrentTeams = async () => {
+    setPublishingChanges(true);
+    try {
+      const res = await fetch(buildApiUrl(`/api/v1/games/organisers/${gameId}/teams/publish`), {
+        method: "POST",
+        headers: getAuthHeaders(),
+      });
+      const data = await res.json();
+      if (!res.ok || !data.success) {
+        showStatus("error", data.message || "Couldn't publish the teams");
+        return;
+      }
+      const notified = data.data?.published ?? 0;
+      showStatus(
+        "success",
+        notified === 0
+          ? "Teams published — nobody's team had changed, so no messages went out. Automatic updates are back on."
+          : `Teams published — ${notified} player(s) told their new team. Automatic updates are back on.`,
+        5000,
+      );
+      onRefresh?.();
+    } catch {
+      showStatus("error", "Couldn't publish the teams");
+    } finally {
+      setPublishingChanges(false);
+    }
   };
 
   const approveWaitlistEntry = async (waitlistId: string) => {
@@ -422,6 +491,72 @@ export function PlayerDetailsModal({
     showStatus("error", "Something went wrong");
   }
 };
+
+  // ── Looking at the teams without changing them ────────────────────────────
+  // Distribute always makes a NEW split. Once the teams have gone out that
+  // split is a private draft, players keep what they were sent, and automatic
+  // updates pause until it is published — so looking must not go through it.
+  const [loadingTeams, setLoadingTeams] = useState(false);
+  const [teamConfirm, setTeamConfirm] = useState<null | "distribute" | "restore">(null);
+  const [restoringTeams, setRestoringTeams] = useState(false);
+
+  const viewCurrentTeams = async () => {
+    setLoadingTeams(true);
+    try {
+      const res = await fetch(buildApiUrl(`/api/v1/games/organisers/${gameId}/teams/current`), {
+        headers: getAuthHeaders(),
+      });
+      const data = await res.json();
+      if (!res.ok || !data.success) {
+        showStatus("error", data.message || "Couldn't load the teams");
+        return;
+      }
+      setTeams(data.data);
+    } catch {
+      showStatus("error", "Couldn't load the teams");
+    } finally {
+      setLoadingTeams(false);
+    }
+  };
+
+  // Teams already sent → say what a new split means before making one.
+  const requestDistribute = () => {
+    if (autoTeamsState?.announced) setTeamConfirm("distribute");
+    else handleDistribute(0);
+  };
+
+  // Discard the unpublished changes: every player goes back to the shirt they
+  // were sent, and nobody is messaged.
+  const restoreSentTeams = async () => {
+    setRestoringTeams(true);
+    try {
+      const res = await fetch(buildApiUrl(`/api/v1/games/organisers/${gameId}/teams/restore`), {
+        method: "POST",
+        headers: getAuthHeaders(),
+      });
+      const data = await res.json();
+      if (!res.ok || !data.success) {
+        showStatus("error", data.message || "Couldn't put the teams back");
+        return;
+      }
+      setTeams(data.data);
+      const waiting = data.data?.unplaced ?? 0;
+      showStatus(
+        "success",
+        `Teams put back to what the players were sent — nobody was messaged.` +
+        (waiting > 0
+          ? ` ${waiting} player(s) who joined since ${autoTeamsState?.on ? "will be placed automatically" : "still need a team"}.`
+          : ""),
+        5000,
+      );
+      onRefresh?.();
+    } catch {
+      showStatus("error", "Couldn't put the teams back");
+    } finally {
+      setRestoringTeams(false);
+      setTeamConfirm(null);
+    }
+  };
 
 function downloadTeamExcel(result: {
   teamA: string[];
@@ -675,15 +810,31 @@ function downloadTeamExcel(result: {
               <span className="pdm-btn-icon">{copied ? "✓" : "📋"}</span>
               <span className="pdm-btn-label">{copied ? " Copied!" : " Copy List"}</span>
             </button>
+            {hasTeams && (
+              <button
+                onClick={viewCurrentTeams}
+                disabled={loadingTeams}
+                className="pdm-hdr-btn"
+                style={{
+                  background: "rgba(74,222,128,0.08)",
+                  border: "1px solid rgba(74,222,128,0.3)",
+                  color: loadingTeams ? "#555" : "#4ade80",
+                }}
+                title="Show the teams as they stand — nothing is reshuffled and nobody is messaged"
+              >
+                <span className="pdm-btn-icon">👥</span>
+                <span className="pdm-btn-label">{loadingTeams ? " Loading…" : " View teams"}</span>
+              </button>
+            )}
             <button
-              onClick={() => handleDistribute(0)}
+              onClick={requestDistribute}
               className="pdm-hdr-btn"
               style={{
                 background: "rgba(59,130,246,0.15)",
                 border: "1px solid rgba(59,130,246,0.3)",
                 color: "#3b82f6",
               }}
-              title="Auto distribute teams"
+              title={autoTeamsState?.announced ? "Make a new split of the teams (players keep theirs until you publish)" : "Auto distribute teams"}
             >
               <span className="pdm-btn-icon">⚽</span>
               <span className="pdm-btn-label"> Distribute</span>
@@ -717,6 +868,68 @@ function downloadTeamExcel(result: {
               {recordingError}
             </div>
           </form>
+        )}
+
+        {/* Automatic teams — only when something needs the organiser */}
+        {autoPaused && (
+          <div
+            role="status"
+            style={{
+              margin: "10px 16px 0", padding: "10px 12px", borderRadius: 8,
+              background: "rgba(245,158,11,0.08)", border: "1px solid rgba(245,158,11,0.3)",
+              display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap",
+            }}
+          >
+            <div style={{ flex: 1, minWidth: 220, fontSize: 12, color: "#f0b429", lineHeight: 1.55 }}>
+              <strong>⏸ Automatic team updates are paused.</strong> The teams were changed after they
+              went out (a new distribution, a reshuffle or a move) and the change isn&apos;t published, so
+              players still have their old teams and anyone who joins gets no team. Format changes and
+              uneven teams wait too. Publish the changes, or go back to the teams the players were sent.
+            </div>
+            <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+              <button
+                type="button"
+                onClick={() => setTeamConfirm("restore")}
+                disabled={publishingChanges || restoringTeams}
+                title="Throw away the unpublished changes — every player goes back to the team they were sent, and nobody is messaged"
+                style={{
+                  padding: "6px 12px", borderRadius: 6, fontSize: 12, fontWeight: 700,
+                  cursor: restoringTeams ? "wait" : "pointer",
+                  border: "1px solid rgba(255,255,255,0.2)", background: "rgba(255,255,255,0.05)", color: "#ddd",
+                  whiteSpace: "nowrap",
+                }}
+              >
+                {restoringTeams ? "Putting back…" : "↩ Back to the sent teams"}
+              </button>
+              <button
+                type="button"
+                onClick={publishCurrentTeams}
+                disabled={publishingChanges || restoringTeams}
+                title="Send the teams as they stand now — only players whose team changed are messaged"
+                style={{
+                  padding: "6px 12px", borderRadius: 6, fontSize: 12, fontWeight: 700,
+                  cursor: publishingChanges ? "wait" : "pointer",
+                  border: "1px solid rgba(200,255,62,0.4)", background: "rgba(200,255,62,0.1)", color: "#c8ff3e",
+                  whiteSpace: "nowrap",
+                }}
+              >
+                {publishingChanges ? "Publishing…" : "📣 Publish changes"}
+              </button>
+            </div>
+          </div>
+        )}
+        {autoFailure && (
+          <div
+            role="alert"
+            style={{
+              margin: "10px 16px 0", padding: "10px 12px", borderRadius: 8,
+              background: "rgba(248,113,113,0.08)", border: "1px solid rgba(248,113,113,0.3)",
+              fontSize: 12, color: "#f87171", lineHeight: 1.55,
+            }}
+          >
+            <strong>⚠️ Automatic teams couldn&apos;t be sent:</strong> {autoFailure}. It tries again every
+            10 minutes — or press Distribute, then Publish, to send them yourself.
+          </div>
         )}
 
         {/* Stats Strip */}
@@ -1154,6 +1367,10 @@ function downloadTeamExcel(result: {
           {/* Teams — inside scroll area */}
           {teams && (
             <TeamDistributionPanel
+              // A different run is a different split: remount so the panel's
+              // "Published" state starts from what THIS split is.
+              key={teams.runId || "teams"}
+              initiallyPublished={Boolean(teams.published)}
               gameId={gameId}
               gameStatus={gameStatus}
               teams={teams}
@@ -1311,6 +1528,39 @@ function downloadTeamExcel(result: {
           await act();
         }
       }}
+    />
+    <ConfirmationModal
+      open={teamConfirm === "distribute"}
+      title="Make a new split?"
+      message={
+        "The teams have already been sent to the players. Distributing makes a brand-new split, " +
+        "which players don't see until you press Publish — and publishing it tells everyone whose team changed." +
+        (autoTeamsState?.on
+          ? "\n\nUntil it is published, automatic team updates pause: anyone who joins gets no team, and format changes and uneven teams wait."
+          : "") +
+        "\n\nTo just look at the teams, use View teams instead."
+      }
+      confirmLabel="Make a new split"
+      cancelLabel="Cancel"
+      onCancel={() => setTeamConfirm(null)}
+      onConfirm={async () => {
+        setTeamConfirm(null);
+        await handleDistribute(0);
+      }}
+    />
+    <ConfirmationModal
+      open={teamConfirm === "restore"}
+      title="Back to the teams the players were sent?"
+      loading={restoringTeams}
+      message={
+        "The unpublished changes are thrown away and every player goes back to the team they were last sent. " +
+        "Nobody is messaged.\n\nAnyone who joined since gets no team yet" +
+        (autoTeamsState?.on ? " — the automation places them on the shorter team." : ".")
+      }
+      confirmLabel="Put them back"
+      cancelLabel="Keep my changes"
+      onCancel={() => setTeamConfirm(null)}
+      onConfirm={restoreSentTeams}
     />
     </>
   );

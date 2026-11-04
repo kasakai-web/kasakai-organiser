@@ -1802,6 +1802,16 @@ export default function OrganiserGamesBoard({ view }: { view: GamesView }) {
           format={selectedGame.format}
           reportingMinsBeforeGame={selectedGame.reportingMinsBeforeGame}
           hostInfo={selectedGame.hostInfo || null}
+          hasTeams={Boolean(selectedGame.teamDistributionRun)}
+          autoTeamsState={{
+            // Absent reads as ON, as it does on the backend (utils/autoTeams.js).
+            on: selectedGame.autoTeamDistribution !== false,
+            announced: Boolean(selectedGame.publishedTeamSheet || selectedGame.autoTeams?.sentAt),
+            teamsPublished: Boolean(selectedGame.teamsPublished),
+            awaitingPublish: selectedGame.autoTeams?.awaitingPublish || null,
+            failedAt: selectedGame.autoTeams?.failedAt || null,
+            failReason: selectedGame.autoTeams?.failReason || null,
+          }}
           onToggleOrganiserPlaying={() => handleOrganiserWithdraw(selectedGame._id)}
           onRemoveRegistration={async (regId) => {
             await handleRemoveRegistration(selectedGame._id, regId);

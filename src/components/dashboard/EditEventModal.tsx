@@ -130,6 +130,9 @@ export function EditEventModal({
   // Organiser consent to pass holders (§9). Absent on every game created before
   // the flag existed, which must read as YES.
   const [acceptsPasses, setAcceptsPasses] = useState(initialData.acceptsPasses !== false);
+  // Automatic team distribution. Absent on games made before the switch, which
+  // reads as on.
+  const [autoTeamDistribution, setAutoTeamDistribution] = useState(initialData.autoTeamDistribution !== false);
 
   // Host spots. Only sent when touched: the config is re-checked against the
   // roster on every save that carries it, and an untouched one has nothing to
@@ -378,6 +381,7 @@ export function EditEventModal({
         reportingMinsBeforeGame: Number(reportingMins),
         requiresApproval,
         acceptsPasses,
+        autoTeamDistribution,
         lifecycle,
       };
       if (hostSlotsTouched.current) payload.hostSlots = hostSlotsToPayload(hostSlots);
@@ -538,6 +542,19 @@ export function EditEventModal({
                   ⚠️ This only affects players who join from now on. Anyone already seated on a pass keeps their slot.
                 </div>
               )}
+            </Field>
+            <Field label="Teams">
+              <label style={{ display: "flex", alignItems: "center", gap: 10, cursor: "pointer" }}>
+                <input type="checkbox" checked={autoTeamDistribution}
+                  onChange={(e) => setAutoTeamDistribution(e.target.checked)}
+                  style={{ width: 17, height: 17, accentColor: "#c8ff3e", flexShrink: 0 }} />
+                <span style={{ fontSize: 13, color: "#ddd" }}>Automatic team distribution</span>
+              </label>
+              <div style={{ fontSize: 11, color: "#666", marginTop: 4 }}>
+                {autoTeamDistribution
+                  ? "Once the game is confirmed and full (and past its 2nd check-in), the teams are picked and sent for you. If it never fills, they go out 1 hour before reporting time with whoever is in."
+                  : "Teams are only sent when you press Distribute and then Publish. Teams already sent stay sent."}
+              </div>
             </Field>
           </Section>
 

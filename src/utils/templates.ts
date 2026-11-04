@@ -41,6 +41,8 @@ export interface Template {
   organiserIsPlaying?: boolean;
   /** Organiser consent to pass holders on games made from this blueprint (§9). */
   acceptsPasses?: boolean;
+  /** Automatic team distribution on games made from this blueprint. Absent = on. */
+  autoTeamDistribution?: boolean;
   /** Host spots every game made from this blueprint starts with. */
   hostSlots?: StoredHostSlots | null;
   alternateFormats?: TemplateAltFormat[];
@@ -170,6 +172,7 @@ export const templateToLastEventShape = (t: Template, dateYMD: string) => {
     // Absent on a blueprint written before the flag existed, which must read as
     // YES — that is what every game already in the database does.
     acceptsPasses: t.acceptsPasses !== false,
+    autoTeamDistribution: t.autoTeamDistribution !== false,
     hostSlots: t.hostSlots ?? null,
     alternateFormats: t.allowSizeChange ? (t.alternateFormats || []) : [],
     lifecycle: { automationEnabled: !!t.automationEnabled },
