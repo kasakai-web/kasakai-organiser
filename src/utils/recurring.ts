@@ -49,6 +49,8 @@ export interface SeriesGameDefaults {
   organiserIsPlaying?: boolean;
   /** Organiser consent to pass holders on the games this series makes (§9). */
   acceptsPasses?: boolean;
+  /** Automatic team distribution on every game this series makes. Absent = on. */
+  autoTeamDistribution?: boolean;
   /** Host spots every game this series makes starts with. */
   hostSlots?: StoredHostSlots | null;
   automationEnabled?: boolean;

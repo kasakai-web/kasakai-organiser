@@ -303,6 +303,10 @@ export function CreateEventForm({ lastEvent, presetDate, onClose, onCreate, onSu
   const [acceptsPasses, setAcceptsPasses] = useState<boolean>(lastEvent?.acceptsPasses !== false);
   const passesTouched = useRef(lastEvent?.acceptsPasses !== undefined);
 
+  // Automatic team distribution — on by default. A prefill that predates the
+  // switch has no value, which reads as on, like the game it came from.
+  const [autoTeamDistribution, setAutoTeamDistribution] = useState<boolean>(lastEvent?.autoTeamDistribution !== false);
+
   // Host spots — seats held for this organiser's approved hosts, at a discount,
   // until a release time. Prefilled from the last event or a template like
   // everything else. `approvedHosts` only drives the "recommend one first" hint.
@@ -528,6 +532,7 @@ export function CreateEventForm({ lastEvent, presetDate, onClose, onCreate, onSu
     // covered seats every time it is used.
     passesTouched.current = true;
     setAcceptsPasses(t.acceptsPasses !== false);
+    setAutoTeamDistribution(t.autoTeamDistribution !== false);
     setHostSlots(hostSlotsFromStored(t.hostSlots));
 
     // The format effect re-runs on a format change and clamps these — flagging min
@@ -659,6 +664,7 @@ export function CreateEventForm({ lastEvent, presetDate, onClose, onCreate, onSu
         reportingMinsBeforeGame: Number(reportingMins),
         allowSizeChange,
         acceptsPasses,
+        autoTeamDistribution,
         hostSlots: hostSlotsToPayload(hostSlots),
         organiserIsPlaying,
         organiserGuests,
@@ -721,6 +727,7 @@ export function CreateEventForm({ lastEvent, presetDate, onClose, onCreate, onSu
         totalSlots: Number(maxPlayers) || slotsFromFormat(format),
         allowSizeChange,
         acceptsPasses,
+        autoTeamDistribution,
         hostSlots: hostSlotsToPayload(hostSlots),
         organiserIsPlaying,
         automationEnabled,
@@ -1476,6 +1483,18 @@ export function CreateEventForm({ lastEvent, presetDate, onClose, onCreate, onSu
                   onChange={() => setAutomationEnabled((v: boolean) => !v)}
                 />
               </div>
+            </div>
+
+            <SubSectionHeader title="Teams" />
+            <div className="mb-10">
+              <CheckboxRow
+                label={<span className="font-bold">Automatic team distribution</span>}
+                helper={autoTeamDistribution
+                  ? "ON: once the game is confirmed and every slot is filled (and its 2nd check-in has passed), the teams are picked and sent to the players for you — you get a notification. If it never fills, they go out 1 hour before reporting time with whoever is in. Anyone who joins later is put on the shorter team and only they are messaged."
+                  : "OFF: teams are only sent when you press Distribute and then Publish."}
+                checked={autoTeamDistribution}
+                onChange={() => setAutoTeamDistribution((v: boolean) => !v)}
+              />
             </div>
 
             <SubSectionHeader title="Your Participation" />

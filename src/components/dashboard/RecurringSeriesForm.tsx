@@ -105,6 +105,8 @@ export function RecurringSeriesForm({ series, pivotOccurrenceId, onClose, onSave
   // Organiser consent to pass holders (§9). The series owns its own copy, like
   // every other game setting here — absent reads as YES.
   const [acceptsPasses, setAcceptsPasses] = useState(d?.acceptsPasses !== false);
+  // Automatic team distribution for every game the series makes. Absent = on.
+  const [autoTeamDistribution, setAutoTeamDistribution] = useState(d?.autoTeamDistribution !== false);
   // Host spots, owned by the series like the rest — each game gets its own copy.
   const [hostSlots, setHostSlots] = useState<HostSlotsForm>(() => hostSlotsFromStored(d?.hostSlots));
   const [automationEnabled, setAutomationEnabled] = useState(d?.automationEnabled ?? false);
@@ -179,6 +181,7 @@ export function RecurringSeriesForm({ series, pivotOccurrenceId, onClose, onSave
     if (t.totalSlots) setTotalSlots(String(t.totalSlots));
     setOrganiserIsPlaying(!!t.organiserIsPlaying);
     setAcceptsPasses(t.acceptsPasses !== false);
+    setAutoTeamDistribution(t.autoTeamDistribution !== false);
     setHostSlots(hostSlotsFromStored(t.hostSlots));
     setAutomationEnabled(!!t.automationEnabled);
   };
@@ -224,6 +227,7 @@ export function RecurringSeriesForm({ series, pivotOccurrenceId, onClose, onSave
       totalSlots: Number(totalSlots),
       organiserIsPlaying,
       acceptsPasses,
+      autoTeamDistribution,
       hostSlots: hostSlotsToPayload(hostSlots),
       automationEnabled,
     },
@@ -233,7 +237,7 @@ export function RecurringSeriesForm({ series, pivotOccurrenceId, onClose, onSave
     checkOrganiser, checkOverlap, horizonDays, leadDays, notifyOnCreate, notifyOnChange,
     notifyOnCancel, title, nameMode, titlePattern, visibility, requiresApproval, turf, format, durationMins,
     reportingMins, cutoffHours, feeInRs, backoutFeeInRs, backoutPolicy, minPlayers, totalSlots,
-    organiserIsPlaying, acceptsPasses, hostSlots, automationEnabled,
+    organiserIsPlaying, acceptsPasses, autoTeamDistribution, hostSlots, automationEnabled,
   ]);
 
   // Debounced preview. Every keystroke in the rule would otherwise be a request,
@@ -695,6 +699,10 @@ export function RecurringSeriesForm({ series, pivotOccurrenceId, onClose, onSave
             <label className="toggle-row">
               <input type="checkbox" className="toggle-checkbox" checked={acceptsPasses} onChange={(ev) => setAcceptsPasses(ev.target.checked)} />
               <span className="toggle-label">Accept KasaKai pass holders</span>
+            </label>
+            <label className="toggle-row">
+              <input type="checkbox" className="toggle-checkbox" checked={autoTeamDistribution} onChange={(ev) => setAutoTeamDistribution(ev.target.checked)} />
+              <span className="toggle-label">Automatic team distribution</span>
             </label>
             <label className="toggle-row">
               <input type="checkbox" className="toggle-checkbox" checked={automationEnabled} onChange={(ev) => setAutomationEnabled(ev.target.checked)} />

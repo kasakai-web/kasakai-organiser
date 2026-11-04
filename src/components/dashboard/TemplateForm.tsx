@@ -75,6 +75,8 @@ export function TemplateForm({ template, onClose, onSaved }: TemplateFormProps) 
   // Organiser consent to pass holders, carried by the blueprint (§9) so a
   // template made for a premium fixture does not re-open it every time it runs.
   const [acceptsPasses, setAcceptsPasses] = useState(template?.acceptsPasses !== false);
+  // Automatic team distribution for games made from this template. Absent = on.
+  const [autoTeamDistribution, setAutoTeamDistribution] = useState(template?.autoTeamDistribution !== false);
   // Host spots every game made from this template starts with.
   const [hostSlots, setHostSlots] = useState<HostSlotsForm>(() => hostSlotsFromStored(template?.hostSlots));
   const [allowSizeChange, setAllowSizeChange] = useState(template?.allowSizeChange ?? false);
@@ -161,6 +163,7 @@ export function TemplateForm({ template, onClose, onSaved }: TemplateFormProps) 
         totalSlots: Number(maxPlayers),
         allowSizeChange,
         acceptsPasses,
+        autoTeamDistribution,
         hostSlots: hostSlotsToPayload(hostSlots),
         organiserIsPlaying,
         automationEnabled,
@@ -354,6 +357,14 @@ export function TemplateForm({ template, onClose, onSaved }: TemplateFormProps) 
           <div className="field-hint">
             A pass holder plays without paying at the till, so these games collect nothing for that slot.
             Every covered seat is listed in your Financials.
+          </div>
+          <label className="toggle-row">
+            <input type="checkbox" checked={autoTeamDistribution} onChange={(ev) => setAutoTeamDistribution(ev.target.checked)} className="toggle-checkbox" />
+            <span className="toggle-label">Automatic team distribution</span>
+          </label>
+          <div className="field-hint">
+            Teams are picked and sent for you once a game is confirmed and full, or 1 hour before reporting
+            time if it never fills.
           </div>
         </div>
 
