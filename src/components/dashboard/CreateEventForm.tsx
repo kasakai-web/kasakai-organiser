@@ -6,6 +6,7 @@ import { buildApiUrl, getSession } from "@/utils/api";
 import { checkInDate, defaultCheckTimes, checkInIsoFromParts } from "@/utils/checkins";
 import { saveTemplate, listTemplates, prettyTime, type Template } from "@/utils/templates";
 import { fromStored, toPayload, describeForOrganiser, formatMins, WINDOW_CHOICES, GRACE_CHOICES, choicesWith, newTier, switchUnit, clampPercent, type BackoutPolicy } from "@/utils/backoutPolicy";
+import { AUTO_CONFIRM_LABEL, autoConfirmHelper, freeExitWarning } from "@/utils/autoConfirm";
 import { hostSlotsFromStored, hostSlotsToPayload, hostSlotsError, listMyHosts, type HostSlotsForm } from "@/utils/hosts";
 import { HostSpotsFields } from "@/components/dashboard/HostSpotsFields";
 
@@ -329,6 +330,10 @@ export function CreateEventForm({ lastEvent, presetDate, onClose, onCreate, onSu
   // the 2nd check-in. ON = auto-confirm main/alternate or auto-cancel by itself;
   // OFF = the system only prompts (pop-up + WhatsApp) and waits for the organiser.
   const [automationEnabled, setAutomationEnabled] = useState(lastEvent?.lifecycle?.automationEnabled ?? false);
+  // Auto-confirm at minimum. Off by default; the organiser's profile default
+  // (fetched below) can turn it on for a fresh form, a template sets it outright.
+  const [autoConfirmOnMin, setAutoConfirmOnMin] = useState<boolean>(lastEvent?.lifecycle?.autoConfirmOnMin === true);
+  const autoConfirmTouched = useRef(lastEvent?.lifecycle?.autoConfirmOnMin !== undefined);
   const [firstCheckTime, setFirstCheckTime] = useState(defaultCheckTimes(initialTime).first);
   const [secondCheckTime, setSecondCheckTime] = useState(defaultCheckTimes(initialTime).second);
   const [firstCheckDate, setFirstCheckDate] = useState("");
@@ -422,6 +427,9 @@ export function CreateEventForm({ lastEvent, presetDate, onClose, onCreate, onSu
       .then((d) => {
         if (d?.success && !passesTouched.current && d.data?.defaultAcceptsPasses === false) {
           setAcceptsPasses(false);
+        }
+        if (d?.success && !autoConfirmTouched.current && d.data?.defaultAutoConfirmOnMin === true) {
+          setAutoConfirmOnMin(true);
         }
       })
       .catch(() => {});
@@ -531,6 +539,8 @@ export function CreateEventForm({ lastEvent, presetDate, onClose, onCreate, onSu
     setBackoutPolicy(fromStored(t.backoutPolicy));
     setOrganiserPlaying(!!t.organiserIsPlaying);
     setAutomationEnabled(!!t.automationEnabled);
+    autoConfirmTouched.current = true;
+    setAutoConfirmOnMin(t.autoConfirmOnMin === true);
     // A template made for a premium fixture must not quietly re-open it to
     // covered seats every time it is used.
     passesTouched.current = true;
@@ -676,6 +686,7 @@ export function CreateEventForm({ lastEvent, presetDate, onClose, onCreate, onSu
           firstCheckAt: checkInIsoFromParts(firstCheckDate, firstCheckTime),
           secondCheckAt: checkInIsoFromParts(secondCheckDate, secondCheckTime),
           automationEnabled,
+          autoConfirmOnMin,
         },
         alternateFormats: allowSizeChange ? [{
           format: altFormat,
@@ -734,6 +745,7 @@ export function CreateEventForm({ lastEvent, presetDate, onClose, onCreate, onSu
         hostSlots: hostSlotsToPayload(hostSlots),
         organiserIsPlaying,
         automationEnabled,
+        autoConfirmOnMin,
         firstCheckTime,
         secondCheckTime,
         alternateFormats: allowSizeChange ? [{
@@ -1528,6 +1540,41 @@ export function CreateEventForm({ lastEvent, presetDate, onClose, onCreate, onSu
                   checked={automationEnabled}
                   onChange={() => setAutomationEnabled((v: boolean) => !v)}
                 />
+              </div>
+
+              <div className="mt-8">
+                <CheckboxRow
+                  label={<span className="font-bold">{AUTO_CONFIRM_LABEL}</span>}
+                  helper={autoConfirmHelper(autoConfirmOnMin)}
+                  checked={autoConfirmOnMin}
+                  onChange={() => {
+                    autoConfirmTouched.current = true;
+                    const next = !autoConfirmOnMin;
+                    // Its gates are the check-ins: turning it on with none set
+                    // pre-fills the usual defaults for this kick-off.
+                    if (next && date && (!firstCheckDate || !secondCheckDate)) {
+                      const day = checkInDate(date, time);
+                      const d = defaultCheckTimes(time);
+                      if (!firstCheckDate) { setFirstCheckDate(day); setFirstCheckTime(d.first); }
+                      if (!secondCheckDate) { setSecondCheckDate(day); setSecondCheckTime(d.second); }
+                    }
+                    setAutoConfirmOnMin(next);
+                  }}
+                />
+                {(() => {
+                  const warning = freeExitWarning({
+                    on: autoConfirmOnMin,
+                    kickoffIso: date ? new Date(`${date}T${time}:00+05:30`).toISOString() : null,
+                    firstCheckIso,
+                    policy: backoutPolicy,
+                    feeInRs: backoutFeeInRs,
+                  });
+                  return warning ? (
+                    <div className="bg-[#241f14] border border-[#3d3320] p-4 rounded-xl mt-4">
+                      <p className="text-[#e7dcb8] text-sm leading-relaxed">{warning}</p>
+                    </div>
+                  ) : null;
+                })()}
               </div>
             </div>
 

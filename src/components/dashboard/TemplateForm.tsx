@@ -15,6 +15,7 @@ import { saveTemplate, updateTemplate, type Template, type Format } from "@/util
 import { defaultCheckTimes } from "@/utils/checkins";
 import { fromStored, toPayload, describeForOrganiser, WINDOW_CHOICES, GRACE_CHOICES, choicesWith, switchUnit, clampPercent, type BackoutPolicy, type FeeUnit } from "@/utils/backoutPolicy";
 import { hostSlotsFromStored, hostSlotsToPayload, hostSlotsError, type HostSlotsForm } from "@/utils/hosts";
+import { AUTO_CONFIRM_LABEL, autoConfirmHelper } from "@/utils/autoConfirm";
 import { HostSpotsFields } from "@/components/dashboard/HostSpotsFields";
 
 const TIME_SLOT_OPTIONS = Array.from({ length: 96 }, (_, idx) => {
@@ -88,6 +89,7 @@ export function TemplateForm({ template, onClose, onSaved }: TemplateFormProps) 
   const [altFee, setAltFee] = useState<string>(lastAlt?.feeInPaise ? String(lastAlt.feeInPaise / 100) : "");
 
   const [automationEnabled, setAutomationEnabled] = useState(template?.automationEnabled ?? false);
+  const [autoConfirmOnMin, setAutoConfirmOnMin] = useState(template?.autoConfirmOnMin === true);
   const [customChecks, setCustomChecks] = useState<boolean>(!!(template?.firstCheckTime || template?.secondCheckTime));
   // Seeded from the template's own kickoff so opening the override starts at what
   // the automatic rule would have picked, rather than a fixed afternoon pair.
@@ -167,6 +169,7 @@ export function TemplateForm({ template, onClose, onSaved }: TemplateFormProps) 
         hostSlots: hostSlotsToPayload(hostSlots),
         organiserIsPlaying,
         automationEnabled,
+        autoConfirmOnMin,
         firstCheckTime: customChecks ? firstCheckTime : null,
         secondCheckTime: customChecks ? secondCheckTime : null,
         alternateFormats: allowSizeChange
@@ -440,6 +443,11 @@ export function TemplateForm({ template, onClose, onSaved }: TemplateFormProps) 
             <input type="checkbox" checked={automationEnabled} onChange={(ev) => setAutomationEnabled(ev.target.checked)} className="toggle-checkbox" />
             <span className="toggle-label">Automation — auto-confirm / auto-cancel at the 2nd check-in</span>
           </label>
+          <label className="toggle-row" style={{ marginTop: 10 }}>
+            <input type="checkbox" checked={autoConfirmOnMin} onChange={(ev) => setAutoConfirmOnMin(ev.target.checked)} className="toggle-checkbox" />
+            <span className="toggle-label">{AUTO_CONFIRM_LABEL}</span>
+          </label>
+          <div className="field-hint">{autoConfirmHelper(autoConfirmOnMin)}</div>
           <label className="toggle-row" style={{ marginTop: 10 }}>
             <input type="checkbox" checked={customChecks} onChange={(ev) => setCustomChecks(ev.target.checked)} className="toggle-checkbox" />
             <span className="toggle-label">Set custom check-in times (else auto: 2h &amp; 1h before kickoff — 4h &amp; 2h for night games from 8pm, or 8pm/10pm the day before for morning games)</span>
