@@ -3,6 +3,8 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { buildApiUrl, getSession } from "@/utils/api";
 import { checkInIsoFromParts, istYMD, istHHmm, sameMinute } from "@/utils/checkins";
+import { fromStored } from "@/utils/backoutPolicy";
+import { AUTO_CONFIRM_LABEL, AUTO_CONFIRM_LOCKED, AUTO_CONFIRM_NEEDS_CHECKINS, autoConfirmHelper, freeExitWarning } from "@/utils/autoConfirm";
 import { isActiveReg } from "@/utils/playerCount";
 import { hostSlotsFromStored, hostSlotsToPayload, hostSlotsError, type HostSlotsForm } from "@/utils/hosts";
 import { HostSpotsFields } from "@/components/dashboard/HostSpotsFields";
@@ -155,6 +157,13 @@ export function EditEventModal({
 
   /* ── Confirmation check-ins (3.1) — restore the saved times/dates ── */
   const [automationEnabled, setAutomationEnabled] = useState(Boolean(initialData.lifecycle?.automationEnabled));
+  // Auto-confirm at minimum: settable only until the game is confirmed, and
+  // only on a game that has both check-ins (its gates). The server refuses
+  // either; the switch is disabled so nobody gets that far.
+  const savedAutoConfirm = initialData.lifecycle?.autoConfirmOnMin === true;
+  const [autoConfirmOnMin, setAutoConfirmOnMin] = useState(savedAutoConfirm);
+  const autoConfirmLocked = !["draft", "open", "tentative"].includes(initialData.status);
+  const hasBothChecks = Boolean(initialData.lifecycle?.firstCheckAt && initialData.lifecycle?.secondCheckAt);
   const [firstCheckDate, setFirstCheckDate]   = useState(istYMD(initialData.lifecycle?.firstCheckAt));
   const [firstCheckTime, setFirstCheckTime]   = useState(istHHmm(initialData.lifecycle?.firstCheckAt));
   const [secondCheckDate, setSecondCheckDate] = useState(istYMD(initialData.lifecycle?.secondCheckAt));
@@ -365,6 +374,7 @@ export function EditEventModal({
       const lifecycle: Record<string, unknown> = { automationEnabled };
       if (firstCheckChanged)  lifecycle.firstCheckAt  = firstCheckIso;
       if (secondCheckChanged) lifecycle.secondCheckAt = secondCheckIso;
+      if (!autoConfirmLocked && autoConfirmOnMin !== savedAutoConfirm) lifecycle.autoConfirmOnMin = autoConfirmOnMin;
 
       // organiserIsPlaying is NOT included — it's managed in real-time above.
       // cutoffAt is not sent either: the backend always re-derives it from the
@@ -555,6 +565,39 @@ export function EditEventModal({
                   ? "Once the game is confirmed and full (and past its 2nd check-in), the teams are picked and sent for you. If it never fills, they go out 1 hour before reporting time with whoever is in."
                   : "Teams are only sent when you press Distribute and then Publish. Teams already sent stay sent."}
               </div>
+            </Field>
+            <Field label="Confirmation">
+              <label style={{ display: "flex", alignItems: "center", gap: 10, cursor: autoConfirmLocked || !hasBothChecks ? "not-allowed" : "pointer", opacity: autoConfirmLocked || !hasBothChecks ? 0.6 : 1 }}>
+                <input type="checkbox" checked={autoConfirmOnMin}
+                  disabled={autoConfirmLocked || (!hasBothChecks && !autoConfirmOnMin)}
+                  onChange={(e) => setAutoConfirmOnMin(e.target.checked)}
+                  style={{ width: 17, height: 17, accentColor: "#c8ff3e", flexShrink: 0 }} />
+                <span style={{ fontSize: 13, color: "#ddd" }}>{AUTO_CONFIRM_LABEL}</span>
+              </label>
+              <div style={{ fontSize: 11, color: "#666", marginTop: 4 }}>
+                {autoConfirmLocked
+                  ? `${AUTO_CONFIRM_LOCKED}${initialData.status === "confirmed" ? " This game is confirmed." : ""}`
+                  : !hasBothChecks
+                    ? AUTO_CONFIRM_NEEDS_CHECKINS
+                    : autoConfirmHelper(autoConfirmOnMin)}
+              </div>
+              {(() => {
+                const warning = !autoConfirmLocked && freeExitWarning({
+                  on: autoConfirmOnMin,
+                  kickoffIso: scheduledIso,
+                  firstCheckIso,
+                  policy: fromStored(initialData.backoutPolicy),
+                  feeInRs: (initialData.backoutFeeInPaise || 0) / 100,
+                });
+                return warning ? (
+                  <div style={{
+                    marginTop: 8, padding: "8px 10px", borderRadius: 7, fontSize: 11.5,
+                    background: "rgba(233,179,56,0.08)", border: "1px solid rgba(233,179,56,0.3)", color: "#e9b338",
+                  }}>
+                    ⚠️ {warning}
+                  </div>
+                ) : null;
+              })()}
             </Field>
           </Section>
 

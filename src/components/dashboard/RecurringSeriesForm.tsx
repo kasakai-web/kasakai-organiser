@@ -21,6 +21,7 @@ import {
 } from "@/utils/recurring";
 import { fromStored, toPayload, describeForOrganiser, WINDOW_CHOICES, GRACE_CHOICES, type BackoutPolicy } from "@/utils/backoutPolicy";
 import { hostSlotsFromStored, hostSlotsToPayload, hostSlotsError, type HostSlotsForm } from "@/utils/hosts";
+import { AUTO_CONFIRM_LABEL, autoConfirmHelper } from "@/utils/autoConfirm";
 import { HostSpotsFields } from "@/components/dashboard/HostSpotsFields";
 
 interface Turf { _id: string; name: string; location?: { city?: string } }
@@ -110,6 +111,7 @@ export function RecurringSeriesForm({ series, pivotOccurrenceId, onClose, onSave
   // Host spots, owned by the series like the rest — each game gets its own copy.
   const [hostSlots, setHostSlots] = useState<HostSlotsForm>(() => hostSlotsFromStored(d?.hostSlots));
   const [automationEnabled, setAutomationEnabled] = useState(d?.automationEnabled ?? false);
+  const [autoConfirmOnMin, setAutoConfirmOnMin] = useState(d?.autoConfirmOnMin === true);
 
   const [notifyOnCreate, setNotifyOnCreate] = useState(series?.notifyOrganiser?.onCreate ?? true);
   const [notifyOnChange, setNotifyOnChange] = useState(series?.notifyOrganiser?.onChange ?? true);
@@ -184,6 +186,7 @@ export function RecurringSeriesForm({ series, pivotOccurrenceId, onClose, onSave
     setAutoTeamDistribution(t.autoTeamDistribution !== false);
     setHostSlots(hostSlotsFromStored(t.hostSlots));
     setAutomationEnabled(!!t.automationEnabled);
+    setAutoConfirmOnMin(t.autoConfirmOnMin === true);
   };
 
   // The payload is assembled once and used for both preview and save, so the
@@ -230,6 +233,7 @@ export function RecurringSeriesForm({ series, pivotOccurrenceId, onClose, onSave
       autoTeamDistribution,
       hostSlots: hostSlotsToPayload(hostSlots),
       automationEnabled,
+      autoConfirmOnMin,
     },
   }), [
     name, freq, interval, weekdays, monthlyMode, dayOfMonth, nth, nthWeekday, timeOfDay,
@@ -237,7 +241,7 @@ export function RecurringSeriesForm({ series, pivotOccurrenceId, onClose, onSave
     checkOrganiser, checkOverlap, horizonDays, leadDays, notifyOnCreate, notifyOnChange,
     notifyOnCancel, title, nameMode, titlePattern, visibility, requiresApproval, turf, format, durationMins,
     reportingMins, cutoffHours, feeInRs, backoutFeeInRs, backoutPolicy, minPlayers, totalSlots,
-    organiserIsPlaying, acceptsPasses, autoTeamDistribution, hostSlots, automationEnabled,
+    organiserIsPlaying, acceptsPasses, autoTeamDistribution, hostSlots, automationEnabled, autoConfirmOnMin,
   ]);
 
   // Debounced preview. Every keystroke in the rule would otherwise be a request,
@@ -708,6 +712,11 @@ export function RecurringSeriesForm({ series, pivotOccurrenceId, onClose, onSave
               <input type="checkbox" className="toggle-checkbox" checked={automationEnabled} onChange={(ev) => setAutomationEnabled(ev.target.checked)} />
               <span className="toggle-label">Auto-confirm / auto-cancel at the second check-in</span>
             </label>
+            <label className="toggle-row">
+              <input type="checkbox" className="toggle-checkbox" checked={autoConfirmOnMin} onChange={(ev) => setAutoConfirmOnMin(ev.target.checked)} />
+              <span className="toggle-label">{AUTO_CONFIRM_LABEL}</span>
+            </label>
+            <div className="field-hint">{autoConfirmHelper(autoConfirmOnMin)}</div>
           </div>
 
           {/* ── Host spots ─────────────────────────────────────────── */}

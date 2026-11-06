@@ -35,6 +35,8 @@ type OrganiserProfile = {
   /** Whether NEW games accept pass holders (§9). A default only — it never
    *  edits a game that already exists. */
   defaultAcceptsPasses?: boolean;
+  /** Whether NEW games auto-confirm at their minimum. A default only. */
+  defaultAutoConfirmOnMin?: boolean;
   defaultTurfId?: string;
   notificationSettings?: {
     whatsapp?: boolean;
@@ -146,6 +148,7 @@ export default function OrganiserProfilePage() {
     defaultFormat: "6v6",
     defaultCutoffHours: 24,
     defaultAcceptsPasses: true,
+    defaultAutoConfirmOnMin: false,
     defaultTurfId: "",
     notificationSettings: { whatsapp: true, sms: true, push: true },
     approvalStatus: "pending",
@@ -232,6 +235,7 @@ export default function OrganiserProfilePage() {
         defaultFormat: o.defaultFormat || "6v6",
         defaultCutoffHours: o.defaultCutoffHours || 24,
         defaultAcceptsPasses: o.defaultAcceptsPasses !== false,
+        defaultAutoConfirmOnMin: o.defaultAutoConfirmOnMin === true,
         defaultTurfId: o.defaultTurfId || "",
         notificationSettings: {
           whatsapp: o.notificationSettings?.whatsapp ?? true,
@@ -391,6 +395,7 @@ export default function OrganiserProfilePage() {
           defaultFormat: profile.defaultFormat,
           defaultCutoffHours: profile.defaultCutoffHours,
           defaultAcceptsPasses: profile.defaultAcceptsPasses !== false,
+          defaultAutoConfirmOnMin: profile.defaultAutoConfirmOnMin === true,
           defaultTurfId: profile.defaultTurfId || undefined,
           notificationSettings: profile.notificationSettings,
           playerSkill: profile.playerSkill,
@@ -762,6 +767,21 @@ export default function OrganiserProfilePage() {
               <button type="button"
                 className={`op-toggle ${profile.defaultAcceptsPasses !== false ? "on" : "off"}`}
                 onClick={() => setProfile({ ...profile, defaultAcceptsPasses: profile.defaultAcceptsPasses === false })}>
+                <span className="op-toggle-knob" />
+              </button>
+            </div>
+            <div className="op-notif-row">
+              <div>
+                <div className="op-notif-label">Auto-confirm at minimum</div>
+                <div className="op-notif-desc">
+                  Between the 1st and 2nd check-in, a game is confirmed the moment it has its minimum players.
+                  A confirmed game stays confirmed. Applies to new games — you can still switch it per game
+                  until it is confirmed.
+                </div>
+              </div>
+              <button type="button"
+                className={`op-toggle ${profile.defaultAutoConfirmOnMin === true ? "on" : "off"}`}
+                onClick={() => setProfile({ ...profile, defaultAutoConfirmOnMin: profile.defaultAutoConfirmOnMin !== true })}>
                 <span className="op-toggle-knob" />
               </button>
             </div>
