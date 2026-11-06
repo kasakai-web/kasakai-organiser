@@ -33,15 +33,26 @@ const fmtIst = (ms: number): string =>
     hour12: true,
   });
 
+// A policy in either unit: a flat amount (the game's rupee fee, or paise per
+// tier) or a share of what the seat was worth (`feeUnit: "percent"` with
+// `feePercent` / `tiers[].percent`). Typed loosely so it reads both the
+// percent-aware policy shape and the older flat-only one.
+type AnyPolicy = BackoutPolicy & { feeUnit?: string; feePercent?: number };
+type AnyTier = { withinMins: number; feeInPaise?: number; percent?: number };
+
 /**
  * How many minutes before kick-off a cancellation fee starts to bite, or 0 for
  * no fee at all. Tiers supersede the simple pair, as on the server.
  */
 export function feeWindowMins(policy: BackoutPolicy, feeInRs: string | number): number {
-  const tiers = (policy.tiers || []).filter((t) => t.withinMins > 0 && t.feeInPaise > 0);
+  const p = policy as AnyPolicy;
+  const percent = p.feeUnit === "percent";
+  const charges = (t: AnyTier) =>
+    t.withinMins > 0 && (percent ? (Number(t.percent) || 0) > 0 : (Number(t.feeInPaise) || 0) > 0);
+  const tiers = ((p.tiers || []) as AnyTier[]).filter(charges);
   if (tiers.length) return Math.max(...tiers.map((t) => t.withinMins));
-  const fee = Number(feeInRs) || 0;
-  return fee > 0 && policy.windowMins > 0 ? policy.windowMins : 0;
+  const amount = percent ? Number(p.feePercent) || 0 : Number(feeInRs) || 0;
+  return amount > 0 && p.windowMins > 0 ? p.windowMins : 0;
 }
 
 /**
