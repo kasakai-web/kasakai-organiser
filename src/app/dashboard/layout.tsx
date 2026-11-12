@@ -182,6 +182,12 @@ export default function DashboardLayout({
       setActiveSection("recurring");
       return;
     }
+    // A list's own page lives under it (/player-lists/<listId>), so this one
+    // matches on the segment rather than the end of the path.
+    if (pathname.includes("/dashboard/organizer/") && pathname.includes("/player-lists")) {
+      setActiveSection("player-lists");
+      return;
+    }
     if (pathname.includes("/dashboard/organizer/") && pathname.endsWith("/notifications")) {
       setActiveSection("notifications");
       return;
@@ -366,6 +372,17 @@ export default function DashboardLayout({
               }}
             >
               <span className="sidebar-icon">🔁</span>Recurring
+            </button>
+            {/* Saved groups of players — picked from the SOS and invite modals. */}
+            <button
+              className={`sidebar-link ${activeSection === 'player-lists' ? 'active' : ''}`}
+              onClick={() => {
+                setActiveSection("player-lists");
+                setSidebarOpen(false);
+                if (userId) router.push(`/dashboard/organizer/${userId}/player-lists`);
+              }}
+            >
+              <span className="sidebar-icon">👥</span>Player Lists
             </button>
             {/* Replaces the old read-only "My Feedback" page, which showed the
                 same standing ratings without letting anyone change them. */}

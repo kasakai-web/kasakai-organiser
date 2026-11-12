@@ -18,6 +18,8 @@ import GameCard from "@/components/dashboard/GameCard/GameCard";
 import CoOrganiserModal from "@/components/dashboard/CoOrganiserModal";
 import FacilitatorsModal from "@/components/dashboard/FacilitatorsModal";
 import { TeamSheetHistory } from "@/components/dashboard/TeamSheetHistory";
+import { ListQuickAdd, SaveAsList, pickedKey } from "@/components/playerLists/ListQuickAdd";
+import { addFromList, defaultListName, listsUsed, removeList } from "@/utils/playerLists";
 
 
 // Upcoming and Past are two routes over one board: /dashboard/organizer/[id]
@@ -100,7 +102,9 @@ export default function OrganiserGamesBoard({ view }: { view: GamesView }) {
     sending?: boolean;
     error?: string;
     regulars:   { id?: string; name: string; games: number; phone: string }[];
-    recipients: { id: string; name: string; sub?: string; games?: number }[];
+    // `lists` = the saved Player Lists that put this person here; `manual` = also
+    // picked some other way, so un-ticking a list leaves them in.
+    recipients: { id: string; name: string; sub?: string; games?: number; lists?: string[]; manual?: boolean }[];
     // Every SOS this game has already sent, newest first — the record of who was
     // asked, when, and whether WhatsApp carried it.
     log:        { id?: string; playerId?: string | null; name: string; phone?: string; sentAt: string; sentByName?: string | null; whatsapp: string }[];
@@ -112,7 +116,7 @@ export default function OrganiserGamesBoard({ view }: { view: GamesView }) {
   const [inviteGameId, setInviteGameId] = useState<string | null>(null);
   const [inviteRegulars, setInviteRegulars] = useState<{ id?: string; name: string; phone: string; games: number }[]>([]);
   const [inviteRegLoading, setInviteRegLoading] = useState(false);
-  const [inviteRows, setInviteRows] = useState<{ name: string; phone?: string; playerId?: string }[]>([]);
+  const [inviteRows, setInviteRows] = useState<{ name: string; phone?: string; playerId?: string; lists?: string[]; manual?: boolean }[]>([]);
   const [inviteName, setInviteName] = useState("");
   const [invitePhone, setInvitePhone] = useState("");
   const [inviteSending, setInviteSending] = useState(false);
@@ -522,14 +526,14 @@ export default function OrganiserGamesBoard({ view }: { view: GamesView }) {
     setConfirmVisible(true);
   };
 
-  const handleSendSos = async (gameId: string, playerIds: string[]) => {
+  const handleSendSos = async (gameId: string, playerIds: string[], listIds: string[] = []) => {
     const { token } = getSession();
     if (!token) { clearSession(); router.replace("/login?role=organiser"); return; }
     try {
       const res  = await fetch(buildApiUrl(`/api/v1/games/organisers/${gameId}/sos`), {
         method: 'POST',
         headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
-        body: JSON.stringify({ playerIds }),
+        body: JSON.stringify({ playerIds, listIds }),
       });
       const data = await res.json();
       if (!res.ok || !data.success) { showToast("error", data.message || "Failed to send SOS"); return; }
@@ -571,7 +575,7 @@ export default function OrganiserGamesBoard({ view }: { view: GamesView }) {
         regulars,
         log: data.data?.sosLog || [],
         // Pre-selected, so the old one-tap "send to all regulars" is still one tap.
-        recipients: regulars.filter((r) => r.id).map((r) => ({ id: r.id!, name: r.name, sub: r.phone, games: r.games })),
+        recipients: regulars.filter((r) => r.id).map((r) => ({ id: r.id!, name: r.name, sub: r.phone, games: r.games, manual: true })),
       } : m));
     } catch {
       setSosModal((m) => (m ? { ...m, loading: false, error: "Couldn't load eligible players" } : m));
@@ -579,7 +583,25 @@ export default function OrganiserGamesBoard({ view }: { view: GamesView }) {
   };
 
   const addSosRecipient = (p: { id: string; name: string; sub?: string; games?: number }) => {
-    setSosModal((m) => (m && !m.recipients.some((r) => r.id === p.id) ? { ...m, recipients: [...m.recipients, p] } : m));
+    setSosModal((m) => {
+      if (!m) return m;
+      if (m.recipients.some((r) => r.id === p.id)) {
+        return { ...m, recipients: m.recipients.map((r) => (r.id === p.id ? { ...r, manual: true } : r)) };
+      }
+      return { ...m, recipients: [...m.recipients, { ...p, manual: true }] };
+    });
+  };
+
+  // A saved Player List ticked in the SOS modal: add whoever it can reach for
+  // this game; un-ticking takes back only the people that list put there.
+  const addSosList = (listId: string, people: { playerId: string | null; name: string; sub: string; games?: number }[]) => {
+    const incoming = people
+      .filter((p) => p.playerId)
+      .map((p) => ({ id: p.playerId as string, name: p.name, sub: p.sub, games: p.games }));
+    setSosModal((m) => (m ? { ...m, recipients: addFromList(m.recipients, listId, incoming, (a, b) => a.id === b.id).next } : m));
+  };
+  const removeSosList = (listId: string) => {
+    setSosModal((m) => (m ? { ...m, recipients: removeList(m.recipients, listId) } : m));
   };
 
   const removeSosRecipient = (id: string) => {
@@ -594,7 +616,7 @@ export default function OrganiserGamesBoard({ view }: { view: GamesView }) {
   const confirmSendSos = async () => {
     if (!sosModal || sosModal.recipients.length === 0) return;
     setSosModal((m) => (m ? { ...m, sending: true } : m));
-    await handleSendSos(sosModal.gameId, sosModal.recipients.map((r) => r.id));
+    await handleSendSos(sosModal.gameId, sosModal.recipients.map((r) => r.id), listsUsed(sosModal.recipients));
     setSosModal(null);
   };
 
@@ -618,10 +640,27 @@ export default function OrganiserGamesBoard({ view }: { view: GamesView }) {
   };
 
   const addSearchInvitee = (p: PlayerSearchResult) => {
-    if (inviteRows.some((r) => r.playerId === p._id)) return;
-    setInviteRows((rows) => [...rows, { name: p.name, playerId: p._id }]);
+    if (inviteRows.some((r) => r.playerId === p._id)) {
+      setInviteRows((rows) => rows.map((r) => (r.playerId === p._id ? { ...r, manual: true } : r)));
+      inviteFind.reset();
+      return;
+    }
+    setInviteRows((rows) => [...rows, { name: p.name, playerId: p._id, manual: true }]);
     inviteFind.reset();
   };
+
+  // Same last-ten-digits comparison the server uses, so a number typed as
+  // 98765… and one stored as 9198765… are one person.
+  const sameInvitee = (a: { playerId?: string; phone?: string }, b: { playerId?: string; phone?: string }) =>
+    (!!a.playerId && a.playerId === b.playerId)
+    || (!a.playerId && !b.playerId && !!a.phone && !!b.phone
+        && a.phone.replace(/\D/g, "").slice(-10) === b.phone.replace(/\D/g, "").slice(-10));
+
+  const addInviteList = (listId: string, people: { playerId: string | null; name: string; phone?: string }[]) => {
+    const incoming = people.map((p) => (p.playerId ? { name: p.name, playerId: p.playerId } : { name: p.name, phone: p.phone }));
+    setInviteRows((rows) => addFromList(rows, listId, incoming, sameInvitee).next);
+  };
+  const removeInviteList = (listId: string) => setInviteRows((rows) => removeList(rows, listId));
 
   // Manage the shared invite link — toggle on/off, set/clear the cap, or regenerate.
   const manageLink = async (patch: { enabled?: boolean; maxJoins?: number | null; regenerate?: boolean }) => {
@@ -650,14 +689,14 @@ export default function OrganiserGamesBoard({ view }: { view: GamesView }) {
     const name = inviteName.trim();
     const phone = invitePhone.replace(/\D/g, "");
     if (!name || phone.length < 10) { showToast("error", "Enter a name and a valid phone number"); return; }
-    if (inviteRows.some((r) => r.phone === phone)) { showToast("error", "That number is already in the list"); return; }
-    setInviteRows((rows) => [...rows, { name, phone }]);
+    if (inviteRows.some((r) => sameInvitee(r, { phone }))) { showToast("error", "That number is already in the list"); return; }
+    setInviteRows((rows) => [...rows, { name, phone, manual: true }]);
     setInviteName(""); setInvitePhone("");
   };
 
   const addRegularInvitee = (reg: { id?: string; name: string }) => {
     if (!reg.id || inviteRows.some((r) => r.playerId === reg.id)) return;
-    setInviteRows((rows) => [...rows, { name: reg.name, playerId: reg.id }]);
+    setInviteRows((rows) => [...rows, { name: reg.name, playerId: reg.id, manual: true }]);
   };
 
   const removeInviteRow = (idx: number) => setInviteRows((rows) => rows.filter((_, i) => i !== idx));
@@ -673,7 +712,7 @@ export default function OrganiserGamesBoard({ view }: { view: GamesView }) {
       const res = await fetch(buildApiUrl(`/api/v1/games/organisers/${inviteGameId}/invite`), {
         method: "POST",
         headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
-        body: JSON.stringify({ invitees, playerIds }),
+        body: JSON.stringify({ invitees, playerIds, listIds: listsUsed(inviteRows) }),
       });
       const data = await res.json();
       if (!res.ok || !data.success) { showToast("error", data.message || "Failed to send invites"); return; }
@@ -1023,6 +1062,17 @@ export default function OrganiserGamesBoard({ view }: { view: GamesView }) {
                 )}
               </div>
 
+              {/* Saved Player Lists — one tap adds everyone on a list this SOS can reach */}
+              <ListQuickAdd
+                gameId={sosModal.gameId}
+                purpose="sos"
+                organiserId={organiserId}
+                activeIds={listsUsed(sosModal.recipients)}
+                pickedKeys={new Set(sosModal.recipients.map((r) => pickedKey({ playerId: r.id })))}
+                onAdd={addSosList}
+                onRemove={removeSosList}
+              />
+
               {suggestions.length > 0 && (
                 <div style={{ marginBottom: 12 }}>
                   <div style={{ fontSize: 11, color: "#777", marginBottom: 6 }}>Venue regulars — tap to add</div>
@@ -1080,6 +1130,15 @@ export default function OrganiserGamesBoard({ view }: { view: GamesView }) {
                     );
                   })}
                 </div>
+              )}
+
+              {count >= 2 && (
+                <SaveAsList
+                  key={sosModal.gameId}
+                  defaultName={defaultListName(sosModal.gameTitle)}
+                  playerIds={sosModal.recipients.map((r) => r.id)}
+                  via="sos"
+                />
               )}
 
               {/* ── Already sent ──────────────────────────────────────────────
@@ -1235,6 +1294,16 @@ export default function OrganiserGamesBoard({ view }: { view: GamesView }) {
                 )}
               </div>
 
+              <ListQuickAdd
+                gameId={inviteGame._id}
+                purpose="invite"
+                organiserId={organiserId}
+                activeIds={listsUsed(inviteRows)}
+                pickedKeys={new Set(inviteRows.map((r) => pickedKey({ playerId: r.playerId, phone: r.phone })))}
+                onAdd={addInviteList}
+                onRemove={removeInviteList}
+              />
+
               {inviteRegLoading ? (
                 <div style={{ fontSize: 12, color: "#888", marginBottom: 10 }}>Loading venue regulars…</div>
               ) : inviteRegulars.length > 0 && (
@@ -1285,6 +1354,18 @@ export default function OrganiserGamesBoard({ view }: { view: GamesView }) {
                       <button onClick={() => removeInviteRow(i)} style={{ background: "none", border: "none", color: "#888", cursor: "pointer", fontSize: 14, lineHeight: 1 }}>✕</button>
                     </span>
                   ))}
+                </div>
+              )}
+
+              {inviteRows.length >= 2 && (
+                <div style={{ marginTop: -4, marginBottom: 12 }}>
+                  <SaveAsList
+                    key={inviteGame._id}
+                    defaultName={defaultListName(inviteGame.title)}
+                    playerIds={inviteRows.filter((r) => r.playerId).map((r) => r.playerId as string)}
+                    contacts={inviteRows.filter((r) => !r.playerId && r.phone).map((r) => ({ name: r.name, phone: r.phone as string }))}
+                    via="invite"
+                  />
                 </div>
               )}
 
