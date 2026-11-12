@@ -528,7 +528,7 @@ export function EditEventModal({
                   marginTop: 8, padding: "9px 12px", borderRadius: 8, fontSize: 12, lineHeight: 1.5,
                   background: "rgba(233,179,56,0.08)", border: "1px solid rgba(233,179,56,0.3)", color: "#e9b338",
                 }}>
-                  ⚠️ Turning approval off will auto-approve your {pendingRequestsCount} pending request{pendingRequestsCount !== 1 ? "s" : ""} in order — filling open slots and charging each their fee. Any that don&apos;t fit stay pending.
+                  ⚠️ Turning approval off will auto-approve your {pendingRequestsCount} pending request{pendingRequestsCount !== 1 ? "s" : ""}{" "}in order — filling open slots and charging each their fee. Any that don&apos;t fit stay pending.
                 </div>
               )}
             </Field>
@@ -605,7 +605,7 @@ export function EditEventModal({
           <Section title="Schedule">
             {!timeEditable && (
               <div style={{ fontSize: 11, color: "#e9b338", marginBottom: 4 }}>
-                🔒 This game is {initialData.status} — its date &amp; start time can no longer be edited.
+                🔒 This game is {initialData.status}{" "}— its date &amp; start time can no longer be edited.
               </div>
             )}
             <div className="form-row">

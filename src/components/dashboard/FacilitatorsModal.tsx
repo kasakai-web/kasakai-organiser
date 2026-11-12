@@ -103,7 +103,7 @@ export default function FacilitatorsModal({ gameId, gameTitle, onClose, onChange
           <button onClick={onClose} style={{ background: "none", border: "none", color: "#888", fontSize: 20, cursor: "pointer", lineHeight: 1 }}>✕</button>
         </div>
         <p style={{ fontSize: 13, color: "#9aa", margin: "0 0 14px", lineHeight: 1.5 }}>
-          Ask one of your hosts to run <b style={{ color: "#ddd" }}>{gameTitle || "this game"}</b> without playing.
+          Ask one of your hosts to run <b style={{ color: "#ddd" }}>{gameTitle || "this game"}</b>{" "}without playing.
           Once they accept they can see the roster, mark attendance, handle teams and wrap the game up from
           their player app. They don&apos;t take a spot.
         </p>

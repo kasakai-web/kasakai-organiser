@@ -349,7 +349,7 @@ export function SeriesDetail({ series, occurrences, organiserId, onRefresh, onEd
           <div className="rec-modal wide" onClick={(e) => e.stopPropagation()}>
             <h3>Edit this game</h3>
             <p>
-              {prettyDateFull(customising.scheduledAt)} at {prettyClock(customising.scheduledAt)} only — the
+              {prettyDateFull(customising.scheduledAt)} at {prettyClock(customising.scheduledAt)}{" "}only — the
               schedule and every other date are untouched. Leave a field blank to keep using the schedule&apos;s setting.
               {customising.status === "created" && " This game is already live, so changes reach players straight away."}
             </p>

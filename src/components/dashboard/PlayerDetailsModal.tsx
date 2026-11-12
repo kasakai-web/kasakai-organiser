@@ -881,7 +881,7 @@ function downloadTeamExcel(result: {
             }}
           >
             <div style={{ flex: 1, minWidth: 220, fontSize: 12, color: "#f0b429", lineHeight: 1.55 }}>
-              <strong>⏸ Automatic team updates are paused.</strong> The teams were changed after they
+              <strong>⏸ Automatic team updates are paused.</strong>{" "}The teams were changed after they
               went out (a new distribution, a reshuffle or a move) and the change isn&apos;t published, so
               players still have their old teams and anyone who joins gets no team. Format changes and
               uneven teams wait too. Publish the changes, or go back to the teams the players were sent.

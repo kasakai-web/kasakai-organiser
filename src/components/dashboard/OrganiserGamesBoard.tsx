@@ -977,7 +977,7 @@ export default function OrganiserGamesBoard({ view }: { view: GamesView }) {
               <button onClick={() => setTeamHistoryGame(null)} style={{ background: "none", border: "none", color: "#888", fontSize: 20, cursor: "pointer", lineHeight: 1 }}>✕</button>
             </div>
             <p style={{ fontSize: 13, color: "#9aa", margin: "0 0 14px", lineHeight: 1.5 }}>
-              Every time the teams for <b style={{ color: "#ddd" }}>{teamHistoryGame.title}</b> were published, newest first — and whether each player&apos;s message got through.
+              Every time the teams for <b style={{ color: "#ddd" }}>{teamHistoryGame.title}</b>{" "}were published, newest first — and whether each player&apos;s message got through.
             </p>
             <TeamSheetHistory gameId={teamHistoryGame._id} />
           </div>
