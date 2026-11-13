@@ -11,7 +11,7 @@
 // the same predicate a smart list's rule is evaluated with, so a chip's count is
 // the size of the list it would save.
 
-export type AutoKey = "played" | "regular" | "new" | "lapsed" | "gk" | "top";
+export type AutoKey = "played" | "regular" | "new" | "lapsed" | "morning" | "evening" | "gk" | "top";
 export type AddedVia = "manual" | "search" | "book" | "game" | "paste" | "rule" | "sos" | "invite";
 
 export interface BookRow {
