@@ -1583,7 +1583,7 @@ export function CreateEventForm({ lastEvent, presetDate, onClose, onCreate, onSu
               <CheckboxRow
                 label={<span className="font-bold">Automatic team distribution</span>}
                 helper={autoTeamDistribution
-                  ? "ON: once the game is confirmed and every slot is filled (and its 2nd check-in has passed), the teams are picked and sent to the players for you — you get a notification. If it never fills, they go out 1 hour before reporting time with whoever is in. Anyone who joins later is put on the shorter team and only they are messaged."
+                  ? "ON: once the game is confirmed and every slot is filled (and its 2nd check-in has passed), the teams are picked and sent to the players for you — you get a notification. If it never fills, they go out 1 hour before reporting time with whoever is in — unless it is below its minimum then, when you are asked instead. Anyone who joins later is put on the shorter team and only they are messaged."
                   : "OFF: teams are only sent when you press Distribute and then Publish."}
                 checked={autoTeamDistribution}
                 onChange={() => setAutoTeamDistribution((v: boolean) => !v)}
