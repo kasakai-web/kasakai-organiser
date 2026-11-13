@@ -63,6 +63,7 @@ const COLOUR_STYLE = (colour: "red" | "blue") =>
 export function TeamDistributionPanel({
   gameId,
   gameStatus,
+  initiallyPublished = false,
   teams,
   onDistribute,
   onTeamsChanged,
@@ -73,6 +74,8 @@ export function TeamDistributionPanel({
   gameId: string;
   /** Drives the publish warning — publishing an unconfirmed game confirms it. */
   gameStatus?: string;
+  /** These are the teams the players already have (View teams on a published game). */
+  initiallyPublished?: boolean;
   teams: DistributionResult;
   onDistribute: (reshuffleNonce: number) => Promise<void>;
   /** Hand back a fresh distribution result — a manual move rewrites the teams. */
@@ -83,7 +86,7 @@ export function TeamDistributionPanel({
 }) {
   const [busy, setBusy] = useState<string | null>(null);
   const [showReasoning, setShowReasoning] = useState(false);
-  const [published, setPublished] = useState(false);
+  const [published, setPublished] = useState(initiallyPublished);
   const [nonce, setNonce] = useState(0);
   const [pinned, setPinned] = useState<Record<string, "A" | "B" | null>>({});
   const [confirmingPublish, setConfirmingPublish] = useState(false);
@@ -391,8 +394,9 @@ export function TeamDistributionPanel({
         <div style={{ marginTop: 10, fontSize: 10.5, color: "#666", lineHeight: 1.6 }}>
           Players only see their side once you press Publish
           {publishConfirmsGame ? ", which also confirms the game" : ""}. ⇄ swaps a player over
-          straight away; 📌 pins them for the next distribution. Past announcements live under the
-          game card&apos;s Actions ▸ Team history.
+          straight away; 📌 pins them for the next distribution. Once the teams have gone out, a
+          reshuffle or a move is a draft until you publish it, and automatic team updates wait for
+          it. Past announcements live under the game card&apos;s Actions ▸ Team history.
         </div>
       )}
 
