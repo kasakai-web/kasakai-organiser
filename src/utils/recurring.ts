@@ -54,6 +54,8 @@ export interface SeriesGameDefaults {
   /** Host spots every game this series makes starts with. */
   hostSlots?: StoredHostSlots | null;
   automationEnabled?: boolean;
+  /** Auto-confirm at minimum on every game this series makes. Absent = off. */
+  autoConfirmOnMin?: boolean;
   firstCheckTime?: string | null;
   secondCheckTime?: string | null;
 }

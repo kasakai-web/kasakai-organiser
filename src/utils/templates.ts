@@ -47,6 +47,8 @@ export interface Template {
   hostSlots?: StoredHostSlots | null;
   alternateFormats?: TemplateAltFormat[];
   automationEnabled?: boolean;
+  /** Auto-confirm at minimum on games made from this blueprint. Absent = off. */
+  autoConfirmOnMin?: boolean;
   firstCheckTime?: string | null;
   secondCheckTime?: string | null;
   usage?: { useCount?: number; lastUsedAt?: string | null };
@@ -175,7 +177,7 @@ export const templateToLastEventShape = (t: Template, dateYMD: string) => {
     autoTeamDistribution: t.autoTeamDistribution !== false,
     hostSlots: t.hostSlots ?? null,
     alternateFormats: t.allowSizeChange ? (t.alternateFormats || []) : [],
-    lifecycle: { automationEnabled: !!t.automationEnabled },
+    lifecycle: { automationEnabled: !!t.automationEnabled, autoConfirmOnMin: t.autoConfirmOnMin === true },
     organiserGuests: [],
   };
 };
