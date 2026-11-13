@@ -378,7 +378,7 @@ export function TemplateForm({ template, onClose, onSaved }: TemplateFormProps) 
           </label>
           <div className="field-hint">
             Teams are picked and sent for you once a game is confirmed and full, or 1 hour before reporting
-            time if it never fills.
+            time if it never fills (below its minimum then, you are asked instead).
           </div>
         </div>
 
