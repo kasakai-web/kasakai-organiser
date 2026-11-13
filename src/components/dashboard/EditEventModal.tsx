@@ -552,7 +552,7 @@ export function EditEventModal({
               </label>
               <div style={{ fontSize: 11, color: "#666", marginTop: 4 }}>
                 {autoTeamDistribution
-                  ? "Once the game is confirmed and full (and past its 2nd check-in), the teams are picked and sent for you. If it never fills, they go out 1 hour before reporting time with whoever is in."
+                  ? "Once the game is confirmed and full (and past its 2nd check-in), the teams are picked and sent for you. If it never fills, they go out 1 hour before reporting time with whoever is in — unless it is below its minimum then, when you are asked instead."
                   : "Teams are only sent when you press Distribute and then Publish. Teams already sent stay sent."}
               </div>
             </Field>

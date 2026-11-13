@@ -138,6 +138,13 @@ export type AutoTeamsState = {
   awaitingPublish?: string | null;
   failedAt?: string | null;
   failReason?: string | null;
+  /**
+   * The last call came while the game was below its minimum and no teams had
+   * gone out, so they were not sent: the organiser is asked "Distribute with N
+   * players?". Cleared by any publish.
+   */
+  promptedAt?: string | null;
+  minPlayers?: number | null;
 };
 
 const POS_LABEL: Record<string, string> = {
@@ -233,7 +240,13 @@ export function PlayerDetailsModal({
   const autoFailure = autoOn && autoTeamsState?.failedAt && autoTeamsState?.failReason
     ? autoTeamsState.failReason
     : null;
+  // Asked = the last call came below the minimum and nothing was sent. The game
+  // stays confirmed; sending the teams with whoever is in is the organiser's call.
+  const autoAsk = autoOn
+    && !autoTeamsState?.announced
+    && Boolean(autoTeamsState?.promptedAt);
   const [publishingChanges, setPublishingChanges] = useState(false);
+  const [sendingTeamsNow, setSendingTeamsNow] = useState(false);
 
   const [teams, setTeams] = useState<any>(null);
   const [showAddPlayer, setShowAddPlayer] = useState(false);
@@ -344,6 +357,44 @@ export function PlayerDetailsModal({
       showStatus("error", "Couldn't publish the teams");
     } finally {
       setPublishingChanges(false);
+    }
+  };
+
+  // "Distribute with N players?" answered yes: split the players who are in and
+  // send the teams, in one tap. Publishing is what clears the ask on the server.
+  const distributeAndPublish = async () => {
+    setSendingTeamsNow(true);
+    try {
+      const dist = await fetch(buildApiUrl(`/api/v1/games/organisers/${gameId}/distribute`), {
+        method: "POST",
+        headers: { ...getAuthHeaders(), "Content-Type": "application/json" },
+        body: JSON.stringify({ reshuffleNonce: 0 }),
+      });
+      const distData = await dist.json();
+      if (!dist.ok || !distData.success) {
+        showStatus("error", distData.message || "Couldn't make the teams");
+        return;
+      }
+      setTeams(distData.data);
+
+      const pub = await fetch(buildApiUrl(`/api/v1/games/organisers/${gameId}/teams/publish`), {
+        method: "POST",
+        headers: getAuthHeaders(),
+      });
+      const pubData = await pub.json();
+      if (!pub.ok || !pubData.success) {
+        // The split exists but nobody has it — Publish on the Teams panel sends it.
+        showStatus("error", pubData.message || "The teams were made but couldn't be sent — press Publish to send them");
+        onRefresh?.();
+        return;
+      }
+      const notified = pubData.data?.published ?? 0;
+      showStatus("success", `Teams sent — ${notified} player(s) told their team.`, 5000);
+      onRefresh?.();
+    } catch {
+      showStatus("error", "Couldn't send the teams");
+    } finally {
+      setSendingTeamsNow(false);
     }
   };
 
@@ -869,6 +920,39 @@ function downloadTeamExcel(result: {
         )}
 
         {/* Automatic teams — only when something needs the organiser */}
+        {autoAsk && (
+          <div
+            role="status"
+            style={{
+              margin: "10px 16px 0", padding: "10px 12px", borderRadius: 8,
+              background: "rgba(245,158,11,0.08)", border: "1px solid rgba(245,158,11,0.3)",
+              display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap",
+            }}
+          >
+            <div style={{ flex: 1, minWidth: 220, fontSize: 12, color: "#f0b429", lineHeight: 1.55 }}>
+              <strong>👥 Distribute with {activeRegs.length + organiserCount} players?</strong>{" "}The game is
+              confirmed but below its minimum{autoTeamsState?.minPlayers ? ` of ${autoTeamsState.minPlayers}` : ""},
+              so the teams weren&apos;t sent automatically. The game stays on. Send the teams now with the players
+              who are in{autoTeamsState?.minPlayers
+                ? ` — or wait: if it gets back to ${autoTeamsState.minPlayers} before kick-off, they go out by themselves`
+                : ""}.
+            </div>
+            <button
+              type="button"
+              onClick={distributeAndPublish}
+              disabled={sendingTeamsNow}
+              title="Split the players who are in and send everyone their team"
+              style={{
+                padding: "6px 12px", borderRadius: 6, fontSize: 12, fontWeight: 700,
+                cursor: sendingTeamsNow ? "wait" : "pointer",
+                border: "1px solid rgba(200,255,62,0.4)", background: "rgba(200,255,62,0.1)", color: "#c8ff3e",
+                whiteSpace: "nowrap",
+              }}
+            >
+              {sendingTeamsNow ? "Sending…" : "📣 Distribute + Publish"}
+            </button>
+          </div>
+        )}
         {autoPaused && (
           <div
             role="status"

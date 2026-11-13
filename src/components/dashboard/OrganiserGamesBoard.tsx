@@ -1754,6 +1754,8 @@ export default function OrganiserGamesBoard({ view }: { view: GamesView }) {
             awaitingPublish: selectedGame.autoTeams?.awaitingPublish || null,
             failedAt: selectedGame.autoTeams?.failedAt || null,
             failReason: selectedGame.autoTeams?.failReason || null,
+            promptedAt: selectedGame.autoTeams?.promptedAt || null,
+            minPlayers: typeof selectedGame.minPlayers === "number" ? selectedGame.minPlayers : null,
           }}
           onToggleOrganiserPlaying={() => handleOrganiserWithdraw(selectedGame._id)}
           onRemoveRegistration={async (regId) => {
