@@ -305,7 +305,7 @@ export function CreateEventForm({ lastEvent, presetDate, onClose, onCreate, onSu
 
   // Automatic team distribution — on by default. A prefill that predates the
   // switch has no value, which reads as on, like the game it came from.
-  const [autoTeamDistribution, setAutoTeamDistribution] = useState<boolean>(lastEvent?.autoTeamDistribution !== false);
+  const [autoTeamDistribution, setAutoTeamDistribution] = useState<boolean>(lastEvent?.autoTeamDistribution === true);
 
   // Host spots — seats held for this organiser's approved hosts, at a discount,
   // until a release time. Prefilled from the last event or a template like
@@ -532,7 +532,7 @@ export function CreateEventForm({ lastEvent, presetDate, onClose, onCreate, onSu
     // covered seats every time it is used.
     passesTouched.current = true;
     setAcceptsPasses(t.acceptsPasses !== false);
-    setAutoTeamDistribution(t.autoTeamDistribution !== false);
+    setAutoTeamDistribution(t.autoTeamDistribution === true);
     setHostSlots(hostSlotsFromStored(t.hostSlots));
 
     // The format effect re-runs on a format change and clamps these — flagging min
