@@ -8,6 +8,7 @@ import { AUTO_CONFIRM_LABEL, AUTO_CONFIRM_LOCKED, AUTO_CONFIRM_NEEDS_CHECKINS, a
 import { isActiveReg } from "@/utils/playerCount";
 import { hostSlotsFromStored, hostSlotsToPayload, hostSlotsError, type HostSlotsForm } from "@/utils/hosts";
 import { HostSpotsFields } from "@/components/dashboard/HostSpotsFields";
+import { EarlyBirdFields, earlyBirdFromStored, earlyBirdToPayload, type EarlyBirdRow } from "@/components/dashboard/EarlyBirdFields";
 
 interface Turf { _id: string; name: string; location: { city: string } }
 
@@ -141,6 +142,8 @@ export function EditEventModal({
   // say. The count can't go below the host spots already booked.
   const [hostSlots, setHostSlots] = useState<HostSlotsForm>(() => hostSlotsFromStored(initialData.hostSlots));
   const hostSlotsTouched = useRef(false);
+  const [earlyBird, setEarlyBird] = useState<EarlyBirdRow[]>(() => earlyBirdFromStored(initialData.pricing));
+  const earlyBirdTouched = useRef(false);
   const bookedHostSeats = (initialData.registrations || []).filter(
     (r: any) => isActiveReg(r) && r.seatType === "host" && !r.plusOneName
   ).length;
@@ -395,6 +398,7 @@ export function EditEventModal({
         lifecycle,
       };
       if (hostSlotsTouched.current) payload.hostSlots = hostSlotsToPayload(hostSlots);
+      if (earlyBirdTouched.current) payload.pricing = earlyBirdToPayload(earlyBird);
       // IST-anchored, and only when the organiser actually moved it — the backend
       // treats an absent start time as "leave it alone".
       if (timeChanged) payload.scheduledAt = scheduledIso;
@@ -721,6 +725,10 @@ export function EditEventModal({
               minCount={bookedHostSeats}
             />
             {errors.hosts && <div style={{ fontSize: 11, color: "#f87171" }}>{errors.hosts}</div>}
+          </Section>
+
+          <Section title="Early-bird pricing" collapsible defaultOpen={earlyBird.length > 0} summary={earlyBird.length ? `${earlyBird.length} tier${earlyBird.length > 1 ? "s" : ""}` : "None"}>
+            <EarlyBirdFields value={earlyBird} onChange={(next) => { earlyBirdTouched.current = true; setEarlyBird(next); }} feeRs={Number(feeInRs) || 0} totalSlots={Number(totalSlots)} />
           </Section>
 
           {/* ── Format Change — shown ONLY when an alternate format was defined at
