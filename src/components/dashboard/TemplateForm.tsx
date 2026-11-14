@@ -77,7 +77,7 @@ export function TemplateForm({ template, onClose, onSaved }: TemplateFormProps) 
   // template made for a premium fixture does not re-open it every time it runs.
   const [acceptsPasses, setAcceptsPasses] = useState(template?.acceptsPasses !== false);
   // Automatic team distribution for games made from this template. Absent = on.
-  const [autoTeamDistribution, setAutoTeamDistribution] = useState(template?.autoTeamDistribution !== false);
+  const [autoTeamDistribution, setAutoTeamDistribution] = useState(template?.autoTeamDistribution === true);
   // Host spots every game made from this template starts with.
   const [hostSlots, setHostSlots] = useState<HostSlotsForm>(() => hostSlotsFromStored(template?.hostSlots));
   const [allowSizeChange, setAllowSizeChange] = useState(template?.allowSizeChange ?? false);
