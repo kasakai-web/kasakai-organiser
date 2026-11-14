@@ -63,16 +63,22 @@ export function EarlyBirdFields({
 
   if (feeRs <= 0) return <p className="text-xs text-[#888]">Set a game fee to offer early-bird prices.</p>;
 
+  const filled = value.filter((r) => r.priceRs !== "" && Number(r.seats) > 0);
+  const earlySeats = filled.reduce((n, r) => n + Number(r.seats), 0);
+  const allSeats = value.reduce((n, r) => n + (Number(r.seats) || 0), 0);
+  const overCap = totalSlots > 0 && allSeats > totalSlots;
+  // The most seats tier i may take: the game's slots minus the other tiers'.
+  const maxFor = (i: number) => (totalSlots > 0 ? Math.max(1, totalSlots - (allSeats - (Number(value[i]?.seats) || 0))) : undefined);
+
   // A sensible next tier: halfway between the last price and the fee, a quarter of the seats.
   const addTier = () => {
     const last = value[value.length - 1];
     const lastPrice = last && last.priceRs !== "" ? Number(last.priceRs) : Math.round(feeRs * 0.6);
     const price = Math.min(feeRs - 10, Math.round((lastPrice + feeRs) / 2 / 10) * 10);
-    onChange([...value, { priceRs: String(price), seats: String(Math.max(1, Math.round(totalSlots / 4))), closesHoursBefore: "" }]);
+    const seats = Math.max(1, Math.round(totalSlots / 4));
+    const room = totalSlots > 0 ? totalSlots - allSeats : seats;
+    onChange([...value, { priceRs: String(price), seats: String(Math.max(1, Math.min(seats, room))), closesHoursBefore: "" }]);
   };
-
-  const filled = value.filter((r) => r.priceRs !== "" && Number(r.seats) > 0);
-  const earlySeats = filled.reduce((n, r) => n + Number(r.seats), 0);
   const earlyGross = filled.reduce((n, r) => n + Number(r.priceRs) * Number(r.seats), 0);
   const restSeats = Math.max(0, totalSlots - earlySeats);
 
@@ -113,7 +119,19 @@ export function EarlyBirdFields({
               </label>
               <label className={label}>
                 Seats
-                <input type="number" inputMode="numeric" min={1} className={box} value={r.seats} onChange={(e) => set(i, { seats: e.target.value })} />
+                <input
+                  type="number"
+                  inputMode="numeric"
+                  min={1}
+                  max={maxFor(i)}
+                  className={box}
+                  value={r.seats}
+                  onChange={(e) => {
+                    const max = maxFor(i);
+                    const v = e.target.value;
+                    set(i, { seats: max && v !== "" && Number(v) > max ? String(max) : v });
+                  }}
+                />
               </label>
               <label className={label}>
                 Ends
@@ -130,7 +148,13 @@ export function EarlyBirdFields({
         );
       })}
 
-      {value.length < 3 && (
+      {overCap && (
+        <span className="text-[11px] text-[#f87171]">
+          Early-bird tiers add up to {allSeats} seats, but the game only has {totalSlots}.
+        </span>
+      )}
+
+      {value.length < 3 && (totalSlots <= 0 || allSeats < totalSlots) && (
         <button type="button" onClick={addTier} className="self-start text-xs font-bold text-[#c4f042] uppercase tracking-widest">
           + Add another tier
         </button>
