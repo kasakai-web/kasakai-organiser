@@ -9,6 +9,7 @@ import { fromStored, toPayload, describeForOrganiser, formatMins, WINDOW_CHOICES
 import { AUTO_CONFIRM_LABEL, autoConfirmHelper, freeExitWarning } from "@/utils/autoConfirm";
 import { hostSlotsFromStored, hostSlotsToPayload, hostSlotsError, listMyHosts, type HostSlotsForm } from "@/utils/hosts";
 import { HostSpotsFields } from "@/components/dashboard/HostSpotsFields";
+import { EarlyBirdFields, earlyBirdToPayload, type EarlyBirdRow } from "@/components/dashboard/EarlyBirdFields";
 
 const TIME_SLOT_OPTIONS = Array.from({ length: 96 }, (_, idx) => {
   const hours = Math.floor(idx / 4);
@@ -315,6 +316,7 @@ export function CreateEventForm({ lastEvent, presetDate, onClose, onCreate, onSu
   // until a release time. Prefilled from the last event or a template like
   // everything else. `approvedHosts` only drives the "recommend one first" hint.
   const [hostSlots, setHostSlots] = useState<HostSlotsForm>(() => hostSlotsFromStored(lastEvent?.hostSlots));
+  const [earlyBird, setEarlyBird] = useState<EarlyBirdRow[]>([]);
   const [approvedHosts, setApprovedHosts] = useState<number | null>(null);
   const [hostsHref, setHostsHref] = useState<string | undefined>(undefined);
 
@@ -679,6 +681,7 @@ export function CreateEventForm({ lastEvent, presetDate, onClose, onCreate, onSu
         acceptsPasses,
         autoTeamDistribution,
         hostSlots: hostSlotsToPayload(hostSlots),
+        ...(earlyBird.length ? { pricing: earlyBirdToPayload(earlyBird) } : {}),
         organiserIsPlaying,
         organiserGuests,
         community: null,
@@ -1318,6 +1321,11 @@ export function CreateEventForm({ lastEvent, presetDate, onClose, onCreate, onSu
                 hostsHref={hostsHref}
               />
               {errors.hosts && <FieldError>{errors.hosts}</FieldError>}
+            </div>
+
+            <SubSectionHeader title="Early-bird pricing" />
+            <div className="mb-10">
+              <EarlyBirdFields value={earlyBird} onChange={setEarlyBird} feeRs={Number(feeInRs) || 0} totalSlots={hardCap} />
             </div>
 
             <SubSectionHeader title="Passes" />
