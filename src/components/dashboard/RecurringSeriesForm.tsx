@@ -107,7 +107,7 @@ export function RecurringSeriesForm({ series, pivotOccurrenceId, onClose, onSave
   // every other game setting here — absent reads as YES.
   const [acceptsPasses, setAcceptsPasses] = useState(d?.acceptsPasses !== false);
   // Automatic team distribution for every game the series makes. Absent = on.
-  const [autoTeamDistribution, setAutoTeamDistribution] = useState(d?.autoTeamDistribution !== false);
+  const [autoTeamDistribution, setAutoTeamDistribution] = useState(d?.autoTeamDistribution === true);
   // Host spots, owned by the series like the rest — each game gets its own copy.
   const [hostSlots, setHostSlots] = useState<HostSlotsForm>(() => hostSlotsFromStored(d?.hostSlots));
   const [automationEnabled, setAutomationEnabled] = useState(d?.automationEnabled ?? false);
@@ -183,7 +183,7 @@ export function RecurringSeriesForm({ series, pivotOccurrenceId, onClose, onSave
     if (t.totalSlots) setTotalSlots(String(t.totalSlots));
     setOrganiserIsPlaying(!!t.organiserIsPlaying);
     setAcceptsPasses(t.acceptsPasses !== false);
-    setAutoTeamDistribution(t.autoTeamDistribution !== false);
+    setAutoTeamDistribution(t.autoTeamDistribution === true);
     setHostSlots(hostSlotsFromStored(t.hostSlots));
     setAutomationEnabled(!!t.automationEnabled);
     setAutoConfirmOnMin(t.autoConfirmOnMin === true);
