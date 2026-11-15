@@ -258,7 +258,7 @@ export default function PlayerListPage() {
           <h3>{list.smart ? "Nobody matches yet" : "No players yet"}</h3>
           {list.smart
             ? <>This list fills itself as players start matching its rule. You can also add people by hand.</>
-            : <>Add players you know, everyone from a past game, or paste the list you keep on WhatsApp.</>}
+            : <>Add players you know, or everyone from a past game.</>}
           <div style={{ marginTop: 14 }}><button type="button" className="pl-btn primary" onClick={() => setPickerOpen(true)}>+ Add players</button></div>
         </div>
       ) : (

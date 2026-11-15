@@ -11,7 +11,8 @@
 // the same predicate a smart list's rule is evaluated with, so a chip's count is
 // the size of the list it would save.
 
-export type AutoKey = "played" | "regular" | "new" | "lapsed" | "morning" | "evening" | "gk" | "top";
+export type AutoKey = "played" | "regular" | "new" | "lapsed" | "morning" | "evening" | "gk" | "top"
+  | "mon" | "tue" | "wed" | "thu" | "fri" | "sat" | "sun";
 export type AddedVia = "manual" | "search" | "book" | "game" | "paste" | "rule" | "sos" | "invite";
 
 export interface BookRow {
@@ -80,6 +81,8 @@ export interface Preset {
   emoji: string;
   kind: "auto" | "venue";
   rule: ListRule;
+  /** Who gets in, in words — one line per condition. Absent from an older backend. */
+  rules?: string[];
   count: number;
   listId: string | null;
 }
@@ -115,23 +118,6 @@ export interface ListDetail {
 }
 
 export interface Contact { name: string; phone: string }
-
-export interface PasteCandidate { id: string; name: string; img: string | null; sub: string }
-
-export interface PastePerson {
-  line: string;
-  name: string | null;
-  status: "matched" | "choose" | "contact" | "none" | "duplicate";
-  via?: "phone" | "name";
-  player?: PasteCandidate;
-  options?: PasteCandidate[];
-  contact?: { name: string; phone: string; pretty: string };
-}
-
-export interface PasteResult {
-  people: PastePerson[];
-  counts: Record<PastePerson["status"], number>;
-}
 
 export interface ForGamePerson { playerId: string | null; name: string; sub: string; games?: number; phone?: string }
 
@@ -194,6 +180,23 @@ export function keyCounts(rows: BookRow[]): Map<string, number> {
   const counts = new Map<string, number>();
   for (const r of rows) {
     for (const k of rowKeys(r)) counts.set(k, (counts.get(k) || 0) + 1);
+    for (const v of r.venues) counts.set(`v:${v}`, (counts.get(`v:${v}`) || 0) + 1);
+  }
+  return counts;
+}
+
+// The numbers the filter chips show for a filter. Tags are AND, so a tag chip
+// counts the rows on screen — tapping it narrows to exactly that many. Venues
+// are OR, so tapping another venue ADDS its players: a venue chip counts the
+// rows that pass everything EXCEPT the venue selection. Counting it over the
+// rows on screen would show "played at both" and grey out a venue that would
+// actually bring people in.
+export function chipCounts(rows: BookRow[], f: BookFilter): Map<string, number> {
+  const counts = new Map<string, number>();
+  for (const r of filterBook(rows, f)) {
+    for (const k of rowKeys(r)) counts.set(k, (counts.get(k) || 0) + 1);
+  }
+  for (const r of filterBook(rows, { ...f, venues: [] })) {
     for (const v of r.venues) counts.set(`v:${v}`, (counts.get(`v:${v}`) || 0) + 1);
   }
   return counts;

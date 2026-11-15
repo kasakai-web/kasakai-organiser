@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { useAuthGuard } from "@/hooks/useAuthGuard";
 import { leaveSheets } from "@/hooks/useBackToClose";
@@ -107,11 +107,14 @@ export default function PlayerListsPage() {
               <div className="pl-label lime">{hasLists ? "Quick start" : "Start with one tap"}</div>
               <div className="pl-chips scroll">
                 {presets.map((p) => (
-                  <button key={p.key} type="button" className={`pl-quick${p.listId ? " done" : ""}`} disabled={starting === p.key} onClick={() => quickStart(p)}>
-                    <span className="e">{p.emoji}</span>
-                    <span className="t">{p.name}</span>
-                    <span className="s">{starting === p.key ? "Creating…" : p.listId ? "✓ Open list" : plural(p.count, "player")}</span>
-                  </button>
+                  <div key={p.key} className="pl-quick-wrap">
+                    <button type="button" className={`pl-quick${p.listId ? " done" : ""}`} disabled={starting === p.key} onClick={() => quickStart(p)}>
+                      <span className="e">{p.emoji}</span>
+                      <span className="t">{p.name}</span>
+                      <span className="s">{starting === p.key ? "Creating…" : p.listId ? "✓ Open list" : plural(p.count, "player")}</span>
+                    </button>
+                    {p.rules && p.rules.length > 0 && <PresetInfo preset={p} />}
+                  </div>
                 ))}
               </div>
               <div className="pl-hint" style={{ marginTop: 6 }}>These fill themselves from your games and stay up to date.</div>
@@ -133,7 +136,7 @@ export default function PlayerListsPage() {
                 <div className="big">👥</div>
                 <h3>No lists yet</h3>
                 {index.totals.players > 0
-                  ? <>Tap a quick start above, or make your own — pick players, add a whole game, or paste the list you keep on WhatsApp.</>
+                  ? <>Tap a quick start above, or make your own — pick players or add a whole game.</>
                   : <>Once people play your games they show up here. You can already build a list by searching KasaKai or pasting numbers.</>}
                 <div style={{ marginTop: 14 }}><button type="button" className="pl-btn primary" onClick={() => setNewOpen(true)}>+ New list</button></div>
               </div>
@@ -231,5 +234,71 @@ export default function PlayerListsPage() {
 
       {toast && <Toast type={toast.type} title={toast.title} subtitle={toast.subtitle} onClose={hideToast} />}
     </div>
+  );
+}
+
+// The ⓘ on a quick start: who the list takes in, in words. Hover or focus shows
+// it with a mouse; a tap opens it on a phone (no hover there) and a tap anywhere
+// else closes it, because the ⓘ loses focus. Click only ever OPENS: a tap fires
+// focus then click, and a toggle would open and shut it in the same tap. The
+// bubble is position: fixed because the row of quick starts scrolls sideways on
+// a phone, and a scroll container clips anything absolutely positioned inside it.
+function PresetInfo({ preset }: { preset: Preset }) {
+  const ref = useRef<HTMLButtonElement>(null);
+  const [at, setAt] = useState<{ top: number; left: number } | null>(null);
+
+  const show = () => {
+    const r = ref.current?.getBoundingClientRect();
+    if (!r) return;
+    const width = 260;
+    const left = Math.max(12, Math.min(r.right - width, window.innerWidth - width - 12));
+    setAt({ top: r.bottom + 6, left });
+  };
+  const hide = () => setAt(null);
+
+  useEffect(() => {
+    if (!at) return;
+    // The bubble is pinned to the viewport, so it would float away from its ⓘ
+    // the moment anything scrolls — close it instead.
+    // iOS Safari never focuses a tapped button, so blur alone would leave it open.
+    const outside = (e: PointerEvent) => { if (!ref.current?.contains(e.target as Node)) hide(); };
+    window.addEventListener("scroll", hide, true);
+    window.addEventListener("resize", hide);
+    document.addEventListener("pointerdown", outside);
+    return () => {
+      window.removeEventListener("scroll", hide, true);
+      window.removeEventListener("resize", hide);
+      document.removeEventListener("pointerdown", outside);
+    };
+  }, [at]);
+
+  const id = `pl-preset-info-${preset.key}`;
+  return (
+    <>
+      <button
+        ref={ref}
+        type="button"
+        className="pl-quick-info"
+        aria-label={`Who goes on ${preset.name}`}
+        aria-describedby={at ? id : undefined}
+        aria-expanded={!!at}
+        onMouseEnter={show}
+        onMouseLeave={hide}
+        onFocus={show}
+        onBlur={hide}
+        onClick={(e) => { e.stopPropagation(); show(); }}
+      >
+        i
+      </button>
+      {at && (
+        <div id={id} role="tooltip" className="pl-quick-tip" style={{ top: at.top, left: at.left }}>
+          <div className="h">Who&apos;s on it</div>
+          {preset.rules!.map((line, i) => (
+            <div key={i}>{i > 0 && <b>and </b>}{line}</div>
+          ))}
+          <div className="f">Updates itself as people play.</div>
+        </div>
+      )}
+    </>
   );
 }

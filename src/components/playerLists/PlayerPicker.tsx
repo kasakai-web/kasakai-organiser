@@ -6,28 +6,25 @@ import { Avatar } from "./Avatar";
 import { FilterChips } from "./FilterChips";
 import { usePlayerBook } from "@/hooks/usePlayerBook";
 import { usePlayerSearch } from "@/hooks/usePlayerSearch";
-import { matchPaste } from "@/utils/playerListsApi";
 import {
-  filterBook, keyCounts, lastPlayedLabel, plural,
-  type AddedVia, type BookRow, type Contact, type PasteCandidate, type PasteResult,
+  chipCounts, filterBook, lastPlayedLabel, plural,
+  type AddedVia, type BookRow, type Contact,
 } from "@/utils/playerLists";
 
-// Pick people for a list, three ways, one selection:
+// Pick people for a list, two ways, one selection:
 //
 //   Players     — everyone who has played with you, filtered by chips (🔥 Regular,
 //                 #GK, 📍 a venue…) and search; "Select all" takes the whole
 //                 filtered view in one tap. Typing also searches the rest of
 //                 KasaKai, and a full number nobody owns can be added as a contact.
 //   From a game — tap a game, get its whole roster.
-//   Paste       — the list they already keep in WhatsApp; names are matched to
-//                 their own players, numbers to accounts, the rest become contacts.
 //
 // Mounted fresh on every open (PlayerPicker returns null when closed), so a new
 // pick never starts with the last one's leftovers.
 
 export interface PickerResult { playerIds: string[]; contacts: Contact[]; via: AddedVia }
 
-type Tab = "players" | "games" | "paste";
+type Tab = "players" | "games";
 type Picked = { kind: "player"; id: string; name: string } | { kind: "contact"; name: string; phone: string };
 
 const PAGE = 80;
@@ -76,18 +73,10 @@ function PickerInner({ title, subtitle, already = new Set(), verb = "Add", initi
   const shown = page.key === filterKey ? page.n : PAGE;
   const showMore = () => setPage({ key: filterKey, n: shown + PAGE });
 
-  // Paste tab
-  const [text, setText] = useState("");
-  const [pasting, setPasting] = useState(false);
-  const [paste, setPaste] = useState<PasteResult | null>(null);
-  const [pasteError, setPasteError] = useState<string | null>(null);
-  const [chosen, setChosen] = useState<Record<number, string>>({});
-  const [showMissing, setShowMissing] = useState(false);
-
   const rows = useMemo(() => book?.rows || [], [book]);
   const byId = useMemo(() => new Map(rows.map((r) => [r.id, r])), [rows]);
   const filtered = useMemo(() => filterBook(rows, { q, keys, venues: venueIds }), [rows, q, keys, venueIds]);
-  const counts = useMemo(() => keyCounts(filtered), [filtered]);
+  const counts = useMemo(() => chipCounts(rows, { q, keys, venues: venueIds }), [rows, q, keys, venueIds]);
 
   const isIn = (k: string) => already.has(k);
   const pickedCount = picked.size;
@@ -145,41 +134,6 @@ function PickerInner({ title, subtitle, already = new Set(), verb = "Add", initi
     if (!contactPhone) return;
     toggleContact({ name: contactName.trim() || "Player", phone: contactPhone }, "manual", true);
     search(""); setContactName("");
-  };
-
-  // ── Paste tab ────────────────────────────────────────────────────────────
-  const runPaste = async () => {
-    setPasting(true); setPasteError(null); setChosen({}); setShowMissing(false);
-    try {
-      const res = await matchPaste(text);
-      setPaste(res);
-      // Sure matches and new numbers are ticked; anything ambiguous waits for a tap.
-      setPicked((m) => {
-        const next = new Map(m);
-        for (const p of res.people) {
-          if (p.status === "matched" && p.player && !isIn(`p:${p.player.id}`)) next.set(`p:${p.player.id}`, { kind: "player", id: p.player.id, name: p.player.name });
-          if (p.status === "contact" && p.contact && !isIn(`c:${p.contact.phone}`)) next.set(`c:${p.contact.phone}`, { kind: "contact", name: p.contact.name, phone: p.contact.phone });
-        }
-        return next;
-      });
-      note("paste");
-    } catch (e) {
-      setPasteError(e instanceof Error ? e.message : "Couldn't read that list");
-    } finally {
-      setPasting(false);
-    }
-  };
-
-  const choose = (idx: number, cand: PasteCandidate) => {
-    const prev = chosen[idx];
-    setChosen((c) => ({ ...c, [idx]: cand.id }));
-    setPicked((m) => {
-      const next = new Map(m);
-      if (prev) next.delete(`p:${prev}`);
-      if (!isIn(`p:${cand.id}`)) next.set(`p:${cand.id}`, { kind: "player", id: cand.id, name: cand.name });
-      return next;
-    });
-    note("paste");
   };
 
   // ── Confirm ──────────────────────────────────────────────────────────────
@@ -242,7 +196,6 @@ function PickerInner({ title, subtitle, already = new Set(), verb = "Add", initi
         <div className="pl-tabs" role="tablist">
           <button type="button" role="tab" aria-selected={tab === "players"} className={`pl-tab${tab === "players" ? " on" : ""}`} onClick={() => setTab("players")}>Players</button>
           <button type="button" role="tab" aria-selected={tab === "games"} className={`pl-tab${tab === "games" ? " on" : ""}`} onClick={() => setTab("games")}>From a game</button>
-          <button type="button" role="tab" aria-selected={tab === "paste"} className={`pl-tab${tab === "paste" ? " on" : ""}`} onClick={() => setTab("paste")}>Paste list</button>
         </div>
 
         {error && (
@@ -287,7 +240,7 @@ function PickerInner({ title, subtitle, already = new Set(), verb = "Add", initi
                 {filtered.length === 0 ? (
                   <div className="pl-empty">
                     {rows.length === 0
-                      ? <>Nobody has played your games yet.<br />Search KasaKai above, or paste a list from WhatsApp.</>
+                      ? <>Nobody has played your games yet.<br />Search KasaKai above by name or number.</>
                       : <>No one matches. {keys.length + venueIds.length > 0 && <button type="button" className="pl-link" onClick={() => { setKeys([]); setVenueIds([]); }}>Clear filters</button>}</>}
                   </div>
                 ) : (
@@ -381,108 +334,6 @@ function PickerInner({ title, subtitle, already = new Set(), verb = "Add", initi
           </>
         )}
 
-        {tab === "paste" && (
-          <>
-            <div className="pl-hint">
-              Paste the list you already share on WhatsApp — one person per line, names or numbers. We match names to people who&apos;ve played with you and numbers to KasaKai accounts.
-            </div>
-            <textarea
-              className="pl-input"
-              value={text}
-              onChange={(e) => setText(e.target.value)}
-              placeholder={"Sunday 7am ⚽\n1. Rahul ✅\n2. Amit +1\n3. Priya 98765 43210"}
-              aria-label="Pasted list"
-            />
-            <button type="button" className="pl-btn lime block" disabled={!text.trim() || pasting} onClick={runPaste}>
-              {pasting ? "Matching…" : paste ? "Match again" : "Find these players"}
-            </button>
-            {pasteError && <div className="pl-note err">{pasteError}</div>}
-
-            {paste && (
-              <>
-                <div className="pl-note ok">
-                  {[
-                    paste.counts.matched && `${paste.counts.matched} found`,
-                    paste.counts.choose && `${paste.counts.choose} to confirm`,
-                    paste.counts.contact && `${paste.counts.contact} not on KasaKai`,
-                    paste.counts.none && `${paste.counts.none} not found`,
-                  ].filter(Boolean).join(" · ") || "Nobody recognised"}
-                </div>
-                <div className="pl-rows">
-                  {paste.people.map((p, idx) => {
-                    if (p.status === "none") return null;
-                    if (p.status === "duplicate") return (
-                      <div key={idx} className="pl-paste-row" style={{ opacity: 0.55 }}>
-                        <Avatar name={p.player?.name || "?"} img={p.player?.img} />
-                        <div className="pl-row-main"><div className="pl-row-name"><span>{p.player?.name}</span></div><div className="pl-row-sub">Listed twice — counted once</div></div>
-                      </div>
-                    );
-                    if (p.status === "matched" && p.player) {
-                      const k = `p:${p.player.id}`;
-                      const on = picked.has(k);
-                      const inList = isIn(k);
-                      return (
-                        <button key={idx} type="button" className={`pl-row${on ? " picked" : ""}${inList ? " disabled" : ""}`} disabled={inList} onClick={() => togglePlayer(p.player!.id, p.player!.name, "paste")}>
-                          <span className={`pl-check${on || inList ? " on" : ""}`}>{on || inList ? "✓" : ""}</span>
-                          <Avatar name={p.player.name} img={p.player.img} />
-                          <span className="pl-row-main">
-                            <span className="pl-row-name"><span>{p.player.name}</span></span>
-                            <span className="pl-row-sub">{inList ? "Already in this list" : [p.via === "phone" ? "Matched by number" : "Matched by name", p.player.sub].filter(Boolean).join(" · ")}</span>
-                            <span className="pl-paste-line">{p.line}</span>
-                          </span>
-                        </button>
-                      );
-                    }
-                    if (p.status === "contact" && p.contact) {
-                      const c = p.contact;
-                      const on = picked.has(`c:${c.phone}`);
-                      return (
-                        <button key={idx} type="button" className={`pl-row${on ? " picked" : ""}`} onClick={() => toggleContact({ name: c.name, phone: c.phone }, "paste")}>
-                          <span className={`pl-check${on ? " on" : ""}`}>{on ? "✓" : ""}</span>
-                          <Avatar name={c.name} contact />
-                          <span className="pl-row-main">
-                            <span className="pl-row-name"><span>{c.name}</span></span>
-                            <span className="pl-row-sub">Not on KasaKai · {c.pretty} · invites only</span>
-                          </span>
-                        </button>
-                      );
-                    }
-                    if (p.status === "choose" && p.options) return (
-                      <div key={idx} className="pl-paste-row">
-                        <span className="pl-check" style={{ borderColor: "#f59e0b", color: "#f59e0b" }}>?</span>
-                        <div className="pl-row-main">
-                          <div className="pl-row-name"><span>Which {p.name}?</span></div>
-                          <div className="pl-paste-line">{p.line}</div>
-                          <div className="pl-chips" style={{ marginTop: 7 }}>
-                            {p.options.map((o) => (
-                              <button key={o.id} type="button" className={`pl-chip small${chosen[idx] === o.id ? " on" : ""}`} onClick={() => choose(idx, o)} disabled={isIn(`p:${o.id}`)} title={o.sub}>
-                                {o.name}{o.sub && <span className="n">{o.sub.split(" · ").slice(-1)[0]}</span>}
-                              </button>
-                            ))}
-                          </div>
-                        </div>
-                      </div>
-                    );
-                    return null;
-                  })}
-                </div>
-                {paste.counts.none > 0 && (
-                  <div>
-                    <button type="button" className="pl-link" onClick={() => setShowMissing((s) => !s)}>
-                      {showMissing ? "Hide" : "Show"} {paste.counts.none} line{paste.counts.none === 1 ? "" : "s"} we couldn’t match
-                    </button>
-                    {showMissing && (
-                      <div className="pl-note" style={{ marginTop: 8 }}>
-                        {paste.people.filter((p) => p.status === "none").map((p, i) => <div key={i} className="pl-paste-line" style={{ color: "#aaa" }}>{p.line}</div>)}
-                        <div className="pl-hint" style={{ marginTop: 6 }}>Headers and names we don&apos;t know are skipped. Add someone with their number, or find them on the Players tab.</div>
-                      </div>
-                    )}
-                  </div>
-                )}
-              </>
-            )}
-          </>
-        )}
       </div>
     </Sheet>
   );

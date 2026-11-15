@@ -6,7 +6,7 @@
 
 import { buildApiUrl, getSession } from "@/utils/api";
 import type {
-  AddedVia, Contact, ForGame, ListDetail, ListIndex, ListRule, PasteResult, PlayerBook, TagInfo,
+  AddedVia, Contact, ForGame, ListDetail, ListIndex, ListRule, PlayerBook, TagInfo,
 } from "@/utils/playerLists";
 
 export const LISTS_CHANGED_EVENT = "kk-player-lists-changed";
@@ -70,7 +70,6 @@ export const removeMembers = (id: string, body: { playerIds?: string[]; phones?:
 export const listForGame = (id: string, gameId: string, purpose: "sos" | "invite") =>
   call<ForGame>(`/player-lists/${id}/for-game/${gameId}?purpose=${purpose}`);
 
-export const matchPaste = (text: string) => call<PasteResult>("/player-lists/match-paste", { method: "POST", body: { text } });
 
 export const setPlayerTags = (playerId: string, tags: string[]) =>
   call<{ playerId: string; tags: string[]; palette: TagInfo[] }>(`/player-tags/players/${playerId}`, { method: "PUT", body: { tags } });

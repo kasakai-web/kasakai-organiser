@@ -7,7 +7,7 @@ import { FilterChips } from "./FilterChips";
 import { usePlayerBook } from "@/hooks/usePlayerBook";
 import { createList } from "@/utils/playerListsApi";
 import {
-  EMOJI_CHOICES, filterBook, keyCounts, plural, suggestEmoji,
+  EMOJI_CHOICES, chipCounts, filterBook, plural, suggestEmoji,
   type ListDetail, type ListRule,
 } from "@/utils/playerLists";
 
@@ -46,7 +46,7 @@ function RuleInner({ initial, title = "Auto-fill this list", saveLabel = "Save",
   const empty = keys.length === 0 && venueIds.length === 0;
   const rows = useMemo(() => book?.rows || [], [book]);
   const matches = useMemo(() => (empty ? [] : filterBook(rows, { keys, venues: venueIds })), [rows, keys, venueIds, empty]);
-  const counts = useMemo(() => keyCounts(empty ? rows : matches), [rows, matches, empty]);
+  const counts = useMemo(() => chipCounts(rows, { keys, venues: venueIds }), [rows, keys, venueIds]);
   const toggleKey = (k: string) => setKeys((ks) => (ks.includes(k) ? ks.filter((x) => x !== k) : [...ks, k]));
   const toggleVenue = (id: string) => setVenueIds((vs) => (vs.includes(id) ? vs.filter((x) => x !== id) : [...vs, id]));
 
@@ -192,7 +192,7 @@ function NewListInner({ onClose, onCreated }: { onClose: () => void; onCreated: 
             <div className="pl-stack" style={{ marginTop: 0 }}>
               <button type="button" className={`pl-choice${mode === "pick" ? " on" : ""}`} onClick={() => setMode("pick")}>
                 <span className={`pl-check${mode === "pick" ? " on" : ""}`}>{mode === "pick" ? "✓" : ""}</span>
-                <span><b>I&apos;ll pick the players</b><small>From your players, a past game, or a list pasted from WhatsApp.</small></span>
+                <span><b>I&apos;ll pick the players</b><small>From your players or a past game.</small></span>
               </button>
               <button type="button" className={`pl-choice${mode === "auto" ? " on" : ""}`} onClick={() => setMode("auto")}>
                 <span className={`pl-check${mode === "auto" ? " on" : ""}`}>{mode === "auto" ? "✓" : ""}</span>

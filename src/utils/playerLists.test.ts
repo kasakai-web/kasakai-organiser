@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import {
-  addFromList, describeRule, filterBook, keyCounts, lastPlayedLabel, listsUsed, matchesFilter,
+  addFromList, chipCounts, describeRule, filterBook, keyCounts, lastPlayedLabel, listsUsed, matchesFilter,
   removeList, searchMatches, suggestEmoji, usageLabel, type BookRow,
 } from "./playerLists.ts";
 
@@ -39,6 +39,19 @@ test("chip counts are counted over the rows on screen", () => {
   assert.equal(c.get("a:regular"), 1);
   assert.equal(c.get("t:gk"), 1);
   assert.equal(c.get("v:v2"), 1);
+});
+
+test("chip counts: a venue chip counts what tapping it would ADD (venues are OR), tags narrow", () => {
+  const rows = [
+    row({ id: "a", auto: ["played", "regular"], tags: [], venues: ["v1"] }),
+    row({ id: "b", auto: ["played", "regular"], tags: [], venues: ["v2"] }),
+    row({ id: "c", auto: ["played"], tags: [], venues: ["v2"] }),
+  ];
+  const c = chipCounts(rows, { keys: ["a:regular"], venues: ["v1"] });
+  assert.equal(c.get("v:v2"), 1, "nobody on screen played at v2, but tapping it brings in b");
+  assert.equal(c.get("v:v1"), 1);
+  assert.equal(c.get("a:regular"), 1, "tags still count the rows on screen");
+  assert.equal(chipCounts(rows, {}).get("v:v2"), 2);
 });
 
 type R = { id: string; lists?: string[]; manual?: boolean };
