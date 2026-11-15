@@ -1,7 +1,7 @@
 "use client";
 
-import React, { useRef, useState } from "react";
-import { Video } from "lucide-react";
+import React, { useState } from "react";
+import { Activity, LogOut, Search, Users, Video, ListOrdered, Shirt } from "lucide-react";
 
 import { buildApiUrl, getAuthHeaders } from "@/utils/api";
 import { TeamDistributionPanel } from "@/components/dashboard/TeamDistributionPanel";
@@ -12,6 +12,13 @@ import { ImageLightbox } from "@/components/ui/ImageLightbox";
 import { buildPlayerListMessage } from "@/utils/playerListMessage";
 import { isValidYouTubeVideoUrl } from "@/utils/youtubeUrl";
 import type { HostInfo } from "@/utils/hosts";
+import type { ShareableGame } from "@/utils/gameLink";
+import { CopyGameLinkButton } from "@/components/dashboard/CopyGameLinkButton";
+import {
+  activityOf, departuresOf, formatLeadTime, groupByIstDay, summariseDepartures, timeAgo,
+  LATE_DEPARTURE_MINS, WAIVER_LABEL,
+  type ActivityKind, type Departure,
+} from "@/utils/rosterHistory";
 
 const IMG_BASE = (process.env.NEXT_PUBLIC_API_BASE_URL || "http://localhost:5000/api/v1").replace(/\/api\/v1\/?$/, "");
 
@@ -30,7 +37,12 @@ const videoFeedbackText = (status?: string | null) => {
 
 interface Registration {
   _id?: string;
-  player?: { _id?: string; name?: string; phone?: string; email?: string; profileImage?: string };
+  // The reliability counters only arrive on my-games (the write endpoints
+  // populate a narrower set), so every reader treats them as optional.
+  player?: {
+    _id?: string; name?: string; phone?: string; email?: string; profileImage?: string;
+    totalGamesPlayed?: number; noShowCount?: number; backoutCount?: number;
+  };
   plusOneName?: string | null;
   preferredPosition?: string;
   teamPreference?: string;
@@ -69,6 +81,20 @@ interface Registration {
   // removedAt = the organiser took the slot away.
   backedOutAt?: string | null;
   removedAt?: string | null;
+  removedBy?: string | { _id?: string; name?: string } | null;
+  // How the departure was priced — frozen on the row when it happened.
+  backoutType?: "pre_cutoff" | "post_cutoff" | null;
+  backoutFeeChargedPaise?: number;
+  backoutFeeRefundedAt?: string | null;
+  backoutWaivedReason?: string | null;
+  // A discount campaign's cut of this seat, frozen at booking.
+  discountPaise?: number;
+  discountCode?: string | null;
+  discountTitle?: string | null;
+  // Filled in after the game / after a distribution.
+  attended?: "present" | "absent" | "no_show" | "not_marked";
+  attendanceSource?: "assumed" | "marked" | null;
+  assignedColour?: "red" | "blue" | null;
 }
 
 interface WaitlistEntry {
@@ -76,6 +102,7 @@ interface WaitlistEntry {
   player?: { _id?: string; name?: string; phone?: string; email?: string; profileImage?: string };
   joinedAt?: string;
   notifiedAt?: string;
+  respondedAt?: string;
   status?: string;
   preferredPosition?: string;
   teamPreference?: string;
@@ -120,7 +147,18 @@ interface PlayerDetailsModalProps {
   autoTeamsState?: AutoTeamsState | null;
   /** The game has a distribution to look at (Game.teamDistributionRun). */
   hasTeams?: boolean;
+  /** The game as the board holds it — what the Copy link button reads. */
+  shareGame?: ShareableGame | null;
+  /** Opens the Invite panel (where a private game's link is turned on, and
+   *  join requests are approved). Absent for view-only co-organisers. */
+  onOpenInvite?: () => void;
+  /** Join requests waiting for a decision. */
+  pendingRequests?: number;
+  /** Organiser id → name, so a removal can say which co-organiser made it. */
+  organiserNames?: Map<string, string>;
 }
+
+type PdmTab = "playing" | "waitlist" | "left" | "activity" | "teams";
 
 /**
  * The automation's state for one game, as far as an organiser needs to see it.
@@ -196,6 +234,27 @@ function fmtDate(iso?: string) {
   });
 }
 
+// "7:45 PM" in IST — the timeline groups by day, so a row only needs the time.
+function fmtClock(iso: string) {
+  return upperMeridiem(new Date(iso).toLocaleTimeString("en-IN", {
+    hour: "numeric", minute: "2-digit", hour12: true, timeZone: "Asia/Kolkata",
+  }));
+}
+
+const ACTIVITY_CFG: Record<ActivityKind, { verb: string; icon: string; tone: "in" | "out" | "wait" | "muted" }> = {
+  joined:            { verb: "joined",                       icon: "＋", tone: "in" },
+  guest_added:       { verb: "was added",                    icon: "＋", tone: "in" },
+  backed_out:        { verb: "backed out",                   icon: "−", tone: "out" },
+  removed:           { verb: "was removed",                  icon: "✕", tone: "out" },
+  skipped:           { verb: "skipped — not attending",      icon: "−", tone: "out" },
+  format_change:     { verb: "left after the format change", icon: "−", tone: "muted" },
+  waitlist_joined:   { verb: "joined the waitlist",          icon: "…", tone: "wait" },
+  waitlist_offered:  { verb: "was offered a spot",           icon: "🔔", tone: "wait" },
+  waitlist_declined: { verb: "turned down the spot",         icon: "−", tone: "muted" },
+  waitlist_expired:  { verb: "didn't take the spot in time", icon: "⏱", tone: "muted" },
+  guest_waitlisted:  { verb: "was waitlisted",               icon: "…", tone: "wait" },
+};
+
 function initials(name?: string) {
   if (!name) return "?";
   const parts = name.trim().split(" ");
@@ -230,7 +289,14 @@ export function PlayerDetailsModal({
   hostInfo = null,
   autoTeamsState = null,
   hasTeams = false,
+  shareGame = null,
+  onOpenInvite,
+  pendingRequests = 0,
+  organiserNames,
 }: PlayerDetailsModalProps) {
+  const [tab, setTab] = useState<PdmTab>("playing");
+  const [query, setQuery] = useState("");
+  const [rosterFilter, setRosterFilter] = useState<"all" | "players" | "guests" | "hosts" | "out">("all");
   const isLocked = gameStatus === 'completed' || gameStatus === 'cancelled';
 
   // ── Automatic teams: paused behind unpublished changes, or failing ─────────
@@ -254,6 +320,9 @@ export function PlayerDetailsModal({
   const [sendingTeamsNow, setSendingTeamsNow] = useState(false);
 
   const [teams, setTeams] = useState<any>(null);
+  // Teams live in their own tab: loading or making a split takes you there,
+  // instead of appending a panel under a long roster you then scroll past.
+  const showTeams = (t: any) => { setTeams(t); setTab("teams"); };
   const [showAddPlayer, setShowAddPlayer] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
   const [searchResults, setSearchResults] = useState<any[]>([]);
@@ -377,7 +446,7 @@ export function PlayerDetailsModal({
         showStatus("error", distData.message || "Couldn't make the teams");
         return;
       }
-      setTeams(distData.data);
+      showTeams(distData.data);
 
       const pub = await fetch(buildApiUrl(`/api/v1/games/organisers/${gameId}/teams/publish`), {
         method: "POST",
@@ -511,7 +580,9 @@ export function PlayerDetailsModal({
   const [copiedTeams, setCopiedTeams] = useState(false);
   const [confirmVisible, setConfirmVisible] = useState(false);
   const [confirmMessage, setConfirmMessage] = useState<string | null>(null);
-  const confirmActionRef = useRef<null | (() => Promise<void>)>(null);
+  // The removal waiting on "Remove player" — held in state (a function, so set
+  // through an updater) rather than a ref, since it is wired up during render.
+  const [confirmAction, setConfirmAction] = useState<null | (() => Promise<void>)>(null);
  const handleDistribute = async (reshuffleNonce = 0) => {
   try {
     const res = await fetch(
@@ -530,7 +601,7 @@ export function PlayerDetailsModal({
       return;
     }
 
-    setTeams(data.data);
+    showTeams(data.data);
     showStatus("success", reshuffleNonce > 0 ? "Teams reshuffled ⚽" : "Teams distributed successfully ⚽");
     onRefresh?.();
     // Only the first run downloads the sheet — reshuffling repeatedly would
@@ -562,7 +633,7 @@ export function PlayerDetailsModal({
         showStatus("error", data.message || "Couldn't load the teams");
         return;
       }
-      setTeams(data.data);
+      showTeams(data.data);
     } catch {
       showStatus("error", "Couldn't load the teams");
     } finally {
@@ -590,7 +661,7 @@ export function PlayerDetailsModal({
         showStatus("error", data.message || "Couldn't put the teams back");
         return;
       }
-      setTeams(data.data);
+      showTeams(data.data);
       const waiting = data.data?.unplaced ?? 0;
       showStatus(
         "success",
@@ -818,6 +889,76 @@ function downloadTeamExcel(result: {
     0
   );
 
+  // ── Tabs: what each one counts and shows ──────────────────────────────────
+  const attendingCount = activeRegs.length + organiserCount;
+  const hostSeatCount = roster.filter((r) => r.seatType === "host" && !r.plusOneName).length;
+  const optedOutCount = mainRegs.filter((r) => r.optedOut).length;
+  // Attendance is only worth showing once the game has been played.
+  const showAttendance = gameStatus === "completed";
+
+  // Live entries, and the ones that have run their course (declined / expired /
+  // already seated) — the latter kept out of the count and folded away.
+  const openWaitlist = waitlist.filter((w) => !["accepted", "declined", "expired"].includes(w.status || "waiting"));
+  const closedWaitlist = waitlist.filter((w) => ["declined", "expired"].includes(w.status || ""));
+  const openGuestWaitlist = guestWaitlist.filter((g) => ["waiting", "notified"].includes(g.status || "waiting"));
+  const waitlistCount = openWaitlist.length + openGuestWaitlist.length;
+
+  const historyCtx = { scheduledAt, viewerId: loggedInOrgId, organiserNames };
+  const departures = departuresOf(players, historyCtx);
+  const depSummary = summariseDepartures(departures);
+  const activityGroups = groupByIstDay(activityOf({ registrations: players, waitlist, guestWaitlist }, historyCtx));
+
+  // The roster in slot order, flat — what search and the filter chips walk.
+  // Same order as the grouped list below, so a player keeps their #number.
+  const orderedRows: { reg: Registration; slot: number; type: "player" | "guest"; key: string; removable: boolean }[] = [];
+  {
+    let slot = organiserCount;
+    organiserGuests.forEach((reg, i) => orderedRows.push({ reg, slot: ++slot, type: "guest", key: reg._id || `og-${i}`, removable: true }));
+    mainRegs.forEach((reg, i) => {
+      orderedRows.push({ reg, slot: ++slot, type: "player", key: reg._id || `mp-${i}`, removable: false });
+      (guestsByPlayer.get(refId(reg.player) ?? "") ?? []).forEach((g, j) =>
+        orderedRows.push({ reg: g, slot: ++slot, type: "guest", key: g._id || `pg-${i}-${j}`, removable: false }));
+    });
+  }
+  const q = query.trim().toLowerCase();
+  const qDigits = q.replace(/\D/g, "");
+  const filtering = q !== "" || rosterFilter !== "all";
+  const filteredRows = orderedRows.filter(({ reg: r }) => {
+    if (rosterFilter === "players" && r.plusOneName) return false;
+    if (rosterFilter === "guests" && !r.plusOneName) return false;
+    if (rosterFilter === "hosts" && (r.seatType !== "host" || r.plusOneName)) return false;
+    if (rosterFilter === "out" && !(r.optedOut && !r.plusOneName)) return false;
+    if (!q) return true;
+    const hay = [r.plusOneName, r.player?.name, r.player?.email, r.discountCode].filter(Boolean).join(" ").toLowerCase();
+    if (hay.includes(q)) return true;
+    // A phone matches on its digits, typed with or without spaces/+91.
+    return qDigits.length >= 3 && (r.player?.phone || "").replace(/\D/g, "").includes(qDigits);
+  });
+
+  const requestRemoveGuest = (reg: Registration) => {
+    const regId = reg._id;
+    if (!regId || !onRemoveRegistration) return;
+    setConfirmAction(() => async () => {
+      setProcessingId(regId);
+      try {
+        await onRemoveRegistration(regId);
+      } catch {
+        showStatus("error", "Failed to remove player. Please try again.");
+      } finally {
+        setProcessingId(null);
+      }
+    });
+    setConfirmMessage(`Remove ${reg.plusOneName} from your guest list?`);
+    setConfirmVisible(true);
+  };
+
+  const kickoffLabel = scheduledAt
+    ? new Date(scheduledAt).toLocaleString("en-IN", {
+        weekday: "short", day: "numeric", month: "short", hour: "numeric", minute: "2-digit",
+        hour12: true, timeZone: "Asia/Kolkata",
+      })
+    : null;
+
   return (
     <>
     <div className="modal-overlay" onClick={onClose}>
@@ -828,10 +969,13 @@ function downloadTeamExcel(result: {
         {/* Header */}
         <div className="modal-header">
           <div className="modal-title-section">
-            <h2>Registered Players</h2>
-            <p className="modal-subtitle">{gameName}</p>
+            <h2>Players</h2>
+            <p className="modal-subtitle">
+              {gameName}{kickoffLabel && <span className="pdm-sub-when"> · {upperMeridiem(kickoffLabel)}</span>}
+            </p>
           </div>
           <div className="pdm-header-actions">
+            {shareGame && <CopyGameLinkButton game={shareGame} variant="header" onFixLink={onOpenInvite} />}
             {onRefresh && (
               <button
                 onClick={onRefresh}
@@ -1067,11 +1211,11 @@ function downloadTeamExcel(result: {
               </div>
             </>
           )}
-          {waitlist.length > 0 && (
+          {openWaitlist.length > 0 && (
             <>
               <div className="pdm-stat-div" />
               <div className="pdm-stat">
-                <span className="pdm-stat-val" style={{ color: "#f59e0b" }}>{waitlist.length}</span>
+                <span className="pdm-stat-val" style={{ color: "#f59e0b" }}>{openWaitlist.length}</span>
                 <span className="pdm-stat-lbl">Waitlist</span>
               </div>
             </>
@@ -1220,277 +1364,477 @@ function downloadTeamExcel(result: {
           </div>
         )}
 
-        {/* ── Registered Players ── */}
-        <div className="pdm-cards-scroll">
-          {/* The empty state is a message, not a replacement for the list: an empty
-              game is exactly when an organiser wants to add their first guest, so
-              the cards list (which owns the + Add Guest button) always renders. */}
-          {roster.length === 0 && !organiserIsPlaying && (
-            <div className="empty-state">
-              <div className="empty-icon">👥</div>
-              <p>No players registered yet</p>
-            </div>
-          )}
-          <div className="pdm-cards-list">
+        {/* ── Tabs ── */}
+        <div className="pdm-tabs" role="tablist" aria-label="Player sections">
+          {([
+            { id: "playing",  label: "Playing",  icon: <Users size={14} />,       count: attendingCount },
+            { id: "waitlist", label: "Waitlist", icon: <ListOrdered size={14} />, count: waitlistCount, tone: waitlistCount > 0 ? "amber" : undefined },
+            { id: "left",     label: "Left",     icon: <LogOut size={14} />,      count: departures.length, tone: depSummary.late > 0 ? "coral" : undefined },
+            { id: "activity", label: "Activity", icon: <Activity size={14} />,    count: null },
+            { id: "teams",    label: "Teams",    icon: <Shirt size={14} />,       count: null, dot: Boolean(teams) },
+          ] as { id: PdmTab; label: string; icon: React.ReactNode; count: number | null; tone?: string; dot?: boolean }[]).map((t) => (
+            <button
+              key={t.id}
+              type="button"
+              role="tab"
+              id={`pdm-tab-${t.id}`}
+              aria-selected={tab === t.id}
+              aria-controls={`pdm-panel-${t.id}`}
+              className={`pdm-tab${tab === t.id ? " is-active" : ""}`}
+              onClick={() => setTab(t.id)}
+            >
+              {t.icon}
+              <span>{t.label}</span>
+              {t.count != null && t.count > 0 && (
+                <span className={`pdm-tab-count${t.tone ? ` tone-${t.tone}` : ""}`}>{t.count}</span>
+              )}
+              {t.dot && <span className="pdm-tab-dot" aria-hidden="true" />}
+            </button>
+          ))}
+        </div>
 
-            {/* Organiser group: card (if playing) + organiser's guests */}
-            {(organiserIsPlaying || organiserGuests.length > 0 || (!isLocked && spotsLeft > 0)) && (
-              <div className="pdm-group">
-                {organiserIsPlaying && (
-                  <div className="pdm-card pdm-card-organiser">
-                    <div className="pdm-slot-num">#1</div>
-                    <div className="pdm-avatar pdm-avatar-o">YOU</div>
-                    <div className="pdm-card-body">
-                      <div className="pdm-card-top">
-                        <div className="pdm-card-name">You (Organiser)</div>
-                        <span className="pdm-type-chip pdm-chip-organiser">Organiser</span>
-                      </div>
-                      <div className="pdm-card-tags">
-                        <span className="pdm-pos-tag" style={{ background: "rgba(200,255,62,0.12)", color: "#c8ff3e", border: "1px solid rgba(200,255,62,0.3)" }}>
-                          ⚽ Playing
-                        </span>
-                      </div>
-                    </div>
-                    {onToggleOrganiserPlaying && !isLocked && (
+        <div className="pdm-cards-scroll" role="tabpanel" id={`pdm-panel-${tab}`} aria-labelledby={`pdm-tab-${tab}`}>
+          {/* ═════ PLAYING ═════ */}
+          {tab === "playing" && (
+            <>
+              {pendingRequests > 0 && onOpenInvite && !isLocked && (
+                <div className="pdm-notice pdm-notice-action">
+                  <span>
+                    🔔 <b>{pendingRequests} join request{pendingRequests === 1 ? "" : "s"}</b> waiting for your approval
+                  </span>
+                  <button type="button" onClick={onOpenInvite}>Review</button>
+                </div>
+              )}
+
+              {roster.length > 0 && (
+                <div className="pdm-toolbar">
+                  <label className="pdm-search">
+                    <Search size={14} aria-hidden="true" />
+                    <input
+                      type="search"
+                      placeholder="Search name or phone"
+                      value={query}
+                      onChange={(e) => setQuery(e.target.value)}
+                      aria-label="Search players"
+                    />
+                  </label>
+                  <div className="pdm-chips" role="group" aria-label="Filter">
+                    {([
+                      ["all", "All", roster.length + organiserCount],
+                      ["players", "Players", mainRegs.length],
+                      ["guests", "Guests", guestRegs.length],
+                      ...(hostSeatCount > 0 ? [["hosts", "Hosts", hostSeatCount]] : []),
+                      ...(optedOutCount > 0 ? [["out", "Not attending", optedOutCount]] : []),
+                    ] as [typeof rosterFilter, string, number][]).map(([id, label, n]) => (
                       <button
-                        onClick={onToggleOrganiserPlaying}
-                        title="Withdraw from game"
-                        style={{
-                          flexShrink: 0,
-                          alignSelf: "center",
-                          width: 28,
-                          height: 28,
-                          borderRadius: 6,
-                          background: "rgba(220,38,38,0.1)",
-                          border: "1px solid rgba(220,38,38,0.3)",
-                          color: "#f87171",
-                          fontSize: 14,
-                          lineHeight: 1,
-                          cursor: "pointer",
-                          display: "flex",
-                          alignItems: "center",
-                          justifyContent: "center",
-                        }}
+                        key={id}
+                        type="button"
+                        className={`pdm-chip${rosterFilter === id ? " is-active" : ""}`}
+                        aria-pressed={rosterFilter === id}
+                        onClick={() => setRosterFilter(id)}
                       >
-                        ✕
+                        {label} <span>{n}</span>
                       </button>
-                    )}
+                    ))}
                   </div>
-                )}
-                {organiserGuests.length > 0 && (
-                  <div className="pdm-guest-group">
-                    {organiserGuests.map((reg, i) => {
-                      const regId = reg._id || "";
-                      const slotNum = organiserCount + i + 1;
-                      return (
-                        <PlayerCard
-                          key={regId || `og-${i}`}
-                          reg={reg}
-                          slotNum={slotNum}
-                          type="guest"
-                          gameFeeInPaise={feeInPaise}
-                          playerNameById={playerNameById}
-                          onImageOpen={(src, name) => setLightbox({ src, name })}
-                          isProcessing={processingId === regId}
-                          onRemove={
-                            onRemoveRegistration && regId && !isLocked
-                              ? async () => {
-                                  const doRemove = async () => {
-                                    setProcessingId(regId);
-                                    try {
-                                      await onRemoveRegistration(regId);
-                                    } catch {
-                                      showStatus("error", "Failed to remove player. Please try again.");
-                                    } finally {
-                                      setProcessingId(null);
-                                    }
-                                  };
-                                  setConfirmMessage(`Remove ${reg.plusOneName} from your guest list?`);
-                                  confirmActionRef.current = doRemove;
-                                  setConfirmVisible(true);
-                                }
-                              : undefined
-                          }
-                        />
-                      );
-                    })}
-                  </div>
-                )}
-                {!isLocked && spotsLeft > 0 && (
-                  <button
-                    onClick={() => { setPendingGuestName(""); setPendingGuestPosition("Any"); setPendingGuestTeam("No Preference"); setGuestModalOpen(true); }}
-                    style={{
-                      width: "100%", marginTop: 6, padding: "8px 0",
-                      background: "rgba(200,255,62,0.06)", border: "1px dashed rgba(200,255,62,0.3)",
-                      borderRadius: 8, color: "#c8ff3e", fontSize: 13, fontWeight: 600, cursor: "pointer",
-                    }}
-                  >
-                    + Add Guest
-                  </button>
-                )}
-              </div>
-            )}
+                </div>
+              )}
 
-            {/* Main players + their guests — grouped */}
-            {(() => {
-              let slot = organiserCount + organiserGuests.length;
-              return mainRegs.map((reg) => {
-                slot++;
-                const regId   = reg._id || "";
-                const playerId = refId(reg.player) ?? "";
-                const myGuests = guestsByPlayer.get(playerId) ?? [];
-
-                return (
-                  <div className="pdm-group" key={regId || `mp-${slot}`}>
+              {filtering ? (
+                <div className="pdm-cards-list">
+                  {filteredRows.length === 0 ? (
+                    <div className="pdm-empty-mini">
+                      Nobody matches{query.trim() ? <> &ldquo;{query.trim()}&rdquo;</> : null}.{" "}
+                      <button type="button" onClick={() => { setQuery(""); setRosterFilter("all"); }}>Clear</button>
+                    </div>
+                  ) : filteredRows.map((row) => (
                     <PlayerCard
-                      reg={reg}
-                      slotNum={slot}
-                      type="player"
+                      key={row.key}
+                      reg={row.reg}
+                      slotNum={row.slot}
+                      type={row.type}
                       gameFeeInPaise={feeInPaise}
+                      showAttendance={showAttendance}
                       playerNameById={playerNameById}
                       onImageOpen={(src, name) => setLightbox({ src, name })}
-                      isProcessing={processingId === regId}
-                      onRemove={undefined}
+                      isProcessing={processingId === (row.reg._id || "")}
+                      onRemove={row.removable && onRemoveRegistration && row.reg._id && !isLocked ? () => requestRemoveGuest(row.reg) : undefined}
                     />
-                    {myGuests.length > 0 && (
+                  ))}
+                </div>
+              ) : (
+                <>
+              {/* The empty state is a message, not a replacement for the list: an empty
+                  game is exactly when an organiser wants to add their first guest, so
+                  the cards list (which owns the + Add Guest button) always renders. */}
+              {roster.length === 0 && !organiserIsPlaying && (
+                <div className="empty-state">
+                  <div className="empty-icon">👥</div>
+                  <p>No players registered yet</p>
+                </div>
+              )}
+              <div className="pdm-cards-list">
+
+                {/* Organiser group: card (if playing) + organiser's guests */}
+                {(organiserIsPlaying || organiserGuests.length > 0 || (!isLocked && spotsLeft > 0)) && (
+                  <div className="pdm-group">
+                    {organiserIsPlaying && (
+                      <div className="pdm-card pdm-card-organiser">
+                        <div className="pdm-slot-num">#1</div>
+                        <div className="pdm-avatar pdm-avatar-o">YOU</div>
+                        <div className="pdm-card-body">
+                          <div className="pdm-card-top">
+                            <div className="pdm-card-name">You (Organiser)</div>
+                            <span className="pdm-type-chip pdm-chip-organiser">Organiser</span>
+                          </div>
+                          <div className="pdm-card-tags">
+                            <span className="pdm-pos-tag" style={{ background: "rgba(200,255,62,0.12)", color: "#c8ff3e", border: "1px solid rgba(200,255,62,0.3)" }}>
+                              ⚽ Playing
+                            </span>
+                          </div>
+                        </div>
+                        {onToggleOrganiserPlaying && !isLocked && (
+                          <button
+                            onClick={onToggleOrganiserPlaying}
+                            title="Withdraw from game"
+                            style={{
+                              flexShrink: 0,
+                              alignSelf: "center",
+                              width: 28,
+                              height: 28,
+                              borderRadius: 6,
+                              background: "rgba(220,38,38,0.1)",
+                              border: "1px solid rgba(220,38,38,0.3)",
+                              color: "#f87171",
+                              fontSize: 14,
+                              lineHeight: 1,
+                              cursor: "pointer",
+                              display: "flex",
+                              alignItems: "center",
+                              justifyContent: "center",
+                            }}
+                          >
+                            ✕
+                          </button>
+                        )}
+                      </div>
+                    )}
+                    {organiserGuests.length > 0 && (
                       <div className="pdm-guest-group">
-                        {myGuests.map((gReg) => {
-                          slot++;
-                          const gId = gReg._id || "";
+                        {organiserGuests.map((reg, i) => {
+                          const regId = reg._id || "";
+                          const slotNum = organiserCount + i + 1;
                           return (
                             <PlayerCard
-                              key={gId || `pg-${slot}`}
-                              reg={gReg}
-                              slotNum={slot}
+                              key={regId || `og-${i}`}
+                              reg={reg}
+                              slotNum={slotNum}
                               type="guest"
                               gameFeeInPaise={feeInPaise}
+                              showAttendance={showAttendance}
                               playerNameById={playerNameById}
                               onImageOpen={(src, name) => setLightbox({ src, name })}
-                              isProcessing={processingId === gId}
-                              onRemove={undefined}
+                              isProcessing={processingId === regId}
+                              onRemove={onRemoveRegistration && regId && !isLocked ? () => requestRemoveGuest(reg) : undefined}
                             />
                           );
                         })}
                       </div>
                     )}
+                    {!isLocked && spotsLeft > 0 && (
+                      <button
+                        onClick={() => { setPendingGuestName(""); setPendingGuestPosition("Any"); setPendingGuestTeam("No Preference"); setGuestModalOpen(true); }}
+                        style={{
+                          width: "100%", marginTop: 6, padding: "8px 0",
+                          background: "rgba(200,255,62,0.06)", border: "1px dashed rgba(200,255,62,0.3)",
+                          borderRadius: 8, color: "#c8ff3e", fontSize: 13, fontWeight: 600, cursor: "pointer",
+                        }}
+                      >
+                        + Add Guest
+                      </button>
+                    )}
                   </div>
-                );
-              });
-            })()}
+                )}
 
-          </div>
+                {/* Main players + their guests — grouped */}
+                {(() => {
+                  let slot = organiserCount + organiserGuests.length;
+                  return mainRegs.map((reg) => {
+                    slot++;
+                    const regId   = reg._id || "";
+                    const playerId = refId(reg.player) ?? "";
+                    const myGuests = guestsByPlayer.get(playerId) ?? [];
 
-          {/* Waitlist Section — inside scroll area so it doesn't overflow */}
-          {waitlist.length > 0 && (
-            <div style={{ marginTop: 8 }}>
-              <div style={{
-                display: "flex", alignItems: "center", gap: 10,
-                padding: "12px 0 10px 0", borderTop: "1px solid #222",
-              }}>
-                <span style={{ fontSize: 12, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.1em", color: "#f59e0b" }}>
-                  📋 Waitlist ({waitlist.length})
-                </span>
-                <span style={{ fontSize: 11, color: "#666", fontStyle: "italic" }}>
-                  — notified by email &amp; app when a slot opens
-                </span>
+                    return (
+                      <div className="pdm-group" key={regId || `mp-${slot}`}>
+                        <PlayerCard
+                          reg={reg}
+                          slotNum={slot}
+                          type="player"
+                          gameFeeInPaise={feeInPaise}
+                              showAttendance={showAttendance}
+                          playerNameById={playerNameById}
+                          onImageOpen={(src, name) => setLightbox({ src, name })}
+                          isProcessing={processingId === regId}
+                          onRemove={undefined}
+                        />
+                        {myGuests.length > 0 && (
+                          <div className="pdm-guest-group">
+                            {myGuests.map((gReg) => {
+                              slot++;
+                              const gId = gReg._id || "";
+                              return (
+                                <PlayerCard
+                                  key={gId || `pg-${slot}`}
+                                  reg={gReg}
+                                  slotNum={slot}
+                                  type="guest"
+                                  gameFeeInPaise={feeInPaise}
+                              showAttendance={showAttendance}
+                                  playerNameById={playerNameById}
+                                  onImageOpen={(src, name) => setLightbox({ src, name })}
+                                  isProcessing={processingId === gId}
+                                  onRemove={undefined}
+                                />
+                              );
+                            })}
+                          </div>
+                        )}
+                      </div>
+                    );
+                  });
+                })()}
+
               </div>
-              <div className="pdm-cards-list">
-                {waitlist.map((entry, idx) => {
-                  const playerId = entry.player?._id;
-                  const gc = playerId
-                    ? (guestWaitlist || []).filter(
-                        (g) => g.player?._id === playerId && ["waiting", "notified"].includes(g.status || "waiting")
-                      ).length
-                    : 0;
-                  const registeredGc = playerId
-                    ? (players || []).filter(
-                        (p) => p.player?._id === playerId && p.plusOneName
-                      ).length
-                    : 0;
-                  return (
-                    <WaitlistCard
-                      key={entry._id || idx}
-                      entry={entry}
-                      position={idx + 1}
-                      onApprove={entry.status === "waiting" && entry._id && !isLocked ? () => approveWaitlistEntry(entry._id!) : undefined}
-                      isApproving={approvingId === entry._id}
-                      guestCount={gc}
-                      registeredGuestCount={registeredGc}
-                      onImageOpen={(src, name) => setLightbox({ src, name })}
-                    />
-                  );
-                })}
-              </div>
-            </div>
+                </>
+              )}
+            </>
           )}
 
-          {/* Guest Waitlist Section */}
-          {guestWaitlist.filter(g => ["waiting", "notified"].includes(g.status || "waiting")).length > 0 && (
-            <div style={{ marginTop: 8 }}>
-              <div style={{
-                display: "flex", alignItems: "center", gap: 10,
-                padding: "12px 0 10px 0", borderTop: "1px solid #222",
-              }}>
-                <span style={{ fontSize: 12, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.1em", color: "#a78bfa" }}>
-                  👥 Guest Waitlist ({guestWaitlist.filter(g => ["waiting", "notified"].includes(g.status || "waiting")).length})
-                </span>
-                <span style={{ fontSize: 11, color: "#666", fontStyle: "italic" }}>
-                  — players waiting to confirm their guests
-                </span>
+          {/* ═════ WAITLIST ═════ */}
+          {tab === "waitlist" && (
+            <>
+              {waitlistCount === 0 && (
+                <div className="empty-state">
+                  <div className="empty-icon">📋</div>
+                  <p>Nobody is on the waitlist</p>
+                  <small>Players join it when the game is full, and are notified the moment a spot opens.</small>
+                </div>
+              )}
+            {/* Waitlist Section — inside scroll area so it doesn't overflow */}
+            {openWaitlist.length > 0 && (
+              <div style={{ marginTop: 8 }}>
+                <div style={{
+                  display: "flex", alignItems: "center", gap: 10,
+                  padding: "0 0 10px 0",
+                }}>
+                  <span style={{ fontSize: 12, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.1em", color: "#f59e0b" }}>
+                    📋 Waitlist ({openWaitlist.length})
+                  </span>
+                  <span style={{ fontSize: 11, color: "#666", fontStyle: "italic" }}>
+                    — notified by email &amp; app when a slot opens
+                  </span>
+                </div>
+                <div className="pdm-cards-list">
+                  {openWaitlist.map((entry, idx) => {
+                    const playerId = entry.player?._id;
+                    const gc = playerId
+                      ? (guestWaitlist || []).filter(
+                          (g) => g.player?._id === playerId && ["waiting", "notified"].includes(g.status || "waiting")
+                        ).length
+                      : 0;
+                    const registeredGc = playerId
+                      ? (players || []).filter(
+                          (p) => p.player?._id === playerId && p.plusOneName
+                        ).length
+                      : 0;
+                    return (
+                      <WaitlistCard
+                        key={entry._id || idx}
+                        entry={entry}
+                        position={idx + 1}
+                        onApprove={entry.status === "waiting" && entry._id && !isLocked ? () => approveWaitlistEntry(entry._id!) : undefined}
+                        isApproving={approvingId === entry._id}
+                        guestCount={gc}
+                        registeredGuestCount={registeredGc}
+                        onImageOpen={(src, name) => setLightbox({ src, name })}
+                      />
+                    );
+                  })}
+                </div>
               </div>
-              <div className="pdm-cards-list">
-                {guestWaitlist
-                  .filter(g => ["waiting", "notified"].includes(g.status || "waiting"))
-                  .map((entry, idx) => (
-                    <GuestWaitlistCard key={entry._id || idx} entry={entry} position={idx + 1} />
-                  ))}
+            )}
+
+            {/* Guest Waitlist Section */}
+            {openGuestWaitlist.length > 0 && (
+              <div style={{ marginTop: 8 }}>
+                <div style={{
+                  display: "flex", alignItems: "center", gap: 10,
+                  padding: "12px 0 10px 0", borderTop: "1px solid #222",
+                }}>
+                  <span style={{ fontSize: 12, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.1em", color: "#a78bfa" }}>
+                    👥 Guest Waitlist ({openGuestWaitlist.length})
+                  </span>
+                  <span style={{ fontSize: 11, color: "#666", fontStyle: "italic" }}>
+                    — players waiting to confirm their guests
+                  </span>
+                </div>
+                <div className="pdm-cards-list">
+                  {openGuestWaitlist
+                    .map((entry, idx) => (
+                      <GuestWaitlistCard key={entry._id || idx} entry={entry} position={idx + 1} />
+                    ))}
+                </div>
               </div>
-            </div>
+            )}
+              {closedWaitlist.length > 0 && (
+                <details className="pdm-closed-wl">
+                  <summary>No longer waiting ({closedWaitlist.length})</summary>
+                  <div className="pdm-cards-list">
+                    {closedWaitlist.map((entry, idx) => (
+                      <WaitlistCard key={entry._id || `c${idx}`} entry={entry} position={idx + 1} onImageOpen={(src, name) => setLightbox({ src, name })} />
+                    ))}
+                  </div>
+                </details>
+              )}
+            </>
           )}
 
-          {/* Teams — inside scroll area */}
-          {teams && (
-            <TeamDistributionPanel
-              // A different run is a different split: remount so the panel's
-              // "Published" state starts from what THIS split is.
-              key={teams.runId || "teams"}
-              initiallyPublished={Boolean(teams.published)}
-              gameId={gameId}
-              gameStatus={gameStatus}
-              teams={teams}
-              onDistribute={handleDistribute}
-              // Merged, not replaced: a move returns the teams, not the extras
-              // the distribute response carried (the balance stats and reasoning
-              // this panel renders above the lists).
-              onTeamsChanged={(result) => setTeams((prev: any) => ({ ...prev, ...result }))}
-              onRefresh={onRefresh}
-              showStatus={showStatus}
-              copySlot={
-                <button
-                  onClick={handleCopyTeams}
-                  style={{
-                    display: "flex",
-                    alignItems: "center",
-                    gap: 6,
-                    padding: "5px 12px",
-                    borderRadius: 6,
-                    fontSize: 12,
-                    fontWeight: 700,
-                    cursor: "pointer",
-                    border: `1px solid ${copiedTeams ? "rgba(200,255,62,0.4)" : "rgba(74,222,128,0.3)"}`,
-                    background: copiedTeams ? "rgba(200,255,62,0.15)" : "rgba(74,222,128,0.08)",
-                    color: copiedTeams ? "#c8ff3e" : "#4ade80",
-                    transition: "all 0.2s",
-                  }}
-                  title="Copy teams for WhatsApp"
-                >
-                  <span>{copiedTeams ? "✓" : "📋"}</span>
-                  <span>{copiedTeams ? "Copied!" : "Copy Teams"}</span>
-                </button>
-              }
-            />
+          {/* ═════ LEFT ═════ */}
+          {tab === "left" && (
+            departures.length === 0 ? (
+              <div className="empty-state">
+                <div className="empty-icon">👋</div>
+                <p>Nobody has dropped out</p>
+                <small>Backouts, removals and skips show up here with when they happened and what they cost.</small>
+              </div>
+            ) : (
+              <>
+                <div className="pdm-left-summary">
+                  {depSummary.backedOut > 0 && <span className="pdm-sum-chip">{depSummary.backedOut} backed out</span>}
+                  {depSummary.removed > 0 && <span className="pdm-sum-chip">{depSummary.removed} removed</span>}
+                  {depSummary.skipped > 0 && <span className="pdm-sum-chip">{depSummary.skipped} skipped</span>}
+                  {depSummary.formatChange > 0 && <span className="pdm-sum-chip">{depSummary.formatChange} left on format change</span>}
+                  {depSummary.late > 0 && (
+                    <span className="pdm-sum-chip tone-coral" title="Backed out or skipped in the last 24 hours before kick-off">
+                      {depSummary.late} within 24h of kick-off
+                    </span>
+                  )}
+                  {depSummary.feesKeptPaise > 0 && (
+                    <span className="pdm-sum-chip tone-lime" title="Cancellation fees charged on these departures and not handed back">
+                      ₹{depSummary.feesKeptPaise / 100} in fees
+                    </span>
+                  )}
+                </div>
+                <div className="pdm-cards-list">
+                  {departures.map((d) => <DepartureCard key={d.key} d={d} />)}
+                </div>
+              </>
+            )
           )}
 
+          {/* ═════ ACTIVITY ═════ */}
+          {tab === "activity" && (
+            activityGroups.length === 0 ? (
+              <div className="empty-state">
+                <div className="empty-icon">🕒</div>
+                <p>No activity yet</p>
+                <small>Every join, backout and waitlist move is listed here as it happens.</small>
+              </div>
+            ) : (
+              <div className="pdm-timeline-wrap">
+                {activityGroups.map((g) => (
+                  <section key={g.day} className="pdm-tl-day">
+                    <h4>{g.label}</h4>
+                    <ol className="pdm-timeline">
+                      {g.events.map((e) => (
+                        <li key={e.key} className={`pdm-tl-item tl-${ACTIVITY_CFG[e.kind].tone}`}>
+                          <span className="pdm-tl-dot" aria-hidden="true">{ACTIVITY_CFG[e.kind].icon}</span>
+                          <span className="pdm-tl-text">
+                            <b>{e.name}</b>{" "}{ACTIVITY_CFG[e.kind].verb}
+                            {e.detail && <span className="pdm-tl-detail"> · {e.detail}</span>}
+                          </span>
+                          <time className="pdm-tl-time" dateTime={e.at} title={fmtDate(e.at) || undefined}>{fmtClock(e.at)}</time>
+                        </li>
+                      ))}
+                    </ol>
+                  </section>
+                ))}
+              </div>
+            )
+          )}
+
+          {/* ═════ TEAMS ═════ */}
+          {tab === "teams" && (
+            teams ? (
+              <>
+              {/* Teams — inside scroll area */}
+              {teams && (
+                <TeamDistributionPanel
+                  // A different run is a different split: remount so the panel's
+                  // "Published" state starts from what THIS split is.
+                  key={teams.runId || "teams"}
+                  initiallyPublished={Boolean(teams.published)}
+                  gameId={gameId}
+                  gameStatus={gameStatus}
+                  teams={teams}
+                  onDistribute={handleDistribute}
+                  // Merged, not replaced: a move returns the teams, not the extras
+                  // the distribute response carried (the balance stats and reasoning
+                  // this panel renders above the lists).
+                  onTeamsChanged={(result) => setTeams((prev: any) => ({ ...prev, ...result }))}
+                  onRefresh={onRefresh}
+                  showStatus={showStatus}
+                  copySlot={
+                    <button
+                      onClick={handleCopyTeams}
+                      style={{
+                        display: "flex",
+                        alignItems: "center",
+                        gap: 6,
+                        padding: "5px 12px",
+                        borderRadius: 6,
+                        fontSize: 12,
+                        fontWeight: 700,
+                        cursor: "pointer",
+                        border: `1px solid ${copiedTeams ? "rgba(200,255,62,0.4)" : "rgba(74,222,128,0.3)"}`,
+                        background: copiedTeams ? "rgba(200,255,62,0.15)" : "rgba(74,222,128,0.08)",
+                        color: copiedTeams ? "#c8ff3e" : "#4ade80",
+                        transition: "all 0.2s",
+                      }}
+                      title="Copy teams for WhatsApp"
+                    >
+                      <span>{copiedTeams ? "✓" : "📋"}</span>
+                      <span>{copiedTeams ? "Copied!" : "Copy Teams"}</span>
+                    </button>
+                  }
+                />
+              )}
+              </>
+            ) : (
+              <div className="empty-state">
+                <div className="empty-icon">👕</div>
+                <p>{hasTeams ? "Teams have been made for this game" : "No teams yet"}</p>
+                <small>
+                  {hasTeams
+                    ? "Open them to see who is on which side — nothing is reshuffled and nobody is messaged."
+                    : "Distribute splits the players into two balanced sides. Players see nothing until you publish."}
+                </small>
+                <div className="pdm-empty-actions">
+                  {hasTeams && (
+                    <button type="button" className="pdm-empty-btn" onClick={viewCurrentTeams} disabled={loadingTeams}>
+                      {loadingTeams ? "Loading…" : "👥 View teams"}
+                    </button>
+                  )}
+                  {!isLocked && (
+                    <button type="button" className="pdm-empty-btn primary" onClick={requestDistribute}>
+                      ⚽ {hasTeams ? "Make a new split" : "Distribute teams"}
+                    </button>
+                  )}
+                </div>
+              </div>
+            )
+          )}
         </div>
 
         <div className="modal-footer">
@@ -1600,13 +1944,13 @@ function downloadTeamExcel(result: {
       loading={processingId !== null}
       onCancel={() => {
         setConfirmVisible(false);
-        confirmActionRef.current = null;
+        setConfirmAction(null);
         setConfirmMessage(null);
       }}
       onConfirm={async () => {
         setConfirmVisible(false);
-        const act = confirmActionRef.current;
-        confirmActionRef.current = null;
+        const act = confirmAction;
+        setConfirmAction(null);
         setConfirmMessage(null);
         if (act) {
           await act();
@@ -1894,6 +2238,90 @@ function PaymentBadge({ status, amountPaise, passBenefitPaise, gameFeeInPaise }:
   );
 }
 
+const DEPARTURE_CFG: Record<Departure["kind"], { label: string; color: string; bg: string; border: string }> = {
+  backed_out:    { label: "Backed out",    color: "#f87171", bg: "rgba(248,113,113,0.1)", border: "rgba(248,113,113,0.3)" },
+  removed:       { label: "Removed",       color: "#a1a1aa", bg: "rgba(161,161,170,0.1)", border: "rgba(161,161,170,0.3)" },
+  skipped:       { label: "Skipped",       color: "#f59e0b", bg: "rgba(245,158,11,0.1)",  border: "rgba(245,158,11,0.3)" },
+  format_change: { label: "Format change", color: "#a78bfa", bg: "rgba(167,139,250,0.1)", border: "rgba(167,139,250,0.3)" },
+};
+
+/** One departure, with when it happened and what it cost — all read off the row. */
+function DepartureCard({ d }: { d: Departure }) {
+  const cfg = DEPARTURE_CFG[d.kind];
+  const lead = formatLeadTime(d.minsBeforeKickoff);
+  const playerChoice = d.kind === "backed_out" || d.kind === "skipped";
+  const late = playerChoice && d.minsBeforeKickoff != null && d.minsBeforeKickoff < LATE_DEPARTURE_MINS;
+
+  // What the seat was worth, then what leaving it cost. Fees are per seat and
+  // frozen on the row when charged, so these are the real figures, not a
+  // re-quote under today's policy.
+  const paid = d.passPaise > 0
+    ? `Pass-covered${d.paidPaise > 0 ? ` + paid ₹${d.paidPaise / 100}` : ""}`
+    : d.paidPaise > 0 ? `Paid ₹${d.paidPaise / 100}` : null;
+  let fee: { text: string; tone: "lime" | "muted" } | null = null;
+  if (d.feeChargedPaise > 0) {
+    fee = d.feeReturned
+      ? { text: `Fee ₹${d.feeChargedPaise / 100} returned — game cancelled`, tone: "muted" }
+      : { text: `Fee ₹${d.feeChargedPaise / 100} charged`, tone: "lime" };
+  } else if (d.waivedReason) {
+    fee = { text: `No fee — ${WAIVER_LABEL[d.waivedReason] ?? d.waivedReason}`, tone: "muted" };
+  } else if (d.kind === "removed") {
+    fee = { text: "No fee — removed by an organiser", tone: "muted" };
+  } else if (d.kind === "format_change") {
+    fee = { text: "Refunded — said no to format changes", tone: "muted" };
+  } else if (paid) {
+    fee = { text: "No fee", tone: "muted" };
+  }
+
+  return (
+    <div className="pdm-card pdm-dep-card" style={{ borderLeft: `3px solid ${cfg.color}` }}>
+      <div className={`pdm-avatar ${d.isGuest ? "pdm-avatar-g" : "pdm-avatar-p"}`} style={{ opacity: 0.75 }}>
+        {initials(d.name)}
+      </div>
+      <div className="pdm-card-body">
+        <div className="pdm-card-top">
+          <div>
+            <div className="pdm-card-name">{d.name}</div>
+            {d.isGuest && (
+              <div className="pdm-sub">{d.broughtBy ? `Guest of ${d.broughtBy}` : "Your guest"}</div>
+            )}
+          </div>
+          <div style={{ display: "flex", gap: 6, alignItems: "center", flexWrap: "wrap" }}>
+            {d.rejoined && (
+              <span className="pdm-mini-chip tone-green" title="They have a seat in this game again">Back in</span>
+            )}
+            <span className="pdm-type-chip" style={{ background: cfg.bg, color: cfg.color, border: `1px solid ${cfg.border}` }}>
+              {cfg.label}{d.kind === "removed" && d.removedBy ? ` by ${d.removedBy}` : ""}
+            </span>
+          </div>
+        </div>
+
+        <div className="pdm-dep-when">
+          {d.at ? <span>{fmtDate(d.at)}</span> : <span className="pdm-faint">Time not recorded</span>}
+          {lead && (
+            <span className={`pdm-mini-chip ${late ? "tone-coral" : ""}`} title={late ? "Inside the last 24 hours before kick-off" : undefined}>
+              {lead}
+            </span>
+          )}
+          {d.afterCutoff && (
+            <span className="pdm-mini-chip tone-amber" title="Left after the registration cutoff">After cutoff</span>
+          )}
+        </div>
+
+        {(paid || fee || d.guestsStaying > 0) && (
+          <div className="pdm-dep-money">
+            {paid && <span>{paid}</span>}
+            {fee && <span className={fee.tone === "lime" ? "pdm-fee-kept" : "pdm-faint"}>{fee.text}</span>}
+            {d.guestsStaying > 0 && (
+              <span className="pdm-faint">{d.guestsStaying} guest{d.guestsStaying === 1 ? "" : "s"} still playing</span>
+            )}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
 function PlayerCard({
   reg,
   slotNum,
@@ -1903,8 +2331,10 @@ function PlayerCard({
   gameFeeInPaise,
   playerNameById,
   onImageOpen,
+  showAttendance = false,
 }: {
   reg: Registration;
+  showAttendance?: boolean;
   slotNum?: number;
   type: "player" | "guest";
   isProcessing?: boolean;
@@ -1918,6 +2348,11 @@ function PlayerCard({
   const pos     = posLabel(reg.preferredPosition);
   const team    = teamInfo(reg.teamPreference);
   const date    = fmtDate(reg.signedUpAt);
+  const ago     = timeAgo(reg.signedUpAt);
+  // How reliable this player has been across the platform — only on my-games
+  // reads (the write endpoints populate less), so absent means "not loaded".
+  const stats = isGuest ? null : reg.player;
+  const hasStats = stats != null && typeof stats.totalGamesPlayed === "number";
 
   // Who this person asked to play with or against. `hard` means an organiser
   // promoted the request to a constraint the distributor cannot break; players
@@ -2010,6 +2445,28 @@ function PlayerCard({
                 🎖 Host
               </span>
             )}
+            {(reg.discountPaise ?? 0) > 0 && (
+              <span
+                className="pdm-mini-chip tone-lime"
+                title={`${reg.discountTitle || "Discount"}${reg.discountCode ? ` (code ${reg.discountCode})` : ""} — ₹${(reg.discountPaise ?? 0) / 100} off`}
+              >
+                🏷 {reg.discountCode || "Offer"} −₹{(reg.discountPaise ?? 0) / 100}
+              </span>
+            )}
+            {reg.assignedColour && !optedOut && (
+              <span className={`pdm-team-tag pdm-team-${reg.assignedColour}`} title="The side they are on now">
+                {reg.assignedColour === "red" ? "🔴 Red" : "🔵 Blue"}
+              </span>
+            )}
+            {showAttendance && reg.attended && reg.attended !== "not_marked" && (
+              <span
+                className={`pdm-mini-chip ${reg.attended === "present" ? "tone-green" : "tone-coral"}`}
+                title={reg.attendanceSource === "assumed" ? "Assumed present when the game was completed automatically — not confirmed" : undefined}
+              >
+                {reg.attended === "present" ? "Present" : reg.attended === "absent" ? "Absent" : "No-show"}
+                {reg.attendanceSource === "assumed" ? " (assumed)" : ""}
+              </span>
+            )}
           </div>
         </div>
 
@@ -2086,8 +2543,27 @@ function PlayerCard({
           </div>
         )}
 
+        {hasStats && (
+          <div className="pdm-reliability" title="Across all KasaKai games, not just yours">
+            <span>{stats!.totalGamesPlayed} game{stats!.totalGamesPlayed === 1 ? "" : "s"} played</span>
+            {(stats!.backoutCount ?? 0) > 0 && (
+              <span className="warn">{stats!.backoutCount} backout{stats!.backoutCount === 1 ? "" : "s"}</span>
+            )}
+            {(stats!.noShowCount ?? 0) > 0 && (
+              <span className="bad">{stats!.noShowCount} no-show{stats!.noShowCount === 1 ? "" : "s"}</span>
+            )}
+          </div>
+        )}
+
         <div className="pdm-card-tags">
-          {date && <span className="pdm-date-tag">{date}</span>}
+          {date && (
+            <span className="pdm-date-tag" title={`Signed up ${date}`}>
+              Joined {date}{ago ? <span className="pdm-faint"> · {ago}</span> : null}
+            </span>
+          )}
+          {optedOut && reg.optedOutAt && (
+            <span className="pdm-date-tag" style={{ color: "#f59e0b" }}>Skipped {fmtDate(reg.optedOutAt)}</span>
+          )}
         </div>
       </div>
 

@@ -1,4 +1,5 @@
 import { formatIstTime } from "./formatTime.ts";
+import { gameJoinUrl } from "./gameLink.ts";
 // Builds the WhatsApp-style "Copy List" message for an organiser to share.
 // Pure function (no DOM) so it can be unit-tested.
 
@@ -54,14 +55,7 @@ export function buildPlayerListMessage(input: PlayerListInput): string {
   lines.push("");
 
   // Register CTA with the join link at the bottom
-  const dateLabel = scheduledAt
-    ? new Date(scheduledAt).toLocaleDateString("en-IN", {
-        day: "numeric", month: "short", year: "numeric", timeZone: "Asia/Kolkata",
-      })
-    : "";
-  const joinSlug = `${gameName || "game"} ${dateLabel}`
-    .toLowerCase().trim().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "");
-  const joinUrl = `https://www.kasakai.in/join/${joinSlug ? `${joinSlug}-` : ""}${gameId}`;
+  const joinUrl = gameJoinUrl({ _id: gameId, title: gameName, scheduledAt });
   lines.push(`🚨 *To get your name added on the list, register on ${joinUrl}*`);
 
   return lines.join("\n");

@@ -2,9 +2,10 @@
 
 import { useLayoutEffect, useMemo, useRef, useState } from "react";
 import "./GameCard.css";
-import {Lock,Calendar,Star,Clock,MapPin,Users,Trophy,CheckCircle2,Timer,ChevronDown,Pencil,RefreshCw,TriangleAlert,Undo2,CircleCheck,CircleX,CircleCheckBig, UserPlus,History,Award,} from "lucide-react";
+import {Lock,Calendar,Star,Clock,MapPin,Users,Trophy,CheckCircle2,Timer,ChevronDown,Pencil,RefreshCw,TriangleAlert,Undo2,CircleCheck,CircleX,CircleCheckBig, UserPlus,History,Award,Repeat,} from "lucide-react";
 import { filledCount } from "@/utils/playerCount";
 import type { HostInfo } from "@/utils/hosts";
+import { CopyGameLinkButton } from "@/components/dashboard/CopyGameLinkButton";
 
 interface GameCardProps {
   game: any;
@@ -24,6 +25,8 @@ interface GameCardProps {
   onTeamHistory?: () => void;
   /** Ask one of your approved hosts to run this game without playing. */
   onFacilitators?: () => void;
+  /** Set when the game was created by a recurring schedule — that schedule's name. */
+  seriesName?: string;
 }
 
 const getStatusConfig = (status: string) => {
@@ -94,7 +97,7 @@ const formatTime = (d: Date) =>
     })
     .toUpperCase();
 
-function GameCard({game,variant = "upcoming",isMenuOpen,onToggleMenu,onPlayers,onEdit,onConfirm,onWithdraw,onCancel,onSwitch,onSOS,onComplete,onInvite,onManageCoOrgs,onTeamHistory,onFacilitators,
+function GameCard({game,variant = "upcoming",isMenuOpen,onToggleMenu,onPlayers,onEdit,onConfirm,onWithdraw,onCancel,onSwitch,onSOS,onComplete,onInvite,onManageCoOrgs,onTeamHistory,onFacilitators,seriesName,
 }: GameCardProps) {
   const status = getStatusConfig(game.status);
   const isPast = variant === "past";
@@ -225,6 +228,11 @@ function GameCard({game,variant = "upcoming",isMenuOpen,onToggleMenu,onPlayers,o
           <div className="title-row">
             <h3>{game.title} </h3>
             {isPrivate && <Lock size={17} />}
+            {seriesName && (
+              <span className="series-badge" title="Created by this recurring schedule">
+                <Repeat size={11} /> {seriesName}
+              </span>
+            )}
             {!isOwner && (
               <span
                 className={`co-org-badge ${role}`}
@@ -357,6 +365,15 @@ function GameCard({game,variant = "upcoming",isMenuOpen,onToggleMenu,onPlayers,o
       </div>
 
       <div className="game-actions">
+        {/* The link players open to join — one tap, without leaving for the
+            player app to fetch it. Upcoming games only: a played or cancelled
+            game has nothing left to join. */}
+        {!isPast && !isClosed && (
+          <CopyGameLinkButton
+            game={game}
+            onFixLink={canEditGame && onInvite ? onInvite : undefined}
+          />
+        )}
         {postGameCta && (
           <button type="button" className="postgame-cta" onClick={onComplete}>
             {postGameCta}

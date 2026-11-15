@@ -20,6 +20,23 @@ import FacilitatorsModal from "@/components/dashboard/FacilitatorsModal";
 import { TeamSheetHistory } from "@/components/dashboard/TeamSheetHistory";
 import { ListQuickAdd, SaveAsList, pickedKey } from "@/components/playerLists/ListQuickAdd";
 import { addFromList, defaultListName, listsUsed, removeList } from "@/utils/playerLists";
+import { PlannedGameCard } from "@/components/dashboard/PlannedGameCard";
+import { mergePlanned } from "@/utils/mergePlanned";
+import { getUpcomingPreview, type PlannedGamePreview } from "@/utils/recurring";
+import { inviteLinkUrl } from "@/utils/gameLink";
+
+// Organiser id → name for one game (owner + co-organisers), so the Players
+// modal can say WHICH organiser removed someone. my-games populates both; the
+// write endpoints do not, and an id that cannot be named is simply left unnamed.
+function organiserNamesOf(game: any): Map<string, string> {
+  const names = new Map<string, string>();
+  const add = (o: any) => {
+    if (o && typeof o === "object" && o._id && o.name) names.set(String(o._id), o.name);
+  };
+  add(game?.organiser);
+  (game?.coOrganisers || []).forEach((c: any) => add(c?.organiser));
+  return names;
+}
 
 
 // Upcoming and Past are two routes over one board: /dashboard/organizer/[id]
@@ -72,6 +89,26 @@ const POST_GAME_GROUPS: { key: PostGameGroup; label: string; hint: string; atten
 ];
 
 const DEFAULT_SORT: Record<GamesView, string> = { upcoming: 'date-asc', past: 'date-desc' };
+
+// Upcoming's "Show" switch: live games, planned recurring games, or both.
+type ShowKind = "all" | "live" | "planned";
+const SHOW_KIND_KEY = "kk-upcoming-show";
+// Statuses a game on Upcoming can actually have — completed and cancelled games
+// are never shown there, so offering them only produces an empty list.
+const STATUS_OPTIONS: Record<GamesView, { value: string; label: string }[]> = {
+  upcoming: [
+    { value: "open", label: "Open" },
+    { value: "tentative", label: "Tentative" },
+    { value: "confirmed", label: "Confirmed" },
+  ],
+  past: [
+    { value: "open", label: "Open" },
+    { value: "tentative", label: "Tentative" },
+    { value: "confirmed", label: "Confirmed" },
+    { value: "completed", label: "Completed" },
+    { value: "cancelled", label: "Cancelled" },
+  ],
+};
 
 // Paged fetches can overlap by a row when games move between pages (a game
 // finishing pushes everything down one), so a merge keeps the first copy.
@@ -158,6 +195,25 @@ export default function OrganiserGamesBoard({ view }: { view: GamesView }) {
   const [searchQuery, setSearchQuery] = useState('');
   const [filterStatus, setFilterStatus] = useState('all');
   const [filterFormat, setFilterFormat] = useState('all');
+  // Which schedule a game came from: 'all', 'recurring', 'one-off', or a series
+  // id. Applied by the server to live games and here to planned ones.
+  const [filterSeries, setFilterSeries] = useState('all');
+  // Upcoming only: live games, planned recurring ones, or both. A per-browser
+  // preference rather than a filter — someone who never wants the planned strip
+  // should not have to switch it off on every visit — so Clear leaves it alone.
+  const [showKind, setShowKindState] = useState<ShowKind>('all');
+  useEffect(() => {
+    try {
+      const saved = window.localStorage.getItem(SHOW_KIND_KEY);
+      if (saved === 'live' || saved === 'planned') setShowKindState(saved);
+    } catch { /* storage blocked: default to both */ }
+  }, []);
+  const setShowKind = (k: ShowKind) => {
+    setShowKindState(k);
+    // "One-off" is not offered once only planned games show — none are one-off.
+    if (k === 'planned') setFilterSeries((cur) => (cur === 'one-off' ? 'all' : cur));
+    try { window.localStorage.setItem(SHOW_KIND_KEY, k); } catch { /* not remembered, still applied */ }
+  };
   const defaultSort = DEFAULT_SORT[view];
   const [sortBy, setSortBy] = useState(defaultSort);
   // Past Events group (backend utils/postGameState.js). Seeded from
@@ -180,12 +236,14 @@ export default function OrganiserGamesBoard({ view }: { view: GamesView }) {
   }, [searchQuery]);
   const listQuery = new URLSearchParams({
     q: debouncedSearch.trim(), status: filterStatus, format: filterFormat, sort: sortBy,
+    ...(filterSeries !== 'all' ? { series: filterSeries } : {}),
     ...(view === 'past' && postGameFilter !== 'all' ? { postGame: postGameFilter } : {}),
   }).toString();
   const listQueryRef   = useRef(listQuery);
   const pagesLoadedRef = useRef(1);
   const [paging, setPaging]     = useState<{ hasMore: boolean; total: number } | null>(null);
   const [scopeFormats, setScopeFormats]   = useState<string[] | null>(null);
+  const [scopeSeries, setScopeSeries]     = useState<{ _id: string; name: string; status?: string }[]>([]);
   const [refiltering, setRefiltering] = useState(false);
   const [loadingMore, setLoadingMore]   = useState(false);
   const loadingMoreRef = useRef(false);
@@ -298,6 +356,7 @@ export default function OrganiserGamesBoard({ view }: { view: GamesView }) {
         setScopeCounts(data.counts ?? null);
         setPaging({ hasMore: !!data.hasMore, total: data.total ?? nextGames.length });
         setScopeFormats(Array.isArray(data.formats) ? data.formats : null);
+        if (Array.isArray(data.series)) setScopeSeries(data.series);
         setAlertGames(Array.isArray(data.alerts) ? data.alerts : null);
         setPostGameSummary(data.postGame ?? null);
         setFetchError(null);  
@@ -406,6 +465,23 @@ export default function OrganiserGamesBoard({ view }: { view: GamesView }) {
   // Keep dashboard data fresh — 20 s poll + focus + visibility
   const silentFetch = useCallback(() => fetchGames({ silent: true }), [fetchGames]);
   useAutoRefresh(isAuthorized ? silentFetch : null, { interval: 20_000 });
+
+  // Recurring games that are planned but not created yet — shown faded under
+  // Upcoming, read-only. They change only when a schedule is edited or a game
+  // goes live, so a slow poll is plenty. A failure just leaves the strip out:
+  // it is context, and must never take the live list down with it.
+  const [plannedGames, setPlannedGames] = useState<PlannedGamePreview[]>([]);
+  const fetchPlanned = useCallback(async () => {
+    try {
+      setPlannedGames(await getUpcomingPreview(30));
+    } catch {
+      /* keep whatever was shown last */
+    }
+  }, []);
+  useEffect(() => {
+    if (isAuthorized && view === 'upcoming') fetchPlanned();
+  }, [isAuthorized, view, fetchPlanned]);
+  useAutoRefresh(isAuthorized && view === 'upcoming' ? fetchPlanned : null, { interval: 120_000 });
 
   // Real-time: re-fetch whenever a socket notification arrives (e.g. guest waitlist changes)
   useEffect(() => {
@@ -753,7 +829,7 @@ export default function OrganiserGamesBoard({ view }: { view: GamesView }) {
   };
 
   const copyInviteLink = async (token: string) => {
-    const link = `https://www.kasakai.in/join/${token}`;
+    const link = inviteLinkUrl(token);
     try {
       await navigator.clipboard.writeText(link);
       showToast("success", "Link copied", link);
@@ -900,15 +976,57 @@ export default function OrganiserGamesBoard({ view }: { view: GamesView }) {
   const filteredUpcoming = upcomingGames;
   const filteredPast     = pastGames;
   const shownGames       = view === 'upcoming' ? filteredUpcoming : filteredPast;
-  const hasActiveFilters = !!(searchQuery || filterStatus !== 'all' || filterFormat !== 'all' || sortBy !== defaultSort || postGameFilter !== 'all');
+  const hasActiveFilters = !!(searchQuery || filterStatus !== 'all' || filterFormat !== 'all' || filterSeries !== 'all' || sortBy !== defaultSort || postGameFilter !== 'all');
   const listTotal        = paging?.total ?? shownGames.length;
+
+  // Planned recurring games follow the same search, format and schedule
+  // filters, matched here because they never reach the server's game query. A
+  // status filter hides them: a planned game has no status until it goes live.
+  const plannedOnly = view === 'upcoming' && showKind === 'planned';
+  const plannedShown = (() => {
+    if (view !== 'upcoming' || showKind === 'live') return [];
+    // Status is switched off in planned-only mode, so it cannot hide them there.
+    if (!plannedOnly && filterStatus !== 'all') return [];
+    if (filterSeries === 'one-off') return [];
+    const q = searchQuery.trim().toLowerCase();
+    const rows = plannedGames.filter((p) => {
+      if (filterSeries !== 'all' && filterSeries !== 'recurring' && String(p.series._id) !== filterSeries) return false;
+      if (filterFormat !== 'all' && p.format !== filterFormat) return false;
+      if (!q) return true;
+      return [p.title, p.series.name, p.turf?.name, p.turf?.area, p.turf?.city, p.format]
+        .some((v) => v && v.toLowerCase().includes(q));
+    });
+    return rows;
+  })();
+
+  // ONE list: planned games slotted between the live ones by the chosen sort,
+  // held back while more live pages are still to load (utils/mergePlanned).
+  const upcomingItems = view === 'upcoming'
+    ? mergePlanned(plannedOnly ? [] : filteredUpcoming, plannedShown, {
+        sort: sortBy,
+        hasMore: plannedOnly ? false : hasMorePage,
+      })
+    : [];
+
+  // Every schedule either list mentions — live games' (from the server, scope
+  // wide) and planned ones' — for the schedule filter and the live cards' badge.
+  const seriesOptions = (() => {
+    const byId = new Map<string, { _id: string; name: string; status?: string }>();
+    for (const sr of scopeSeries) byId.set(String(sr._id), sr);
+    if (view === 'upcoming') for (const p of plannedGames) if (!byId.has(String(p.series._id))) byId.set(String(p.series._id), p.series);
+    return [...byId.values()].sort((a, b) => a.name.localeCompare(b.name));
+  })();
+  const seriesNameById = new Map(seriesOptions.map((sr) => [String(sr._id), sr.name]));
+  const allFormatsWithPlanned = view === 'upcoming'
+    ? [...new Set([...allFormats, ...plannedGames.map((p) => p.format)])].sort()
+    : allFormats;
 
   // What the decision pop-up looks at: the server's alert games, with any that
   // are on screen taken from the page (the fresher copy after a patch).
   const loadedById = new Map(games.map((g) => [g._id, g]));
   const lifecycleGames = alertGames ? alertGames.map((a) => loadedById.get(a._id) ?? a) : games;
 
-  const clearFilters = () => { setSearchQuery(''); setFilterStatus('all'); setFilterFormat('all'); setSortBy(defaultSort); setPostGameFilter('all'); };
+  const clearFilters = () => { setSearchQuery(''); setFilterStatus('all'); setFilterFormat('all'); setFilterSeries('all'); setSortBy(defaultSort); setPostGameFilter('all'); };
 
   const handleLogout = () => {
   clearSession(); // ✅ better than localStorage.clear()
@@ -1387,7 +1505,7 @@ export default function OrganiserGamesBoard({ view }: { view: GamesView }) {
                   <div style={{ display: "flex", gap: 8, alignItems: "center", marginBottom: 10 }}>
                     <input
                       readOnly
-                      value={`https://www.kasakai.in/join/${inviteGame.inviteLinkToken}`}
+                      value={inviteLinkUrl(inviteGame.inviteLinkToken)}
                       onFocus={(e) => e.currentTarget.select()}
                       style={{ flex: 1, minWidth: 0, padding: "9px 11px", borderRadius: 8, border: "1px solid #2a2a2a", background: "#0e0e0e", color: inviteGame.inviteLinkEnabled === false ? "#666" : "#bbb", fontSize: 12 }}
                     />
@@ -1625,8 +1743,9 @@ export default function OrganiserGamesBoard({ view }: { view: GamesView }) {
         </div>
       )}
 
-      {/* Filter / Search Bar */}
-      {!loading && games.length > 0 && (
+      {/* Filter / Search Bar — kept while a filter is on, or an empty result
+          would take away the controls needed to undo it. */}
+      {!loading && (games.length > 0 || hasActiveFilters || (view === 'upcoming' && plannedGames.length > 0)) && (
         <div className="filter-bar">
           <div className="filter-search-wrap">
             <svg className="filter-search-icon" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
@@ -1648,19 +1767,48 @@ export default function OrganiserGamesBoard({ view }: { view: GamesView }) {
             )}
           </div>
 
-          <select className="filter-select" value={filterStatus} onChange={e => setFilterStatus(e.target.value)}>
+          {view === 'upcoming' && (plannedGames.length > 0 || showKind !== 'all') && (
+            <select
+              className="filter-select"
+              value={showKind}
+              onChange={e => setShowKind(e.target.value as ShowKind)}
+              title="Planned = recurring games not created yet (next 30 days)"
+              aria-label="Show live games, planned recurring games, or both"
+            >
+              <option value="all">Live + planned ({(scopeCounts?.upcoming ?? 0) + plannedGames.length})</option>
+              <option value="live">Live only ({scopeCounts?.upcoming ?? 0})</option>
+              <option value="planned">Planned only ({plannedGames.length})</option>
+            </select>
+          )}
+
+          <select
+            className="filter-select"
+            value={plannedOnly ? 'all' : filterStatus}
+            onChange={e => setFilterStatus(e.target.value)}
+            disabled={plannedOnly}
+            title={plannedOnly ? "Planned games have no status until they go live" : undefined}
+          >
             <option value="all">All Status</option>
-            <option value="open">Open</option>
-            <option value="tentative">Tentative</option>
-            <option value="confirmed">Confirmed</option>
-            <option value="completed">Completed</option>
-            <option value="cancelled">Cancelled</option>
+            {STATUS_OPTIONS[view].map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
           </select>
 
           <select className="filter-select" value={filterFormat} onChange={e => setFilterFormat(e.target.value)}>
             <option value="all">All Formats</option>
-            {allFormats.map(f => <option key={f} value={f}>{f}</option>)}
+            {allFormatsWithPlanned.map(f => <option key={f} value={f}>{f}</option>)}
           </select>
+
+          {seriesOptions.length > 0 && (
+            <select className="filter-select" value={filterSeries} onChange={e => setFilterSeries(e.target.value)} title="Which recurring schedule a game comes from">
+              <option value="all">All Schedules</option>
+              <option value="recurring">Any recurring</option>
+              {!plannedOnly && <option value="one-off">One-off games</option>}
+              {seriesOptions.map((sr) => (
+                <option key={sr._id} value={sr._id}>
+                  {sr.name}{sr.status && sr.status !== 'active' ? ` (${sr.status})` : ''}
+                </option>
+              ))}
+            </select>
+          )}
 
           <select className="filter-select filter-sort" value={sortBy} onChange={e => setSortBy(e.target.value)}>
             <option value="date-asc">Date ↑</option>
@@ -1680,9 +1828,18 @@ export default function OrganiserGamesBoard({ view }: { view: GamesView }) {
           )}
 
           <span className="filter-result-count">
-            {listTotal}
-            {' '}/{' '}
-            {(view === 'upcoming' ? scopeCounts?.upcoming : scopeCounts?.past) ?? listTotal} events
+            {plannedOnly ? (
+              <>{plannedShown.length} / {plannedGames.length} planned</>
+            ) : (
+              <>
+                {listTotal}
+                {' '}/{' '}
+                {(view === 'upcoming' ? scopeCounts?.upcoming : scopeCounts?.past) ?? listTotal} events
+                {view === 'upcoming' && showKind === 'all' && plannedGames.length > 0 && (
+                  <> · {plannedShown.length} planned</>
+                )}
+              </>
+            )}
           </span>
         </div>
       )}
@@ -1695,7 +1852,7 @@ export default function OrganiserGamesBoard({ view }: { view: GamesView }) {
             <p>Loading events...</p>
           </div>
         ) : view === 'upcoming' ? (
-          filteredUpcoming.length === 0 ? (
+          upcomingItems.length === 0 ? (
             <div className="empty-state">
               <div className="empty-icon">
                 <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" style={{ opacity: 0.4 }}>
@@ -1708,23 +1865,39 @@ export default function OrganiserGamesBoard({ view }: { view: GamesView }) {
                   <p>Try adjusting your search or filters</p>
                   <button className="btn-primary" onClick={clearFilters}>Clear Filters</button>
                 </>
+              ) : plannedOnly ? (
+                <>
+                  <h3>No planned recurring games</h3>
+                  <p>Nothing is scheduled to go live in the next 30 days</p>
+                  <button className="btn-primary" onClick={() => setShowKind('all')}>Show all events</button>
+                </>
               ) : (
                 <>
                   <h3>No upcoming events</h3>
-                  <p>Create your first event to get started</p> 
-                  <button className="btn-primary" onClick={() => router.push(`/dashboard/organizer/${organiserId}/create-event`)}>
-                    <span>+ </span>Create Event
-                  </button>
+                  <p>{showKind === 'live' && plannedGames.length ? `${plannedGames.length} planned recurring game${plannedGames.length === 1 ? " is" : "s are"} hidden` : "Create your first event to get started"}</p>
+                  {showKind === 'live' && plannedGames.length ? (
+                    <button className="btn-primary" onClick={() => setShowKind('all')}>Show planned games</button>
+                  ) : (
+                    <button className="btn-primary" onClick={() => router.push(`/dashboard/organizer/${organiserId}/create-event`)}>
+                      <span>+ </span>Create Event
+                    </button>
+                  )}
                 </>
               )}
             </div>
           ) : (
             <>
             <div className="games-list" style={refiltering ? { opacity: 0.55, transition: "opacity .15s" } : undefined} aria-busy={refiltering}>
-              {filteredUpcoming.map((game) => (
+              {upcomingItems.map((item) => {
+                if (item.kind === 'planned') {
+                  return <PlannedGameCard key={`planned-${item.planned.occurrenceId}`} p={item.planned} />;
+                }
+                const game = item.game;
+                return (
                 <GameCard
                 key={game._id}
                 game={game}
+                seriesName={game.recurringSeries ? seriesNameById.get(String(game.recurringSeries)) ?? "Recurring" : undefined}
                 isMenuOpen={openMenuGameId === game._id}
                 onToggleMenu={() => setOpenMenuGameId(openMenuGameId === game._id ? null : game._id)}
                 onPlayers={() => {
@@ -1749,12 +1922,13 @@ export default function OrganiserGamesBoard({ view }: { view: GamesView }) {
                 onFacilitators={() => { setFacilitatorGame(game); setOpenMenuGameId(null); }}
                 onTeamHistory={() => { setTeamHistoryGame(game); setOpenMenuGameId(null); }}
               />
-              ))}
+                );
+              })}
           </div>
             {/* Scrolling to here fetches the next page. The button is the
                 fallback for keyboard users and for anything without
-                IntersectionObserver. */}
-            {hasMorePage && (
+                IntersectionObserver. Planned-only has no live pages to load. */}
+            {hasMorePage && !plannedOnly && (
               <div className="kk-load-more" ref={sentinelRef}>
                 <button type="button" className="kk-load-more-btn" onClick={loadMore} disabled={loadingMore}>
                   {loadingMore ? "Loading…" : "Show more events"}
@@ -1884,6 +2058,17 @@ export default function OrganiserGamesBoard({ view }: { view: GamesView }) {
           reportingMinsBeforeGame={selectedGame.reportingMinsBeforeGame}
           hostInfo={selectedGame.hostInfo || null}
           hasTeams={Boolean(selectedGame.teamDistributionRun)}
+          shareGame={selectedGame}
+          pendingRequests={(selectedGame.invitations || []).filter((i: any) => i.status === "pending").length}
+          // Invite is where a private game's link is turned on and join requests
+          // are approved — view-only co-organisers can do neither.
+          onOpenInvite={selectedGame.myRole === "view" ? undefined : () => {
+            const g = selectedGame;
+            setShowPlayersModal(false);
+            setSelectedGame(null);
+            openInviteModal(g);
+          }}
+          organiserNames={organiserNamesOf(selectedGame)}
           autoTeamsState={{
             // Absent reads as ON, as it does on the backend (utils/autoTeams.js).
             on: selectedGame.autoTeamDistribution !== false,

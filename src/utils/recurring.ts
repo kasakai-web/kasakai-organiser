@@ -330,6 +330,48 @@ const authFetch = async (path: string, init: RequestInit = {}) => {
 export const listSeries = async (status?: SeriesStatus): Promise<RecurringSeries[]> =>
   (await authFetch(`${BASE}${status ? `?status=${status}` : ""}`)).data || [];
 
+// ── Upcoming preview ─────────────────────────────────────────────────────────
+// A planned recurring game that does not exist yet, shaped like the game it will
+// become (series defaults + that date's overrides, resolved server-side). Shown
+// faded and read-only under Upcoming Events. See utils/recurringPreview.js.
+export type GoLiveState = "scheduled" | "due" | "paused" | "blocked";
+
+export interface PlannedGamePreview {
+  occurrenceId: string;
+  series: { _id: string; name: string; status: SeriesStatus; description: string; total: number | null };
+  seq: number;
+  title: string;
+  scheduledAt: string;
+  endsAt: string;
+  originalScheduledAt: string;
+  durationMins: number;
+  reportingMinsBeforeGame: number | null;
+  /** Registration closes here — but only while the game is full. */
+  cutoffAt: string | null;
+  turf: { _id: string; name: string; area: string | null; city: string | null } | null;
+  format: Format;
+  totalSlots: number;
+  minPlayers: number;
+  feeInPaise: number;
+  visibility: "public" | "private";
+  requiresApproval: boolean;
+  organiserIsPlaying: boolean;
+  acceptsPasses: boolean;
+  hostSpots: number;
+  /** When the real game is created and opens for booking. */
+  goesLiveAt: string;
+  goLiveState: GoLiveState;
+  isCustomised: boolean;
+  isRescheduled: boolean;
+  isExtra: boolean;
+  conflicts: { type: string; message: string }[];
+  /** How this series' last few games went. avgFilled/avgSlots are null with no history. */
+  track: { games: number; cancelled: number; avgFilled: number | null; avgSlots: number | null; fullCount: number };
+}
+
+export const getUpcomingPreview = async (days = 30): Promise<PlannedGamePreview[]> =>
+  (await authFetch(`${BASE}/upcoming-preview?days=${days}`)).data || [];
+
 export const getSeries = async (id: string): Promise<RecurringSeries> =>
   (await authFetch(`${BASE}/${id}`)).data;
 
