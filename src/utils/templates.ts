@@ -45,6 +45,8 @@ export interface Template {
   autoTeamDistribution?: boolean;
   /** Host spots every game made from this blueprint starts with. */
   hostSlots?: StoredHostSlots | null;
+  /** The early-bird ladder every game made from this blueprint starts with (no counters). */
+  pricing?: { tiers?: { pricePaise: number; seats: number; closesHoursBefore?: number | null }[] } | null;
   alternateFormats?: TemplateAltFormat[];
   automationEnabled?: boolean;
   /** Auto-confirm at minimum on games made from this blueprint. Absent = off. */
@@ -176,6 +178,7 @@ export const templateToLastEventShape = (t: Template, dateYMD: string) => {
     acceptsPasses: t.acceptsPasses !== false,
     autoTeamDistribution: t.autoTeamDistribution === true,
     hostSlots: t.hostSlots ?? null,
+    pricing: t.pricing ?? null,
     alternateFormats: t.allowSizeChange ? (t.alternateFormats || []) : [],
     lifecycle: { automationEnabled: !!t.automationEnabled, autoConfirmOnMin: t.autoConfirmOnMin === true },
     organiserGuests: [],

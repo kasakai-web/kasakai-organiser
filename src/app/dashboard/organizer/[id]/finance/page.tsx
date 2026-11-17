@@ -35,6 +35,12 @@ interface GameFinance {
   hostSeats?: number;
   hostDiscountPaise?: number;
   hostSlots?: { name: string; amountPaidPaise: number; discountPaise: number }[];
+  // Seats sold below list on your early-bird ladder, what that gave up, and
+  // what the live seats would have grossed at list. Your own price — nothing is
+  // owed to anyone, and it is shown beside revenue, never netted into it.
+  earlyBirdSeats?: number;
+  earlyBirdSavingPaise?: number;
+  listGrossPaise?: number;
   paidPlayers: PlayerSlot[];
   paidGuests: PlayerSlot[];
   orgFreeSlots: PlayerSlot[];
@@ -55,6 +61,9 @@ interface FinanceSummary {
   totalPassBornePaise: number;
   totalHostSeats?: number;
   totalHostDiscountPaise?: number;
+  totalEarlyBirdSeats?: number;
+  totalEarlyBirdSavingPaise?: number;
+  totalListGrossPaise?: number;
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -277,6 +286,34 @@ export default function OrgFinancePage() {
                 </div>
               )}
 
+              {/* Early-bird pricing — what the ladders cost you, so you can judge
+                  whether booking earlier was worth it. Only once a seat sold early. */}
+              {(summary.totalEarlyBirdSeats ?? 0) > 0 && (
+                <div className="fin-pass-row">
+                  <div className="fin-pass-head">
+                    <span className="fin-pass-icon">🐦</span>
+                    <span className="fin-pass-title">Early-bird pricing</span>
+                    <span className="fin-pass-count">
+                      {summary.totalEarlyBirdSeats} early seat{summary.totalEarlyBirdSeats === 1 ? "" : "s"}
+                    </span>
+                  </div>
+                  <div className="fin-pass-nums">
+                    <div className="fin-pass-num">
+                      <span className="fin-pass-num-lbl">Below list</span>
+                      <span className="fin-pass-num-val">{rs(summary.totalEarlyBirdSavingPaise ?? 0)}</span>
+                    </div>
+                    <div className="fin-pass-num">
+                      <span className="fin-pass-num-lbl">At list price</span>
+                      <span className="fin-pass-num-val">{rs(summary.totalListGrossPaise ?? 0)}</span>
+                    </div>
+                  </div>
+                  <p className="fin-pass-note">
+                    What your early-bird prices gave up for earlier bookings, against what the same seats would have
+                    grossed at your full fee. Already reflected in Collected; seats given up don&apos;t count.
+                  </p>
+                </div>
+              )}
+
               {/* Player counts row */}
               <div className="fin-counts-row">
                 <div className="fin-count-item">
@@ -389,6 +426,12 @@ export default function OrgFinancePage() {
                             <span className="fin-chip-lbl">host discount</span>
                           </div>
                         )}
+                        {(game.earlyBirdSavingPaise ?? 0) > 0 && (
+                          <div className="fin-stat-chip fin-chip-pass">
+                            <span className="fin-chip-val">{rs(game.earlyBirdSavingPaise ?? 0)}</span>
+                            <span className="fin-chip-lbl">early bird</span>
+                          </div>
+                        )}
                         <div className="fin-stat-chip">
                           <span className="fin-chip-val">{paidCnt + freeCnt}</span>
                           <span className="fin-chip-lbl">slots</span>
@@ -444,6 +487,22 @@ export default function OrgFinancePage() {
                               <span className="fin-detail-money-lbl">Host discount</span>
                               <span className="fin-detail-money-val">{rs(game.hostDiscountPaise ?? 0)}</span>
                             </div>
+                          )}
+                          {(game.earlyBirdSeats ?? 0) > 0 && (
+                            <>
+                              <div className="fin-detail-money-item">
+                                <span className="fin-detail-money-lbl">Early-bird seats</span>
+                                <span className="fin-detail-money-val">{game.earlyBirdSeats}</span>
+                              </div>
+                              <div className="fin-detail-money-item">
+                                <span className="fin-detail-money-lbl">Below list</span>
+                                <span className="fin-detail-money-val">{rs(game.earlyBirdSavingPaise ?? 0)}</span>
+                              </div>
+                              <div className="fin-detail-money-item">
+                                <span className="fin-detail-money-lbl">At list price</span>
+                                <span className="fin-detail-money-val fin-col-muted">{rs(game.listGrossPaise ?? 0)}</span>
+                              </div>
+                            </>
                           )}
                           {game.acceptsPasses === false && (
                             <div className="fin-detail-money-item">

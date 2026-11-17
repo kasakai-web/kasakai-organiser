@@ -73,6 +73,10 @@ interface Registration {
   // what the host discount took off it (frozen at booking).
   seatType?: "standard" | "host";
   hostDiscountPaise?: number;
+  // The early-bird tier this seat was sold at (null = list), frozen at booking.
+  priceTier?: number | null;
+  listPricePaise?: number;
+  earlyBirdSavingPaise?: number;
   optedOut?: boolean;
   optedOutAt?: string;
   optedOutReason?: "self" | "format_change" | null;
@@ -143,6 +147,8 @@ interface PlayerDetailsModalProps {
   reportingMinsBeforeGame?: number;
   /** The game's host spots and who is running it (the backend's hostInfo). */
   hostInfo?: HostInfo | null;
+  /** The early-bird ladder with its live counters (Game.pricing). */
+  pricing?: { tiers?: { pricePaise: number; seats: number; sold?: number; held?: number }[] } | null;
   /** What the automatic team distribution is doing to this game, read off the game. */
   autoTeamsState?: AutoTeamsState | null;
   /** The game has a distribution to look at (Game.teamDistributionRun). */
@@ -287,6 +293,7 @@ export function PlayerDetailsModal({
   format,
   reportingMinsBeforeGame,
   hostInfo = null,
+  pricing = null,
   autoTeamsState = null,
   hasTeams = false,
   shareGame = null,
@@ -1211,6 +1218,24 @@ function downloadTeamExcel(result: {
               </div>
             </>
           )}
+          {(pricing?.tiers?.length ?? 0) > 0 && (() => {
+            const tiers = pricing!.tiers!;
+            const sold = tiers.reduce((n, t) => n + (t.sold || 0), 0);
+            const held = tiers.reduce((n, t) => n + (t.held || 0), 0);
+            const seats = tiers.reduce((n, t) => n + t.seats, 0);
+            return (
+              <>
+                <div className="pdm-stat-div" />
+                <div
+                  className="pdm-stat"
+                  title={tiers.map((t) => `₹${t.pricePaise / 100}: ${t.sold || 0}/${t.seats} sold${t.held ? ` · ${t.held} held` : ""}`).join(" · ")}
+                >
+                  <span className="pdm-stat-val" style={{ color: "#c8ff3e" }}>{sold}/{seats}</span>
+                  <span className="pdm-stat-lbl">Early bird{held > 0 ? ` · ${held} held` : ""}</span>
+                </div>
+              </>
+            );
+          })()}
           {openWaitlist.length > 0 && (
             <>
               <div className="pdm-stat-div" />
@@ -2451,6 +2476,14 @@ function PlayerCard({
                 title={`${reg.discountTitle || "Discount"}${reg.discountCode ? ` (code ${reg.discountCode})` : ""} — ₹${(reg.discountPaise ?? 0) / 100} off`}
               >
                 🏷 {reg.discountCode || "Offer"} −₹{(reg.discountPaise ?? 0) / 100}
+              </span>
+            )}
+            {reg.priceTier != null && (
+              <span
+                className="pdm-mini-chip tone-lime"
+                title={`Early-bird seat — ₹${((reg.listPricePaise ?? 0) - (reg.earlyBirdSavingPaise ?? 0)) / 100}, ₹${(reg.earlyBirdSavingPaise ?? 0) / 100} below the ₹${(reg.listPricePaise ?? 0) / 100} list price`}
+              >
+                🐦 Early ₹{((reg.listPricePaise ?? 0) - (reg.earlyBirdSavingPaise ?? 0)) / 100}
               </span>
             )}
             {reg.assignedColour && !optedOut && (

@@ -2057,6 +2057,7 @@ export default function OrganiserGamesBoard({ view }: { view: GamesView }) {
           format={selectedGame.format}
           reportingMinsBeforeGame={selectedGame.reportingMinsBeforeGame}
           hostInfo={selectedGame.hostInfo || null}
+          pricing={selectedGame.pricing || null}
           hasTeams={Boolean(selectedGame.teamDistributionRun)}
           shareGame={selectedGame}
           pendingRequests={(selectedGame.invitations || []).filter((i: any) => i.status === "pending").length}

@@ -53,6 +53,8 @@ export interface SeriesGameDefaults {
   autoTeamDistribution?: boolean;
   /** Host spots every game this series makes starts with. */
   hostSlots?: StoredHostSlots | null;
+  /** The early-bird ladder each new game copies (no counters). */
+  pricing?: { tiers?: { pricePaise: number; seats: number; closesHoursBefore?: number | null }[] } | null;
   automationEnabled?: boolean;
   /** Auto-confirm at minimum on every game this series makes. Absent = off. */
   autoConfirmOnMin?: boolean;
