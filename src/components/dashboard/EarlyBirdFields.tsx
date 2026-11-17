@@ -17,6 +17,11 @@ export const earlyBirdFromStored = (pricing?: { tiers?: StoredTier[] } | null): 
     held: t.held || 0,
   }));
 
+/** The same rows WITHOUT the sale counters — for seeding a new game or a template
+ *  from another game, whose sold/held seats belong to that game alone. */
+export const earlyBirdBlueprint = (pricing?: { tiers?: StoredTier[] } | null): EarlyBirdRow[] =>
+  earlyBirdFromStored(pricing).map((r) => ({ priceRs: r.priceRs, seats: r.seats, closesHoursBefore: r.closesHoursBefore }));
+
 export const earlyBirdToPayload = (rows: EarlyBirdRow[]) => ({
   tiers: rows.map((r) => ({
     priceRs: Number(r.priceRs),
