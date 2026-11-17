@@ -17,6 +17,7 @@ import { fromStored, toPayload, describeForOrganiser, WINDOW_CHOICES, GRACE_CHOI
 import { hostSlotsFromStored, hostSlotsToPayload, hostSlotsError, type HostSlotsForm } from "@/utils/hosts";
 import { AUTO_CONFIRM_LABEL, autoConfirmHelper } from "@/utils/autoConfirm";
 import { HostSpotsFields } from "@/components/dashboard/HostSpotsFields";
+import { EarlyBirdFields, earlyBirdBlueprint, earlyBirdToPayload, type EarlyBirdRow } from "@/components/dashboard/EarlyBirdFields";
 
 const TIME_SLOT_OPTIONS = Array.from({ length: 96 }, (_, idx) => {
   const hours = Math.floor(idx / 4);
@@ -80,6 +81,7 @@ export function TemplateForm({ template, onClose, onSaved }: TemplateFormProps) 
   const [autoTeamDistribution, setAutoTeamDistribution] = useState(template?.autoTeamDistribution === true);
   // Host spots every game made from this template starts with.
   const [hostSlots, setHostSlots] = useState<HostSlotsForm>(() => hostSlotsFromStored(template?.hostSlots));
+  const [earlyBird, setEarlyBird] = useState<EarlyBirdRow[]>(() => earlyBirdBlueprint(template?.pricing));
   const [allowSizeChange, setAllowSizeChange] = useState(template?.allowSizeChange ?? false);
   const lastAlt = template?.alternateFormats?.[0] || null;
   const [altFormat, setAltFormat] = useState<Format>((lastAlt?.format as Format) ?? "5v5");
@@ -167,6 +169,8 @@ export function TemplateForm({ template, onClose, onSaved }: TemplateFormProps) 
         acceptsPasses,
         autoTeamDistribution,
         hostSlots: hostSlotsToPayload(hostSlots),
+        // Always sent, so emptying the rows clears the template's ladder.
+        pricing: earlyBirdToPayload(earlyBird),
         organiserIsPlaying,
         automationEnabled,
         autoConfirmOnMin,
@@ -392,6 +396,11 @@ export function TemplateForm({ template, onClose, onSaved }: TemplateFormProps) 
             organiserIsPlaying={organiserIsPlaying}
           />
           {errors.hosts && <div className="field-error">{errors.hosts}</div>}
+        </div>
+
+        <div className="form-section">
+          <h3 className="section-title">Early-bird pricing</h3>
+          <EarlyBirdFields value={earlyBird} onChange={setEarlyBird} feeRs={Number(feeInRs) || 0} totalSlots={Number(maxPlayers) || slots} />
         </div>
 
         <div className="form-section">
