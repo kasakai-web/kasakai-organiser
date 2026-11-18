@@ -728,7 +728,7 @@ export function EditEventModal({
           </Section>
 
           <Section title="Early-bird pricing" collapsible defaultOpen={earlyBird.length > 0} summary={earlyBird.length ? `${earlyBird.length} tier${earlyBird.length > 1 ? "s" : ""}` : "None"}>
-            <EarlyBirdFields value={earlyBird} onChange={(next) => { earlyBirdTouched.current = true; setEarlyBird(next); }} feeRs={Number(feeInRs) || 0} totalSlots={Number(totalSlots)} />
+            <EarlyBirdFields value={earlyBird} onChange={(next) => { earlyBirdTouched.current = true; setEarlyBird(next); }} feeRs={Number(feeInRs) || 0} totalSlots={Number(totalSlots)} kickoff={scheduledIso || null} />
           </Section>
 
           {/* ── Format Change — shown ONLY when an alternate format was defined at

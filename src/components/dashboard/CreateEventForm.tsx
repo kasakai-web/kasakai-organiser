@@ -1327,7 +1327,7 @@ export function CreateEventForm({ lastEvent, presetDate, onClose, onCreate, onSu
 
             <SubSectionHeader title="Early-bird pricing" />
             <div className="mb-10">
-              <EarlyBirdFields value={earlyBird} onChange={setEarlyBird} feeRs={Number(feeInRs) || 0} totalSlots={hardCap} />
+              <EarlyBirdFields value={earlyBird} onChange={setEarlyBird} feeRs={Number(feeInRs) || 0} totalSlots={hardCap} kickoff={date && time ? `${date}T${time}:00+05:30` : null} />
             </div>
 
             <SubSectionHeader title="Passes" />

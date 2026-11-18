@@ -1,5 +1,7 @@
 "use client";
 
+import { useState } from "react";
+
 // Early-bird pricing — up to 3 cheaper prices for a game's first seats. The
 // server (utils/seatPricing.js) is the authority and refuses a bad ladder on
 // save; the hints here only catch the common slips as the organiser types.
@@ -37,6 +39,13 @@ const CLOSE_OPTIONS = [
   { value: "24", label: "1 day before" },
   { value: "12", label: "12 hrs before" },
 ];
+const MAX_CLOSE_HOURS = 30 * 24; // the server's limit (utils/seatPricing.js)
+const HOUR_MS = 3600_000;
+
+// "YYYY-MM-DDTHH:mm" in IST, the shape a datetime-local input takes.
+const istLocal = (ms: number) => new Date(ms).toLocaleString("sv-SE", { timeZone: "Asia/Kolkata" }).slice(0, 16).replace(" ", "T");
+const istPretty = (ms: number) =>
+  new Date(ms).toLocaleString("en-IN", { timeZone: "Asia/Kolkata", weekday: "short", day: "numeric", month: "short", hour: "numeric", minute: "2-digit" });
 
 const box =
   "bg-[#1a1a1a] border border-[#2a2a2a] rounded-xl h-11 w-full px-3 text-white text-sm font-bold focus:outline-none focus:border-[#c4f042] disabled:opacity-50 [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none";
@@ -53,18 +62,43 @@ function rowHint(r: EarlyBirdRow, prev: EarlyBirdRow | undefined, feeRs: number)
   return null;
 }
 
+function closeHint(r: EarlyBirdRow, kickoffMs: number | null): { text: string; bad: boolean } | null {
+  if (r.closesHoursBefore === "") return null;
+  const h = Number(r.closesHoursBefore);
+  if (!Number.isFinite(h) || h < 0) return { text: "Ends must be before kickoff.", bad: true };
+  if (h > MAX_CLOSE_HOURS) return { text: "Ends can be at most 30 days before kickoff.", bad: true };
+  return kickoffMs ? { text: `Ends ${istPretty(kickoffMs - h * HOUR_MS)}`, bad: false } : null;
+}
+
 export function EarlyBirdFields({
   value,
   onChange,
   feeRs,
   totalSlots = 0,
+  kickoff,
 }: {
   value: EarlyBirdRow[];
   onChange: (rows: EarlyBirdRow[]) => void;
   feeRs: number;
   totalSlots?: number;
+  /** The game's kickoff (ISO). Templates and series have none, so they get hours only. */
+  kickoff?: string | null;
 }) {
   const set = (i: number, patch: Partial<EarlyBirdRow>) => onChange(value.map((r, j) => (j === i ? { ...r, ...patch } : r)));
+  const kickoffMs = kickoff && !Number.isNaN(Date.parse(kickoff)) ? Date.parse(kickoff) : null;
+  // Which custom editor a row shows; a stored value off the presets opens as hours.
+  const [modes, setModes] = useState<Record<number, "hours" | "time">>({});
+  const modeOf = (i: number, r: EarlyBirdRow) =>
+    modes[i] ?? (CLOSE_OPTIONS.some((o) => o.value === r.closesHoursBefore) ? null : "hours");
+  const pickEnds = (i: number, v: string) => {
+    if (v === "hours" || v === "time") {
+      setModes({ ...modes, [i]: v });
+      if (value[i].closesHoursBefore === "") set(i, { closesHoursBefore: "6" });
+      return;
+    }
+    setModes(Object.fromEntries(Object.entries(modes).filter(([k]) => Number(k) !== i)));
+    set(i, { closesHoursBefore: v });
+  };
 
   if (feeRs <= 0) return <p className="text-xs text-[#888]">Set a game fee to offer early-bird prices.</p>;
 
@@ -107,12 +141,15 @@ export function EarlyBirdFields({
       {value.map((r, i) => {
         const locked = (r.sold || 0) + (r.held || 0) > 0;
         const hint = rowHint(r, value[i - 1], feeRs);
+        const mode = modeOf(i, r);
+        const ends = closeHint(r, kickoffMs);
+        const hrs = Number(r.closesHoursBefore);
         return (
           <div key={i} className="rounded-xl border border-[#2a2a2a] p-3 flex flex-col gap-2">
             <div className="flex items-center justify-between text-xs font-bold text-white">
               <span>Tier {i + 1}{locked && <span className="text-[#888] font-normal"> · {r.sold || 0} sold · {r.held || 0} held — price locked</span>}</span>
               {!locked && (
-                <button type="button" onClick={() => onChange(value.filter((_, j) => j !== i))} className="text-[#888] hover:text-[#f87171]">
+                <button type="button" onClick={() => { setModes({}); onChange(value.filter((_, j) => j !== i)); }} className="text-[#888] hover:text-[#f87171]">
                   Remove
                 </button>
               )}
@@ -140,14 +177,45 @@ export function EarlyBirdFields({
               </label>
               <label className={label}>
                 Ends
-                <select className={box} value={r.closesHoursBefore} onChange={(e) => set(i, { closesHoursBefore: e.target.value })}>
+                <select className={box} value={mode ?? r.closesHoursBefore} onChange={(e) => pickEnds(i, e.target.value)}>
                   {CLOSE_OPTIONS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
-                  {!CLOSE_OPTIONS.some((o) => o.value === r.closesHoursBefore) && (
-                    <option value={r.closesHoursBefore}>{r.closesHoursBefore} hrs before</option>
-                  )}
+                  <option value="hours">Hours before…</option>
+                  {kickoffMs && <option value="time">At a date & time…</option>}
                 </select>
               </label>
             </div>
+            {mode === "hours" && (
+              <label className={label}>
+                Hours before kickoff
+                <input
+                  type="number"
+                  inputMode="decimal"
+                  min={0}
+                  max={MAX_CLOSE_HOURS}
+                  step="any"
+                  className={box}
+                  value={r.closesHoursBefore}
+                  onChange={(e) => set(i, { closesHoursBefore: e.target.value })}
+                />
+              </label>
+            )}
+            {mode === "time" && kickoffMs && (
+              <label className={label}>
+                Ends at (IST)
+                <input
+                  type="datetime-local"
+                  className={box}
+                  max={istLocal(kickoffMs)}
+                  value={Number.isFinite(hrs) ? istLocal(kickoffMs - hrs * HOUR_MS) : ""}
+                  onChange={(e) => {
+                    if (!e.target.value) return;
+                    const at = Date.parse(`${e.target.value}:00+05:30`);
+                    set(i, { closesHoursBefore: String(Math.round(((kickoffMs - at) / HOUR_MS) * 1e4) / 1e4) });
+                  }}
+                />
+              </label>
+            )}
+            {ends && <span className={`text-[11px] ${ends.bad ? "text-[#f87171]" : "text-[#888]"}`}>{ends.text}</span>}
             {hint && <span className="text-[11px] text-[#f87171]">{hint}</span>}
           </div>
         );
