@@ -673,49 +673,60 @@ background: rgb(255, 255, 0,0.15);
   border: 1px solid #3a3d45;
 }
 
-/* Copy link — beside Actions so sharing a game is one tap, not a trip to the
-   player app. */
-.game-card .copy-link-btn {
-  height: 46px;
-  padding: 0 14px;
-  border-radius: 10px;
+/* Copy link — a small icon right after the title, so sharing a game is one
+   tap, not a trip to the player app. 32px square: big enough for a thumb,
+   small enough not to compete with the title. */
+.game-card .copy-link-wrap {
+  position: relative;
+  display: inline-flex;
+  vertical-align: middle;
+  margin-left: 8px;
+}
+
+.game-card .copy-link-icon {
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  border-radius: 8px;
   border: 1px solid #3a3d44;
   background: transparent;
-  color: #d4d4d8;
+  color: #b4b8c0;
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  gap: 8px;
-  font-weight: 600;
-  white-space: nowrap;
   cursor: pointer;
   transition: background 0.15s, color 0.15s, border-color 0.15s;
 }
 
-.game-card .copy-link-btn:hover {
+.game-card .copy-link-icon:hover {
   border-color: #c8ff3e;
   color: #c8ff3e;
 }
 
-.game-card .copy-link-btn.is-copied {
+.game-card .copy-link-icon.is-copied {
   border-color: rgba(200, 255, 62, 0.5);
   background: rgba(200, 255, 62, 0.12);
   color: #c8ff3e;
 }
 
-.game-card .copy-link-btn.is-fix {
-  border-style: dashed;
-  color: #a1a1aa;
+.game-card .copy-link-icon.is-failed {
+  border-color: rgba(248, 113, 113, 0.5);
+  color: #f87171;
 }
 
-.game-card .copy-link-btn:focus-visible {
+.game-card .copy-link-icon.is-fix {
+  border-style: dashed;
+  color: #8a8a8a;
+}
+
+.game-card .copy-link-icon:focus-visible {
   outline: 2px solid #c8ff3e;
   outline-offset: 2px;
 }
 
 .game-card .copy-link-fallback {
   position: absolute;
-  right: 0;
+  left: 0;
   top: calc(100% + 6px);
   z-index: 30;
   width: min(320px, 80vw);
@@ -725,10 +736,5 @@ background: rgb(255, 255, 0,0.15);
   background: #0e0e0e;
   color: #ddd;
   font-size: 12px;
-}
-
-@media (max-width: 640px) {
-  .game-card .copy-link-btn {
-    flex: 1 1 0;
-  }
+  font-weight: 400;
 }

@@ -228,7 +228,20 @@ function GameCard({game,variant = "upcoming",isMenuOpen,onToggleMenu,onPlayers,o
 
         <div className="game-details">
           <div className="title-row">
-            <h3>{game.title} </h3>
+            <h3>
+              {game.title}
+              {/* The link players open to join — one tap, without leaving for
+                  the player app to fetch it. Inside the heading so it stays
+                  glued to the last word when a long title wraps on a phone.
+                  Upcoming games only: a played or cancelled game has nothing
+                  left to join. */}
+              {!isPast && !isClosed && (
+                <CopyGameLinkButton
+                  game={game}
+                  onFixLink={canEditGame && onInvite ? onInvite : undefined}
+                />
+              )}
+            </h3>
             {isPrivate && <Lock size={17} />}
             {seriesName && (
               <span className="series-badge" title="Created by this recurring schedule">
@@ -376,15 +389,6 @@ function GameCard({game,variant = "upcoming",isMenuOpen,onToggleMenu,onPlayers,o
       </div>
 
       <div className="game-actions">
-        {/* The link players open to join — one tap, without leaving for the
-            player app to fetch it. Upcoming games only: a played or cancelled
-            game has nothing left to join. */}
-        {!isPast && !isClosed && (
-          <CopyGameLinkButton
-            game={game}
-            onFixLink={canEditGame && onInvite ? onInvite : undefined}
-          />
-        )}
         {postGameCta && (
           <button type="button" className="postgame-cta" onClick={onComplete}>
             {postGameCta}

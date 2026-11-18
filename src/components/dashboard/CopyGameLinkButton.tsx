@@ -17,11 +17,12 @@ import { copyText } from "@/utils/clipboard";
  */
 export function CopyGameLinkButton({
   game,
-  variant = "card",
+  variant = "icon",
   onFixLink,
 }: {
   game: ShareableGame;
-  variant?: "card" | "header";
+  /** `icon`: a bare icon button, sat right after the game card's title. */
+  variant?: "icon" | "header";
   onFixLink?: () => void;
 }) {
   const link = shareLinkFor(game);
@@ -58,6 +59,37 @@ export function CopyGameLinkButton({
 
   const Icon = state === "copied" ? Check : link.url === null ? Share2 : Link2;
 
+  // If the copy itself failed (locked-down browser), show the link so it can
+  // still be long-pressed and copied by hand.
+  const fallback = state === "failed" && link.url && (
+    <input
+      readOnly
+      value={link.url}
+      onFocus={(e) => e.currentTarget.select()}
+      onClick={(e) => e.stopPropagation()}
+      className="copy-link-fallback"
+      aria-label="Game link"
+      autoFocus
+    />
+  );
+
+  if (variant === "icon") {
+    return (
+      <span className="copy-link-wrap">
+        <button
+          type="button"
+          onClick={onClick}
+          title={title}
+          aria-label={label}
+          className={`copy-link-icon${state === "copied" ? " is-copied" : ""}${state === "failed" ? " is-failed" : ""}${link.url === null ? " is-fix" : ""}`}
+        >
+          <Icon size={15} aria-hidden="true" />
+        </button>
+        {fallback}
+      </span>
+    );
+  }
+
   return (
     <>
       <button
@@ -65,26 +97,12 @@ export function CopyGameLinkButton({
         onClick={onClick}
         title={title}
         aria-label={label}
-        className={variant === "header"
-          ? `pdm-hdr-btn pdm-hdr-link${state === "copied" ? " is-copied" : ""}`
-          : `copy-link-btn${state === "copied" ? " is-copied" : ""}${link.url === null ? " is-fix" : ""}`}
+        className={`pdm-hdr-btn pdm-hdr-link${state === "copied" ? " is-copied" : ""}`}
       >
-        <Icon size={variant === "header" ? 13 : 15} aria-hidden="true" className={variant === "header" ? "pdm-btn-icon" : undefined} />
-        <span className={variant === "header" ? "pdm-btn-label" : undefined}>{variant === "header" ? ` ${label}` : label}</span>
+        <Icon size={13} aria-hidden="true" className="pdm-btn-icon" />
+        <span className="pdm-btn-label">{` ${label}`}</span>
       </button>
-      {/* If the copy itself failed (locked-down browser), show the link so it can
-          still be long-pressed and copied by hand. */}
-      {state === "failed" && link.url && (
-        <input
-          readOnly
-          value={link.url}
-          onFocus={(e) => e.currentTarget.select()}
-          onClick={(e) => e.stopPropagation()}
-          className="copy-link-fallback"
-          aria-label="Game link"
-          autoFocus
-        />
-      )}
+      {fallback}
     </>
   );
 }
