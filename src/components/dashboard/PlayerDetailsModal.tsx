@@ -12,6 +12,7 @@ import { ImageLightbox } from "@/components/ui/ImageLightbox";
 import { buildPlayerListMessage } from "@/utils/playerListMessage";
 import { isValidYouTubeVideoUrl } from "@/utils/youtubeUrl";
 import type { HostInfo } from "@/utils/hosts";
+import { TestControlsPanel } from "@/components/dashboard/TestControlsPanel";
 
 const IMG_BASE = (process.env.NEXT_PUBLIC_API_BASE_URL || "http://localhost:5000/api/v1").replace(/\/api\/v1\/?$/, "");
 
@@ -931,6 +932,9 @@ function downloadTeamExcel(result: {
             10 minutes — or press Distribute, then Publish, to send them yourself.
           </div>
         )}
+
+        {/* Test server only — renders nothing on production (Test_Speedups_Plan.md). */}
+        <TestControlsPanel gameId={gameId} onChanged={onRefresh} />
 
         {/* Stats Strip */}
         <div className="pdm-stats-strip">
