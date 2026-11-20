@@ -109,6 +109,7 @@ export function RecurringSeriesForm({ series, pivotOccurrenceId, onClose, onSave
   const [acceptsPasses, setAcceptsPasses] = useState(d?.acceptsPasses !== false);
   // Automatic team distribution for every game the series makes. Absent = on.
   const [autoTeamDistribution, setAutoTeamDistribution] = useState(d?.autoTeamDistribution === true);
+  const [autoSos, setAutoSos] = useState(d?.autoSos === true);
   // Host spots, owned by the series like the rest — each game gets its own copy.
   const [hostSlots, setHostSlots] = useState<HostSlotsForm>(() => hostSlotsFromStored(d?.hostSlots));
   const [earlyBird, setEarlyBird] = useState<EarlyBirdRow[]>(() => earlyBirdBlueprint(d?.pricing));
@@ -186,6 +187,7 @@ export function RecurringSeriesForm({ series, pivotOccurrenceId, onClose, onSave
     setOrganiserIsPlaying(!!t.organiserIsPlaying);
     setAcceptsPasses(t.acceptsPasses !== false);
     setAutoTeamDistribution(t.autoTeamDistribution === true);
+    setAutoSos(t.autoSos === true);
     setHostSlots(hostSlotsFromStored(t.hostSlots));
     setEarlyBird(earlyBirdBlueprint(t.pricing));
     setAutomationEnabled(!!t.automationEnabled);
@@ -234,6 +236,7 @@ export function RecurringSeriesForm({ series, pivotOccurrenceId, onClose, onSave
       organiserIsPlaying,
       acceptsPasses,
       autoTeamDistribution,
+      autoSos,
       hostSlots: hostSlotsToPayload(hostSlots),
       // Each new game copies this ladder; games already made keep their own.
       pricing: earlyBirdToPayload(earlyBird),
@@ -246,7 +249,7 @@ export function RecurringSeriesForm({ series, pivotOccurrenceId, onClose, onSave
     checkOrganiser, checkOverlap, horizonDays, leadDays, notifyOnCreate, notifyOnChange,
     notifyOnCancel, title, nameMode, titlePattern, visibility, requiresApproval, turf, format, durationMins,
     reportingMins, cutoffHours, feeInRs, backoutFeeInRs, backoutPolicy, minPlayers, totalSlots,
-    organiserIsPlaying, acceptsPasses, autoTeamDistribution, hostSlots, earlyBird, automationEnabled, autoConfirmOnMin,
+    organiserIsPlaying, acceptsPasses, autoTeamDistribution, autoSos, hostSlots, earlyBird, automationEnabled, autoConfirmOnMin,
   ]);
 
   // Debounced preview. Every keystroke in the rule would otherwise be a request,
@@ -723,6 +726,10 @@ export function RecurringSeriesForm({ series, pivotOccurrenceId, onClose, onSave
             <label className="toggle-row">
               <input type="checkbox" className="toggle-checkbox" checked={autoTeamDistribution} onChange={(ev) => setAutoTeamDistribution(ev.target.checked)} />
               <span className="toggle-label">Automatic team distribution</span>
+            </label>
+            <label className="toggle-row">
+              <input type="checkbox" className="toggle-checkbox" checked={autoSos} onChange={(ev) => setAutoSos(ev.target.checked)} />
+              <span className="toggle-label">Automatic SOS while a game is below its minimum</span>
             </label>
             <label className="toggle-row">
               <input type="checkbox" className="toggle-checkbox" checked={automationEnabled} onChange={(ev) => setAutomationEnabled(ev.target.checked)} />

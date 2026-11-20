@@ -136,6 +136,8 @@ export function EditEventModal({
   // Automatic team distribution. Absent on games made before the switch, which
   // reads as on.
   const [autoTeamDistribution, setAutoTeamDistribution] = useState(initialData.autoTeamDistribution !== false);
+  // Absent reads as OFF, as it does on the backend (utils/sosAuto.js).
+  const [autoSos, setAutoSos] = useState(initialData.autoSos === true);
 
   // Host spots. Only sent when touched: the config is re-checked against the
   // roster on every save that carries it, and an untouched one has nothing to
@@ -395,6 +397,7 @@ export function EditEventModal({
         requiresApproval,
         acceptsPasses,
         autoTeamDistribution,
+        autoSos,
         lifecycle,
       };
       if (hostSlotsTouched.current) payload.hostSlots = hostSlotsToPayload(hostSlots);
@@ -568,6 +571,19 @@ export function EditEventModal({
                 {autoTeamDistribution
                   ? "Once the game is confirmed and full (and past its 2nd check-in), the teams are picked and sent for you. If it never fills, they go out 1 hour before reporting time with whoever is in — unless it is below its minimum then, when you are asked instead."
                   : "Teams are only sent when you press Distribute and then Publish. Teams already sent stay sent."}
+              </div>
+            </Field>
+            <Field label="Filling the game">
+              <label style={{ display: "flex", alignItems: "center", gap: 10, cursor: "pointer" }}>
+                <input type="checkbox" checked={autoSos}
+                  onChange={(e) => setAutoSos(e.target.checked)}
+                  style={{ width: 17, height: 17, accentColor: "#c8ff3e", flexShrink: 0 }} />
+                <span style={{ fontSize: 13, color: "#ddd" }}>Automatic SOS</span>
+              </label>
+              <div style={{ fontSize: 11, color: "#666", marginTop: 4 }}>
+                {autoSos
+                  ? "ON: while this game is below its minimum, KasaKai sends an SOS for you — before each check-in, and after anyone drops out — to players who play at this venue around this time. Never in the last hour before kickoff, never at night, and you are told each time. Needs both check-ins."
+                  : "An SOS goes out only when you send one. SOS already sent stay in the SOS log."}
               </div>
             </Field>
             <Field label="Confirmation">

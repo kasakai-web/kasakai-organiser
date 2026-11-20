@@ -480,6 +480,31 @@ background: rgb(255, 255, 0,0.15);
   background: rgba(255, 91, 91, 0.12);
 }
 
+/* ── SOS history: dropdown item ── */
+.sos-history-item {
+  color: #ffc83d;
+  position: relative;
+}
+
+.sos-history-item:hover {
+  background: rgba(255, 200, 61, 0.12);
+}
+
+.sos-history-item span {
+  margin-left: auto;
+  min-width: 18px;
+  height: 18px;
+  padding: 0 5px;
+  border-radius: 9px;
+  background: rgba(255, 200, 61, 0.18);
+  color: #ffc83d;
+  font-size: 11px;
+  font-weight: 700;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
 /* ── Published team sheets: dropdown item ── */
 .team-history-item {
   color: #f0abfc;

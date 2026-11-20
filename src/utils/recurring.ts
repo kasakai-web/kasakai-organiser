@@ -51,6 +51,8 @@ export interface SeriesGameDefaults {
   acceptsPasses?: boolean;
   /** Automatic team distribution on every game this series makes. Absent = on. */
   autoTeamDistribution?: boolean;
+  /** Automatic SOS on every game this series makes. Absent = off. */
+  autoSos?: boolean;
   /** Host spots every game this series makes starts with. */
   hostSlots?: StoredHostSlots | null;
   /** The early-bird ladder each new game copies (no counters). */

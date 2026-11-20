@@ -320,6 +320,7 @@ export function CreateEventForm({ lastEvent, presetDate, onClose, onCreate, onSu
   // Automatic team distribution — on by default. A prefill that predates the
   // switch has no value, which reads as on, like the game it came from.
   const [autoTeamDistribution, setAutoTeamDistribution] = useState<boolean>(lastEvent?.autoTeamDistribution === true);
+  const [autoSos, setAutoSos] = useState<boolean>(lastEvent?.autoSos === true);
 
   // Host spots — seats held for this organiser's approved hosts, at a discount,
   // until a release time. Prefilled from the last event or a template like
@@ -639,6 +640,7 @@ export function CreateEventForm({ lastEvent, presetDate, onClose, onCreate, onSu
     passesTouched.current = true;
     setAcceptsPasses(t.acceptsPasses !== false);
     setAutoTeamDistribution(t.autoTeamDistribution === true);
+    setAutoSos(t.autoSos === true);
     setHostSlots(hostSlotsFromStored(t.hostSlots));
     setEarlyBird(earlyBirdBlueprint(t.pricing));
 
@@ -797,6 +799,7 @@ export function CreateEventForm({ lastEvent, presetDate, onClose, onCreate, onSu
         allowSizeChange,
         acceptsPasses,
         autoTeamDistribution,
+        autoSos,
         hostSlots: hostSlotsToPayload(hostSlots),
         ...(earlyBird.length ? { pricing: earlyBirdToPayload(earlyBird) } : {}),
         organiserIsPlaying,
@@ -865,6 +868,7 @@ export function CreateEventForm({ lastEvent, presetDate, onClose, onCreate, onSu
         allowSizeChange,
         acceptsPasses,
         autoTeamDistribution,
+        autoSos,
         hostSlots: hostSlotsToPayload(hostSlots),
         ...(earlyBird.length ? { pricing: earlyBirdToPayload(earlyBird) } : {}),
         organiserIsPlaying,
@@ -1700,6 +1704,18 @@ export function CreateEventForm({ lastEvent, presetDate, onClose, onCreate, onSu
                   : "OFF: teams are only sent when you press Distribute and then Publish."}
                 checked={autoTeamDistribution}
                 onChange={() => setAutoTeamDistribution((v: boolean) => !v)}
+              />
+            </div>
+
+            <SubSectionHeader title="Filling the game" />
+            <div className="mb-10">
+              <CheckboxRow
+                label={<span className="font-bold">Automatic SOS</span>}
+                helper={autoSos
+                  ? "ON: while this game is below its minimum, KasaKai sends an SOS for you — before each check-in, and after anyone drops out — to players who play at this venue around this time. Never in the last hour before kickoff, never at night, and you are told each time. Needs both check-ins."
+                  : "OFF: an SOS goes out only when you send one."}
+                checked={autoSos}
+                onChange={() => setAutoSos((v: boolean) => !v)}
               />
             </div>
 

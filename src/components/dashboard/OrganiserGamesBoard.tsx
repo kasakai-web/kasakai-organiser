@@ -18,6 +18,7 @@ import GameCard from "@/components/dashboard/GameCard/GameCard";
 import CoOrganiserModal from "@/components/dashboard/CoOrganiserModal";
 import FacilitatorsModal from "@/components/dashboard/FacilitatorsModal";
 import { TeamSheetHistory } from "@/components/dashboard/TeamSheetHistory";
+import { SosHistory, hasSosHistory } from "@/components/dashboard/SosHistory/SosHistory";
 import { ListQuickAdd, SaveAsList, pickedKey } from "@/components/playerLists/ListQuickAdd";
 import { addFromList, defaultListName, listsUsed, removeList } from "@/utils/playerLists";
 import { PlannedGameCard } from "@/components/dashboard/PlannedGameCard";
@@ -62,16 +63,6 @@ const timeAgo = (value: string | Date) => {
   if (hrs < 24)  return `${hrs}h ago`;
   const days = Math.round(hrs / 24);
   return days === 1 ? "yesterday" : `${days}d ago`;
-};
-
-// What the WhatsApp leg of one SOS did. In-app always goes out, so a row that is
-// not "sent" was still notified inside the app — the label says what is missing,
-// never that the player heard nothing.
-const SOS_WA_BADGE: Record<string, { label: string; color: string; bg: string; border: string }> = {
-  sent:      { label: "WhatsApp",   color: "#c8ff3e", bg: "rgba(200,255,62,0.10)",  border: "rgba(200,255,62,0.25)" },
-  failed:    { label: "WA failed",  color: "#f87171", bg: "rgba(248,113,113,0.10)", border: "rgba(248,113,113,0.28)" },
-  opted_out: { label: "In-app only", color: "#9aa",   bg: "rgba(255,255,255,0.05)", border: "#333" },
-  no_number: { label: "No number",  color: "#f59e0b", bg: "rgba(245,158,11,0.10)",  border: "rgba(245,158,11,0.28)" },
 };
 
 // Each view has its own natural reading order: Upcoming starts with the next
@@ -148,6 +139,12 @@ export default function OrganiserGamesBoard({ view }: { view: GamesView }) {
     // Player ids holding a seat right now: a logged recipient who is in this set
     // answered the call, which is the only measure of whether an SOS worked.
     seated:     string[];
+    // Send = pick recipients and send (the default); History = every SOS this
+    // game has sent and what came of it (components/dashboard/SosHistory).
+    tab?:       "send" | "history";
+    // The card says this game has sent an SOS (or had an automatic wave), so
+    // the History tab is worth offering before the log has even loaded.
+    hasHistory?: boolean;
   }>(null);
   // Private-game invitations
   const [inviteGameId, setInviteGameId] = useState<string | null>(null);
@@ -169,6 +166,10 @@ export default function OrganiserGamesBoard({ view }: { view: GamesView }) {
   const [coOrgGame, setCoOrgGame] = useState<any>(null);
   const [facilitatorGame, setFacilitatorGame] = useState<any>(null);
   const [teamHistoryGame, setTeamHistoryGame] = useState<any>(null);
+  // SOS history opened straight from the card menu — read-only, so view
+  // co-organisers and finished games get it too (the SOS modal itself is
+  // edit-only and live games only).
+  const [sosHistoryGame, setSosHistoryGame] = useState<any>(null);
   const [cancelTargetGame, setCancelTargetGame] = useState<any>(null);
   const [cancelMessage, setCancelMessage] = useState("");
   const [cancellingId, setCancellingId] = useState<string | null>(null);
@@ -631,7 +632,7 @@ export default function OrganiserGamesBoard({ view }: { view: GamesView }) {
     const seated = (game.registrations || [])
       .filter((r: any) => r.player && !r.plusOneName && !["refunded", "forfeited"].includes(r.paymentStatus))
       .map((r: any) => String(r.player?._id || r.player));
-    setSosModal({ gameId: game._id, gameTitle: game.title, loading: true, regulars: [], recipients: [], log: [], seated });
+    setSosModal({ gameId: game._id, gameTitle: game.title, loading: true, regulars: [], recipients: [], log: [], seated, tab: "send", hasHistory: hasSosHistory(game) });
     sosFind.reset();
     const { token } = getSession();
     if (!token) { clearSession(); router.replace("/login?role=organiser"); return; }
@@ -1086,6 +1087,22 @@ export default function OrganiserGamesBoard({ view }: { view: GamesView }) {
         onCancel={(g) => { setCancelTargetGame(g); setCancelMessage(""); setShowCancelModal(true); }}
       />
 
+      {/* SOS history — every SOS this game sent, and who it brought in */}
+      {sosHistoryGame && (
+        <div className="modal-overlay" onClick={() => setSosHistoryGame(null)}>
+          <div onClick={(e) => e.stopPropagation()} style={{ width: "100%", maxWidth: 620, maxHeight: "88vh", overflowY: "auto", background: "#111214", border: "1px solid #2a2a2a", borderRadius: 16, padding: 22, color: "#fff" }}>
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 6 }}>
+              <h2 style={{ margin: 0, fontSize: 18, fontWeight: 800 }}>📣 SOS history</h2>
+              <button onClick={() => setSosHistoryGame(null)} style={{ background: "none", border: "none", color: "#888", fontSize: 20, cursor: "pointer", lineHeight: 1 }}>✕</button>
+            </div>
+            <p style={{ fontSize: 13, color: "#9aa", margin: "0 0 14px", lineHeight: 1.5 }}>
+              Every SOS sent for <b style={{ color: "#ddd" }}>{sosHistoryGame.title}</b>, newest first: who it went to, when, and whether they took a spot.
+            </p>
+            <SosHistory gameId={sosHistoryGame._id} />
+          </div>
+        </div>
+      )}
+
       {/* Published team sheets — what the players were told, and when */}
       {teamHistoryGame && (
         <div className="modal-overlay" onClick={() => setTeamHistoryGame(null)}>
@@ -1120,13 +1137,47 @@ export default function OrganiserGamesBoard({ view }: { view: GamesView }) {
         }
         const count = sosModal.recipients.length;
         const canSend = count > 0 && !sosModal.loading && !sosModal.sending;
+        const sosTab = sosModal.tab || "send";
+        const setSosTab = (tab: "send" | "history") => setSosModal((m) => (m ? { ...m, tab } : m));
+        // One send = one moment (every row of a send shares its timestamp).
+        const sendsSoFar = new Set(sosModal.log.map((r) => r.sentAt)).size;
+        const showSosTabs = !!sosModal.hasHistory || sosModal.log.length > 0;
+        const peopleAsked = new Set(sosModal.log.map((r) => r.playerId || r.name)).size;
+        const joinedSoFar = new Set(
+          sosModal.log.filter((r) => r.playerId && seatedIds.has(String(r.playerId))).map((r) => String(r.playerId))
+        ).size;
         return (
         <div className="modal-overlay" onClick={closeSos}>
-          <div onClick={(e) => e.stopPropagation()} style={{ width: "100%", maxWidth: 460, background: "#111214", border: "1px solid #2a2a2a", borderRadius: 16, padding: 22, color: "#fff", maxHeight: "88vh", overflowY: "auto" }}>
+          <div onClick={(e) => e.stopPropagation()} style={{ width: "100%", maxWidth: sosTab === "history" ? 620 : 460, background: "#111214", border: "1px solid #2a2a2a", borderRadius: 16, padding: 22, color: "#fff", maxHeight: "88vh", overflowY: "auto" }}>
             <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 6 }}>
-              <h2 style={{ margin: 0, fontSize: 18, fontWeight: 800 }}>📣 Send SOS</h2>
+              <h2 style={{ margin: 0, fontSize: 18, fontWeight: 800 }}>{sosTab === "history" ? "📣 SOS history" : "📣 Send SOS"}</h2>
               <button onClick={closeSos} style={{ background: "none", border: "none", color: "#888", fontSize: 20, cursor: "pointer", lineHeight: 1 }}>✕</button>
             </div>
+
+            {showSosTabs && (
+              <div className="sos-tabs" role="tablist" aria-label="SOS">
+                <button type="button" role="tab" aria-selected={sosTab === "send"} className={`sos-tab ${sosTab === "send" ? "is-on" : ""}`} onClick={() => setSosTab("send")}>
+                  Send
+                </button>
+                <button type="button" role="tab" aria-selected={sosTab === "history"} className={`sos-tab ${sosTab === "history" ? "is-on" : ""}`} onClick={() => setSosTab("history")}>
+                  History{sendsSoFar > 0 && <span>{sendsSoFar}</span>}
+                </button>
+              </div>
+            )}
+
+            {sosTab === "history" ? (
+            <>
+              <p style={{ fontSize: 13, color: "#9aa", margin: "0 0 14px", lineHeight: 1.5 }}>
+                Every SOS sent for <b style={{ color: "#ddd" }}>{sosModal.gameTitle}</b>, newest first: who it went to, when, and whether they took a spot.
+              </p>
+              <SosHistory gameId={sosModal.gameId} />
+              <div style={{ display: "flex", gap: 10, marginTop: 16 }}>
+                <button onClick={closeSos} style={{ flex: 1, padding: 11, borderRadius: 9, border: "1px solid #333", background: "transparent", color: "#ccc", fontWeight: 700, cursor: "pointer" }}>Close</button>
+                <button onClick={() => setSosTab("send")} style={{ flex: 2, padding: 11, borderRadius: 9, border: "none", fontWeight: 800, background: "#c8ff3e", color: "#000", cursor: "pointer" }}>Send another SOS</button>
+              </div>
+            </>
+            ) : (
+            <>
             <p style={{ fontSize: 13, color: "#9aa", margin: "0 0 14px", lineHeight: 1.5 }}>
               Ask players to fill the spots in <b style={{ color: "#ddd" }}>{sosModal.gameTitle}</b>. We&apos;ve pre-picked the venue regulars — add anyone else, or remove whoever you don&apos;t want, then send.
             </p>
@@ -1260,41 +1311,17 @@ export default function OrganiserGamesBoard({ view }: { view: GamesView }) {
               )}
 
               {/* ── Already sent ──────────────────────────────────────────────
-                  An SOS leaves no invitation behind, so this log is the only
-                  record of who was asked. It is the answer to both questions a
-                  second send raises: who did we already ping, and did it land? */}
+                  A pointer to the History tab, which has the full record —
+                  every send, who, when, WhatsApp, taps and who joined. The
+                  per-recipient "SOS sent 2h ago" above stays where it was. */}
               {sosModal.log.length > 0 && (
-                <div style={{ marginTop: 18 }}>
-                  <div style={{ fontSize: 12, fontWeight: 700, color: "#c8ff3e", textTransform: "uppercase", letterSpacing: 0.4, marginBottom: 8 }}>
-                    Already sent <span style={{ color: "#777" }}>({sosModal.log.length})</span>
-                  </div>
-                  <div style={{ maxHeight: 220, overflowY: "auto", border: "1px solid #262626", borderRadius: 10 }}>
-                    {sosModal.log.map((row, i) => {
-                      const wa = SOS_WA_BADGE[row.whatsapp] || SOS_WA_BADGE.sent;
-                      const joined = !!row.playerId && seatedIds.has(String(row.playerId));
-                      return (
-                        <div key={row.id || `${row.playerId || row.name}-${row.sentAt}-${i}`}
-                          style={{ display: "flex", alignItems: "center", gap: 10, justifyContent: "space-between", padding: "9px 12px", borderBottom: i < sosModal.log.length - 1 ? "1px solid #1c1c1c" : "none" }}>
-                          <div style={{ minWidth: 0 }}>
-                            <div style={{ fontSize: 13.5, fontWeight: 600, color: "#eee", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
-                              {row.name}
-                              {joined && <span style={{ marginLeft: 7, fontSize: 10.5, fontWeight: 700, color: "#c8ff3e" }}>✓ JOINED</span>}
-                            </div>
-                            <div style={{ fontSize: 11, color: "#777", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
-                              {[timeAgo(row.sentAt), row.phone, row.sentByName ? `by ${row.sentByName}` : null].filter(Boolean).join(" · ")}
-                            </div>
-                          </div>
-                          <span style={{ flexShrink: 0, fontSize: 10.5, fontWeight: 700, color: wa.color, background: wa.bg, border: `1px solid ${wa.border}`, borderRadius: 20, padding: "2px 9px" }}>
-                            {wa.label}
-                          </span>
-                        </div>
-                      );
-                    })}
-                  </div>
-                  <div style={{ fontSize: 11, color: "#777", marginTop: 6, lineHeight: 1.45 }}>
-                    Everyone listed got the in-app notification — the badge says what WhatsApp did with it.
-                  </div>
-                </div>
+                <button type="button" className="sos-history-pointer" onClick={() => setSosTab("history")}>
+                  <span>
+                    Already sent {sendsSoFar === 1 ? "once" : `${sendsSoFar} times`} to {peopleAsked} player{peopleAsked === 1 ? "" : "s"}
+                    {" "}· <b>{joinedSoFar} joined</b> · last {timeAgo(sosModal.log[0].sentAt)}
+                  </span>
+                  <span className="go">See who →</span>
+                </button>
               )}
             </>
             )}
@@ -1312,6 +1339,8 @@ export default function OrganiserGamesBoard({ view }: { view: GamesView }) {
                 {sosModal.sending ? "Sending…" : count === 0 ? "No one selected" : `Send SOS to ${count} player${count !== 1 ? "s" : ""}`}
               </button>
             </div>
+            </>
+            )}
           </div>
         </div>
         );
@@ -1921,6 +1950,7 @@ export default function OrganiserGamesBoard({ view }: { view: GamesView }) {
                 onManageCoOrgs={() => { setCoOrgGame(game); setOpenMenuGameId(null); }}
                 onFacilitators={() => { setFacilitatorGame(game); setOpenMenuGameId(null); }}
                 onTeamHistory={() => { setTeamHistoryGame(game); setOpenMenuGameId(null); }}
+                onSosHistory={() => { setSosHistoryGame(game); setOpenMenuGameId(null); }}
               />
                 );
               })}
@@ -1981,6 +2011,7 @@ export default function OrganiserGamesBoard({ view }: { view: GamesView }) {
                   }}
                   onCancel={() => openCancelModal(game)}
                   onTeamHistory={() => { setTeamHistoryGame(game); setOpenMenuGameId(null); }}
+                  onSosHistory={() => { setSosHistoryGame(game); setOpenMenuGameId(null); }}
                 />
               ))}
             </div>
