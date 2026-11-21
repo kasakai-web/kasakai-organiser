@@ -23,6 +23,7 @@ import { fromStored, toPayload, describeForOrganiser, WINDOW_CHOICES, GRACE_CHOI
 import { hostSlotsFromStored, hostSlotsToPayload, hostSlotsError, type HostSlotsForm } from "@/utils/hosts";
 import { AUTO_CONFIRM_LABEL, autoConfirmHelper } from "@/utils/autoConfirm";
 import { HostSpotsFields } from "@/components/dashboard/HostSpotsFields";
+import { EarlyBirdFields, earlyBirdBlueprint, earlyBirdToPayload, type EarlyBirdRow } from "@/components/dashboard/EarlyBirdFields";
 
 interface Turf { _id: string; name: string; location?: { city?: string } }
 
@@ -110,6 +111,7 @@ export function RecurringSeriesForm({ series, pivotOccurrenceId, onClose, onSave
   const [autoTeamDistribution, setAutoTeamDistribution] = useState(d?.autoTeamDistribution === true);
   // Host spots, owned by the series like the rest — each game gets its own copy.
   const [hostSlots, setHostSlots] = useState<HostSlotsForm>(() => hostSlotsFromStored(d?.hostSlots));
+  const [earlyBird, setEarlyBird] = useState<EarlyBirdRow[]>(() => earlyBirdBlueprint(d?.pricing));
   const [automationEnabled, setAutomationEnabled] = useState(d?.automationEnabled ?? false);
   const [autoConfirmOnMin, setAutoConfirmOnMin] = useState(d?.autoConfirmOnMin === true);
 
@@ -185,6 +187,7 @@ export function RecurringSeriesForm({ series, pivotOccurrenceId, onClose, onSave
     setAcceptsPasses(t.acceptsPasses !== false);
     setAutoTeamDistribution(t.autoTeamDistribution === true);
     setHostSlots(hostSlotsFromStored(t.hostSlots));
+    setEarlyBird(earlyBirdBlueprint(t.pricing));
     setAutomationEnabled(!!t.automationEnabled);
     setAutoConfirmOnMin(t.autoConfirmOnMin === true);
   };
@@ -232,6 +235,8 @@ export function RecurringSeriesForm({ series, pivotOccurrenceId, onClose, onSave
       acceptsPasses,
       autoTeamDistribution,
       hostSlots: hostSlotsToPayload(hostSlots),
+      // Each new game copies this ladder; games already made keep their own.
+      pricing: earlyBirdToPayload(earlyBird),
       automationEnabled,
       autoConfirmOnMin,
     },
@@ -241,7 +246,7 @@ export function RecurringSeriesForm({ series, pivotOccurrenceId, onClose, onSave
     checkOrganiser, checkOverlap, horizonDays, leadDays, notifyOnCreate, notifyOnChange,
     notifyOnCancel, title, nameMode, titlePattern, visibility, requiresApproval, turf, format, durationMins,
     reportingMins, cutoffHours, feeInRs, backoutFeeInRs, backoutPolicy, minPlayers, totalSlots,
-    organiserIsPlaying, acceptsPasses, autoTeamDistribution, hostSlots, automationEnabled, autoConfirmOnMin,
+    organiserIsPlaying, acceptsPasses, autoTeamDistribution, hostSlots, earlyBird, automationEnabled, autoConfirmOnMin,
   ]);
 
   // Debounced preview. Every keystroke in the rule would otherwise be a request,
@@ -741,6 +746,13 @@ export function RecurringSeriesForm({ series, pivotOccurrenceId, onClose, onSave
               organiserIsPlaying={organiserIsPlaying}
             />
             {errors.hosts && <div className="field-error">{errors.hosts}</div>}
+          </div>
+
+          {/* ── Early-bird pricing ─────────────────────────────────── */}
+          <div className="form-section">
+            <h3 className="section-title">Early-bird pricing</h3>
+            <EarlyBirdFields value={earlyBird} onChange={setEarlyBird} feeRs={Number(feeInRs) || 0} totalSlots={Number(totalSlots) || slotsFromFormat(format)} />
+            <div className="field-hint">Each new game in this schedule starts with this ladder. Games already made keep their own.</div>
           </div>
 
           {/* ── Conflicts & generation ─────────────────────────────── */}

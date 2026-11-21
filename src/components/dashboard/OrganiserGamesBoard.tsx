@@ -1802,6 +1802,7 @@ export default function OrganiserGamesBoard({ view }: { view: GamesView }) {
           format={selectedGame.format}
           reportingMinsBeforeGame={selectedGame.reportingMinsBeforeGame}
           hostInfo={selectedGame.hostInfo || null}
+          pricing={selectedGame.pricing || null}
           hasTeams={Boolean(selectedGame.teamDistributionRun)}
           autoTeamsState={{
             // Absent reads as ON, as it does on the backend (utils/autoTeams.js).

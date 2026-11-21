@@ -193,6 +193,8 @@ function GameCard({game,variant = "upcoming",isMenuOpen,onToggleMenu,onPlayers,o
   const endTime = game.endsAt ? formatTime(new Date(game.endsAt)) : null;
 
   const fee = game.feeInPaise ? game.feeInPaise / 100 : 0;
+  // The early-bird ladder's first (cheapest) tier, as the organiser set it.
+  const tier1: { pricePaise: number; seats: number; sold?: number } | undefined = game.pricing?.tiers?.[0];
   const maxPlayers = game.totalSlots;
   const players = filledCount(game);
   const type = game.allowSizeChange ? "Flexible" : "Fixed";
@@ -310,6 +312,15 @@ function GameCard({game,variant = "upcoming",isMenuOpen,onToggleMenu,onPlayers,o
           <span>FEE</span>
 
           <strong>₹{fee}</strong>
+
+          {tier1 && (
+            <>
+              <div className="ladder-badge">Ladder pricing</div>
+              <small title={`${tier1.sold || 0} sold`}>
+                Tier 1: ₹{tier1.pricePaise / 100} × {tier1.seats} seats
+              </small>
+            </>
+          )}
         </div>
 
         <div className="stat">

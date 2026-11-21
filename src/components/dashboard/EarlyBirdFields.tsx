@@ -1,0 +1,251 @@
+"use client";
+
+import { useState } from "react";
+
+// Early-bird pricing — up to 3 cheaper prices for a game's first seats. The
+// server (utils/seatPricing.js) is the authority and refuses a bad ladder on
+// save; the hints here only catch the common slips as the organiser types.
+
+export type EarlyBirdRow = { priceRs: string; seats: string; closesHoursBefore: string; sold?: number; held?: number };
+
+type StoredTier = { pricePaise: number; seats: number; closesHoursBefore?: number | null; sold?: number; held?: number };
+
+export const earlyBirdFromStored = (pricing?: { tiers?: StoredTier[] } | null): EarlyBirdRow[] =>
+  (pricing?.tiers || []).map((t) => ({
+    priceRs: String(t.pricePaise / 100),
+    seats: String(t.seats),
+    closesHoursBefore: t.closesHoursBefore == null ? "" : String(t.closesHoursBefore),
+    sold: t.sold || 0,
+    held: t.held || 0,
+  }));
+
+/** The same rows WITHOUT the sale counters — for seeding a new game or a template
+ *  from another game, whose sold/held seats belong to that game alone. */
+export const earlyBirdBlueprint = (pricing?: { tiers?: StoredTier[] } | null): EarlyBirdRow[] =>
+  earlyBirdFromStored(pricing).map((r) => ({ priceRs: r.priceRs, seats: r.seats, closesHoursBefore: r.closesHoursBefore }));
+
+export const earlyBirdToPayload = (rows: EarlyBirdRow[]) => ({
+  tiers: rows.map((r) => ({
+    priceRs: Number(r.priceRs),
+    seats: Number(r.seats),
+    closesHoursBefore: r.closesHoursBefore === "" ? null : Number(r.closesHoursBefore),
+  })),
+});
+
+const CLOSE_OPTIONS = [
+  { value: "", label: "When sold out" },
+  { value: "72", label: "3 days before" },
+  { value: "48", label: "2 days before" },
+  { value: "24", label: "1 day before" },
+  { value: "12", label: "12 hrs before" },
+];
+const MAX_CLOSE_HOURS = 30 * 24; // the server's limit (utils/seatPricing.js)
+const HOUR_MS = 3600_000;
+
+// "YYYY-MM-DDTHH:mm" in IST, the shape a datetime-local input takes.
+const istLocal = (ms: number) => new Date(ms).toLocaleString("sv-SE", { timeZone: "Asia/Kolkata" }).slice(0, 16).replace(" ", "T");
+const istPretty = (ms: number) =>
+  new Date(ms).toLocaleString("en-IN", { timeZone: "Asia/Kolkata", weekday: "short", day: "numeric", month: "short", hour: "numeric", minute: "2-digit" });
+
+const box =
+  "bg-[#1a1a1a] border border-[#2a2a2a] rounded-xl h-11 w-full px-3 text-white text-sm font-bold focus:outline-none focus:border-[#c4f042] disabled:opacity-50 [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none";
+const label = "flex flex-col gap-1 text-[10px] font-bold text-[#888] uppercase tracking-widest";
+const rs = (n: number) => `₹${Math.round(n).toLocaleString("en-IN")}`;
+
+function rowHint(r: EarlyBirdRow, prev: EarlyBirdRow | undefined, feeRs: number): string | null {
+  const p = Number(r.priceRs);
+  if (r.priceRs === "" || r.seats === "") return null;
+  if (p >= feeRs) return `Must be below the fee (${rs(feeRs)}).`;
+  if (p < Math.ceil(feeRs / 2)) return `Can't go below ${rs(Math.ceil(feeRs / 2))} (half the fee).`;
+  if (prev && prev.priceRs !== "" && p <= Number(prev.priceRs)) return "Each tier must cost more than the one before.";
+  if (Number(r.seats) < 1) return "At least 1 seat.";
+  return null;
+}
+
+function closeHint(r: EarlyBirdRow, kickoffMs: number | null): { text: string; bad: boolean } | null {
+  if (r.closesHoursBefore === "") return null;
+  const h = Number(r.closesHoursBefore);
+  if (!Number.isFinite(h) || h < 0) return { text: "Ends must be before kickoff.", bad: true };
+  if (h > MAX_CLOSE_HOURS) return { text: "Ends can be at most 30 days before kickoff.", bad: true };
+  return kickoffMs ? { text: `Ends ${istPretty(kickoffMs - h * HOUR_MS)}`, bad: false } : null;
+}
+
+export function EarlyBirdFields({
+  value,
+  onChange,
+  feeRs,
+  totalSlots = 0,
+  kickoff,
+}: {
+  value: EarlyBirdRow[];
+  onChange: (rows: EarlyBirdRow[]) => void;
+  feeRs: number;
+  totalSlots?: number;
+  /** The game's kickoff (ISO). Templates and series have none, so they get hours only. */
+  kickoff?: string | null;
+}) {
+  const set = (i: number, patch: Partial<EarlyBirdRow>) => onChange(value.map((r, j) => (j === i ? { ...r, ...patch } : r)));
+  const kickoffMs = kickoff && !Number.isNaN(Date.parse(kickoff)) ? Date.parse(kickoff) : null;
+  // Which custom editor a row shows; a stored value off the presets opens as hours.
+  const [modes, setModes] = useState<Record<number, "hours" | "time">>({});
+  const modeOf = (i: number, r: EarlyBirdRow) =>
+    modes[i] ?? (CLOSE_OPTIONS.some((o) => o.value === r.closesHoursBefore) ? null : "hours");
+  const pickEnds = (i: number, v: string) => {
+    if (v === "hours" || v === "time") {
+      setModes({ ...modes, [i]: v });
+      if (value[i].closesHoursBefore === "") set(i, { closesHoursBefore: "6" });
+      return;
+    }
+    setModes(Object.fromEntries(Object.entries(modes).filter(([k]) => Number(k) !== i)));
+    set(i, { closesHoursBefore: v });
+  };
+
+  if (feeRs <= 0) return <p className="text-xs text-[#888]">Set a game fee to offer early-bird prices.</p>;
+
+  const filled = value.filter((r) => r.priceRs !== "" && Number(r.seats) > 0);
+  const earlySeats = filled.reduce((n, r) => n + Number(r.seats), 0);
+  const allSeats = value.reduce((n, r) => n + (Number(r.seats) || 0), 0);
+  const overCap = totalSlots > 0 && allSeats > totalSlots;
+  // The most seats tier i may take: the game's slots minus the other tiers'.
+  const maxFor = (i: number) => (totalSlots > 0 ? Math.max(1, totalSlots - (allSeats - (Number(value[i]?.seats) || 0))) : undefined);
+
+  // A sensible next tier: halfway between the last price and the fee, a quarter of the seats.
+  const addTier = () => {
+    const last = value[value.length - 1];
+    const lastPrice = last && last.priceRs !== "" ? Number(last.priceRs) : Math.round(feeRs * 0.6);
+    const price = Math.min(feeRs - 10, Math.round((lastPrice + feeRs) / 2 / 10) * 10);
+    const seats = Math.max(1, Math.round(totalSlots / 4));
+    const room = totalSlots > 0 ? totalSlots - allSeats : seats;
+    onChange([...value, { priceRs: String(price), seats: String(Math.max(1, Math.min(seats, room))), closesHoursBefore: "" }]);
+  };
+  const earlyGross = filled.reduce((n, r) => n + Number(r.priceRs) * Number(r.seats), 0);
+  const restSeats = Math.max(0, totalSlots - earlySeats);
+
+  if (value.length === 0) {
+    return (
+      <div className="flex flex-col gap-2">
+        <p className="text-xs text-[#888]">Reward players who book early — the first seats sell cheaper, then the price rises.</p>
+        <button
+          type="button"
+          onClick={addTier}
+          className="self-start h-10 px-4 rounded-xl border border-[#c4f042] text-[#c4f042] text-xs font-bold uppercase tracking-widest hover:bg-[#c4f042] hover:text-[#0f0f0f] transition-colors"
+        >
+          + Add early-bird pricing
+        </button>
+      </div>
+    );
+  }
+
+  return (
+    <div className="flex flex-col gap-3">
+      {value.map((r, i) => {
+        const locked = (r.sold || 0) + (r.held || 0) > 0;
+        const hint = rowHint(r, value[i - 1], feeRs);
+        const mode = modeOf(i, r);
+        const ends = closeHint(r, kickoffMs);
+        const hrs = Number(r.closesHoursBefore);
+        return (
+          <div key={i} className="rounded-xl border border-[#2a2a2a] p-3 flex flex-col gap-2">
+            <div className="flex items-center justify-between text-xs font-bold text-white">
+              <span>Tier {i + 1}{locked && <span className="text-[#888] font-normal"> · {r.sold || 0} sold · {r.held || 0} held — price locked</span>}</span>
+              {!locked && (
+                <button type="button" onClick={() => { setModes({}); onChange(value.filter((_, j) => j !== i)); }} className="text-[#888] hover:text-[#f87171]">
+                  Remove
+                </button>
+              )}
+            </div>
+            <div className="grid grid-cols-3 gap-2">
+              <label className={label}>
+                Price ₹
+                <input type="number" inputMode="numeric" min={1} className={box} value={r.priceRs} disabled={locked} onChange={(e) => set(i, { priceRs: e.target.value })} />
+              </label>
+              <label className={label}>
+                Seats
+                <input
+                  type="number"
+                  inputMode="numeric"
+                  min={1}
+                  max={maxFor(i)}
+                  className={box}
+                  value={r.seats}
+                  onChange={(e) => {
+                    const max = maxFor(i);
+                    const v = e.target.value;
+                    set(i, { seats: max && v !== "" && Number(v) > max ? String(max) : v });
+                  }}
+                />
+              </label>
+              <label className={label}>
+                Ends
+                <select className={box} value={mode ?? r.closesHoursBefore} onChange={(e) => pickEnds(i, e.target.value)}>
+                  {CLOSE_OPTIONS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
+                  <option value="hours">Hours before…</option>
+                  {kickoffMs && <option value="time">At a date & time…</option>}
+                </select>
+              </label>
+            </div>
+            {mode === "hours" && (
+              <label className={label}>
+                Hours before kickoff
+                <input
+                  type="number"
+                  inputMode="decimal"
+                  min={0}
+                  max={MAX_CLOSE_HOURS}
+                  step="any"
+                  className={box}
+                  value={r.closesHoursBefore}
+                  onChange={(e) => set(i, { closesHoursBefore: e.target.value })}
+                />
+              </label>
+            )}
+            {mode === "time" && kickoffMs && (
+              <label className={label}>
+                Ends at (IST)
+                <input
+                  type="datetime-local"
+                  className={box}
+                  max={istLocal(kickoffMs)}
+                  value={Number.isFinite(hrs) ? istLocal(kickoffMs - hrs * HOUR_MS) : ""}
+                  onChange={(e) => {
+                    if (!e.target.value) return;
+                    const at = Date.parse(`${e.target.value}:00+05:30`);
+                    set(i, { closesHoursBefore: String(Math.round(((kickoffMs - at) / HOUR_MS) * 1e4) / 1e4) });
+                  }}
+                />
+              </label>
+            )}
+            {ends && <span className={`text-[11px] ${ends.bad ? "text-[#f87171]" : "text-[#888]"}`}>{ends.text}</span>}
+            {hint && <span className="text-[11px] text-[#f87171]">{hint}</span>}
+          </div>
+        );
+      })}
+
+      {overCap && (
+        <span className="text-[11px] text-[#f87171]">
+          Early-bird tiers add up to {allSeats} seats, but the game only has {totalSlots}.
+        </span>
+      )}
+
+      {value.length < 3 && (totalSlots <= 0 || allSeats < totalSlots) && (
+        <button type="button" onClick={addTier} className="self-start text-xs font-bold text-[#c4f042] uppercase tracking-widest">
+          + Add another tier
+        </button>
+      )}
+
+      {filled.length > 0 && (
+        <div className="rounded-xl bg-[#c4f042]/10 border border-[#c4f042]/30 p-3 text-xs text-white flex flex-col gap-1">
+          <span>
+            <span className="font-bold text-[#c4f042]">Players see: </span>
+            {filled.map((r) => `${r.seats} seats at ${rs(Number(r.priceRs))}`).join(" → ")} → then {rs(feeRs)}
+          </span>
+          {totalSlots > 0 && (
+            <span className="text-[#888]">
+              If every early seat sells: {rs(earlyGross + restSeats * feeRs)} instead of {rs(totalSlots * feeRs)}. Guests always pay {rs(feeRs)}.
+            </span>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
