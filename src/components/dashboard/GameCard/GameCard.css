@@ -480,6 +480,31 @@ background: rgb(255, 255, 0,0.15);
   background: rgba(255, 91, 91, 0.12);
 }
 
+/* ── SOS history: dropdown item ── */
+.sos-history-item {
+  color: #ffc83d;
+  position: relative;
+}
+
+.sos-history-item:hover {
+  background: rgba(255, 200, 61, 0.12);
+}
+
+.sos-history-item span {
+  margin-left: auto;
+  min-width: 18px;
+  height: 18px;
+  padding: 0 5px;
+  border-radius: 9px;
+  background: rgba(255, 200, 61, 0.18);
+  color: #ffc83d;
+  font-size: 11px;
+  font-weight: 700;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
 /* ── Published team sheets: dropdown item ── */
 .team-history-item {
   color: #f0abfc;
@@ -654,4 +679,87 @@ background: rgb(255, 255, 0,0.15);
     left: 0;
     right: 0;
   }
+}
+
+/* A live game that a recurring schedule created — matches the faded planned
+   cards' badge so the two read as the same schedule. */
+.series-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  flex-shrink: 0;
+  font-size: 10.5px;
+  font-weight: 700;
+  padding: 2px 9px;
+  border-radius: 20px;
+  white-space: nowrap;
+  color: #b4b8c0;
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid #3a3d45;
+}
+
+/* Copy link — a small icon right after the title, so sharing a game is one
+   tap, not a trip to the player app. 32px square: big enough for a thumb,
+   small enough not to compete with the title. */
+.game-card .copy-link-wrap {
+  position: relative;
+  display: inline-flex;
+  vertical-align: middle;
+  margin-left: 8px;
+}
+
+.game-card .copy-link-icon {
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  border-radius: 8px;
+  border: 1px solid #3a3d44;
+  background: transparent;
+  color: #b4b8c0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s, border-color 0.15s;
+}
+
+.game-card .copy-link-icon:hover {
+  border-color: #c8ff3e;
+  color: #c8ff3e;
+}
+
+.game-card .copy-link-icon.is-copied {
+  border-color: rgba(200, 255, 62, 0.5);
+  background: rgba(200, 255, 62, 0.12);
+  color: #c8ff3e;
+}
+
+.game-card .copy-link-icon.is-failed {
+  border-color: rgba(248, 113, 113, 0.5);
+  color: #f87171;
+}
+
+.game-card .copy-link-icon.is-fix {
+  border-style: dashed;
+  color: #8a8a8a;
+}
+
+.game-card .copy-link-icon:focus-visible {
+  outline: 2px solid #c8ff3e;
+  outline-offset: 2px;
+}
+
+.game-card .copy-link-fallback {
+  position: absolute;
+  left: 0;
+  top: calc(100% + 6px);
+  z-index: 30;
+  width: min(320px, 80vw);
+  padding: 8px 10px;
+  border-radius: 8px;
+  border: 1px solid #3a3d44;
+  background: #0e0e0e;
+  color: #ddd;
+  font-size: 12px;
+  font-weight: 400;
 }

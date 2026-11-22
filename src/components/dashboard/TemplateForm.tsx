@@ -79,6 +79,7 @@ export function TemplateForm({ template, onClose, onSaved }: TemplateFormProps) 
   const [acceptsPasses, setAcceptsPasses] = useState(template?.acceptsPasses !== false);
   // Automatic team distribution for games made from this template. Absent = on.
   const [autoTeamDistribution, setAutoTeamDistribution] = useState(template?.autoTeamDistribution === true);
+  const [autoSos, setAutoSos] = useState(template?.autoSos === true);
   // Host spots every game made from this template starts with.
   const [hostSlots, setHostSlots] = useState<HostSlotsForm>(() => hostSlotsFromStored(template?.hostSlots));
   const [earlyBird, setEarlyBird] = useState<EarlyBirdRow[]>(() => earlyBirdBlueprint(template?.pricing));
@@ -168,6 +169,7 @@ export function TemplateForm({ template, onClose, onSaved }: TemplateFormProps) 
         allowSizeChange,
         acceptsPasses,
         autoTeamDistribution,
+        autoSos,
         hostSlots: hostSlotsToPayload(hostSlots),
         // Always sent, so emptying the rows clears the template's ladder.
         pricing: earlyBirdToPayload(earlyBird),
@@ -383,6 +385,14 @@ export function TemplateForm({ template, onClose, onSaved }: TemplateFormProps) 
           <div className="field-hint">
             Teams are picked and sent for you once a game is confirmed and full, or 1 hour before reporting
             time if it never fills (below its minimum then, you are asked instead).
+          </div>
+          <label className="toggle-row">
+            <input type="checkbox" checked={autoSos} onChange={(ev) => setAutoSos(ev.target.checked)} className="toggle-checkbox" />
+            <span className="toggle-label">Automatic SOS</span>
+          </label>
+          <div className="field-hint">
+            While a game is below its minimum, an SOS goes out for you before each check-in and after anyone
+            drops out, to players who play at this venue around this time. Needs both check-ins.
           </div>
         </div>
 

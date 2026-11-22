@@ -2,9 +2,10 @@
 
 import { useLayoutEffect, useMemo, useRef, useState } from "react";
 import "./GameCard.css";
-import {Lock,Calendar,Star,Clock,MapPin,Users,Trophy,CheckCircle2,Timer,ChevronDown,Pencil,RefreshCw,TriangleAlert,Undo2,CircleCheck,CircleX,CircleCheckBig, UserPlus,History,Award,} from "lucide-react";
+import {Lock,Calendar,Star,Clock,MapPin,Users,Trophy,CheckCircle2,Timer,ChevronDown,Pencil,RefreshCw,TriangleAlert,Undo2,CircleCheck,CircleX,CircleCheckBig, UserPlus,History,Award,Repeat,} from "lucide-react";
 import { filledCount } from "@/utils/playerCount";
 import type { HostInfo } from "@/utils/hosts";
+import { CopyGameLinkButton } from "@/components/dashboard/CopyGameLinkButton";
 
 interface GameCardProps {
   game: any;
@@ -22,8 +23,12 @@ interface GameCardProps {
   onInvite?: () => void;
   onManageCoOrgs?: () => void;
   onTeamHistory?: () => void;
+  /** Every SOS this game sent — who, when, and who joined. Read-only. */
+  onSosHistory?: () => void;
   /** Ask one of your approved hosts to run this game without playing. */
   onFacilitators?: () => void;
+  /** Set when the game was created by a recurring schedule — that schedule's name. */
+  seriesName?: string;
 }
 
 const getStatusConfig = (status: string) => {
@@ -94,7 +99,7 @@ const formatTime = (d: Date) =>
     })
     .toUpperCase();
 
-function GameCard({game,variant = "upcoming",isMenuOpen,onToggleMenu,onPlayers,onEdit,onConfirm,onWithdraw,onCancel,onSwitch,onSOS,onComplete,onInvite,onManageCoOrgs,onTeamHistory,onFacilitators,
+function GameCard({game,variant = "upcoming",isMenuOpen,onToggleMenu,onPlayers,onEdit,onConfirm,onWithdraw,onCancel,onSwitch,onSOS,onComplete,onInvite,onManageCoOrgs,onTeamHistory,onSosHistory,onFacilitators,seriesName,
 }: GameCardProps) {
   const status = getStatusConfig(game.status);
   const isPast = variant === "past";
@@ -129,6 +134,10 @@ function GameCard({game,variant = "upcoming",isMenuOpen,onToggleMenu,onPlayers,o
   // a reshuffle, but what was already sent out stays worth reading — so the
   // published-sheet reference, which survives a reshuffle, is what gates this.
   const hasTeamHistory = Boolean(game.publishedTeamSheet);
+  // Any SOS sent — by an organiser or an automatic wave. The count is sends,
+  // not messages: every row of one send shares its timestamp.
+  const sosSends = new Set((game.sosLog || []).map((r: any) => r.sentAt)).size;
+  const hasSosHistoryEntry = sosSends > 0 || (game.autoSosState?.waves?.length ?? 0) > 0;
 
   const isClosed = ["completed", "cancelled"].includes(game.status);
   // Every live game can be invited to — public games are browsable AND invitable,
@@ -225,8 +234,26 @@ function GameCard({game,variant = "upcoming",isMenuOpen,onToggleMenu,onPlayers,o
 
         <div className="game-details">
           <div className="title-row">
-            <h3>{game.title} </h3>
+            <h3>
+              {game.title}
+              {/* The link players open to join — one tap, without leaving for
+                  the player app to fetch it. Inside the heading so it stays
+                  glued to the last word when a long title wraps on a phone.
+                  Upcoming games only: a played or cancelled game has nothing
+                  left to join. */}
+              {!isPast && !isClosed && (
+                <CopyGameLinkButton
+                  game={game}
+                  onFixLink={canEditGame && onInvite ? onInvite : undefined}
+                />
+              )}
+            </h3>
             {isPrivate && <Lock size={17} />}
+            {seriesName && (
+              <span className="series-badge" title="Created by this recurring schedule">
+                <Repeat size={11} /> {seriesName}
+              </span>
+            )}
             {!isOwner && (
               <span
                 className={`co-org-badge ${role}`}
@@ -404,6 +431,19 @@ function GameCard({game,variant = "upcoming",isMenuOpen,onToggleMenu,onPlayers,o
               >
                 <History size={16} />
                 Team history
+              </button>
+            )}
+
+            {/* Read-only too: who each SOS went to, when, and who joined */}
+            {hasSosHistoryEntry && onSosHistory && (
+              <button
+                onClick={onSosHistory}
+                title="Who each SOS went to, when, and who joined"
+                className="sos-history-item"
+              >
+                <TriangleAlert size={16} />
+                SOS history
+                {sosSends > 0 && <span>{sosSends}</span>}
               </button>
             )}
 

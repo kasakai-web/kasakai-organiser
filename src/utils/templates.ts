@@ -43,6 +43,8 @@ export interface Template {
   acceptsPasses?: boolean;
   /** Automatic team distribution on games made from this blueprint. Absent = on. */
   autoTeamDistribution?: boolean;
+  /** Automatic SOS on games made from this blueprint. Absent = off. */
+  autoSos?: boolean;
   /** Host spots every game made from this blueprint starts with. */
   hostSlots?: StoredHostSlots | null;
   /** The early-bird ladder every game made from this blueprint starts with (no counters). */
@@ -177,6 +179,7 @@ export const templateToLastEventShape = (t: Template, dateYMD: string) => {
     // YES — that is what every game already in the database does.
     acceptsPasses: t.acceptsPasses !== false,
     autoTeamDistribution: t.autoTeamDistribution === true,
+    autoSos: t.autoSos === true,
     hostSlots: t.hostSlots ?? null,
     pricing: t.pricing ?? null,
     alternateFormats: t.allowSizeChange ? (t.alternateFormats || []) : [],

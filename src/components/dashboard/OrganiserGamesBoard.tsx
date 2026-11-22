@@ -18,6 +18,26 @@ import GameCard from "@/components/dashboard/GameCard/GameCard";
 import CoOrganiserModal from "@/components/dashboard/CoOrganiserModal";
 import FacilitatorsModal from "@/components/dashboard/FacilitatorsModal";
 import { TeamSheetHistory } from "@/components/dashboard/TeamSheetHistory";
+import { SosHistory, hasSosHistory } from "@/components/dashboard/SosHistory/SosHistory";
+import { ListQuickAdd, SaveAsList, pickedKey } from "@/components/playerLists/ListQuickAdd";
+import { addFromList, defaultListName, listsUsed, removeList } from "@/utils/playerLists";
+import { PlannedGameCard } from "@/components/dashboard/PlannedGameCard";
+import { mergePlanned } from "@/utils/mergePlanned";
+import { getUpcomingPreview, type PlannedGamePreview } from "@/utils/recurring";
+import { inviteLinkUrl } from "@/utils/gameLink";
+
+// Organiser id → name for one game (owner + co-organisers), so the Players
+// modal can say WHICH organiser removed someone. my-games populates both; the
+// write endpoints do not, and an id that cannot be named is simply left unnamed.
+function organiserNamesOf(game: any): Map<string, string> {
+  const names = new Map<string, string>();
+  const add = (o: any) => {
+    if (o && typeof o === "object" && o._id && o.name) names.set(String(o._id), o.name);
+  };
+  add(game?.organiser);
+  (game?.coOrganisers || []).forEach((c: any) => add(c?.organiser));
+  return names;
+}
 
 
 // Upcoming and Past are two routes over one board: /dashboard/organizer/[id]
@@ -45,16 +65,6 @@ const timeAgo = (value: string | Date) => {
   return days === 1 ? "yesterday" : `${days}d ago`;
 };
 
-// What the WhatsApp leg of one SOS did. In-app always goes out, so a row that is
-// not "sent" was still notified inside the app — the label says what is missing,
-// never that the player heard nothing.
-const SOS_WA_BADGE: Record<string, { label: string; color: string; bg: string; border: string }> = {
-  sent:      { label: "WhatsApp",   color: "#c8ff3e", bg: "rgba(200,255,62,0.10)",  border: "rgba(200,255,62,0.25)" },
-  failed:    { label: "WA failed",  color: "#f87171", bg: "rgba(248,113,113,0.10)", border: "rgba(248,113,113,0.28)" },
-  opted_out: { label: "In-app only", color: "#9aa",   bg: "rgba(255,255,255,0.05)", border: "#333" },
-  no_number: { label: "No number",  color: "#f59e0b", bg: "rgba(245,158,11,0.10)",  border: "rgba(245,158,11,0.28)" },
-};
-
 // Each view has its own natural reading order: Upcoming starts with the next
 // fixture, Past starts with the one just played — that most recent game is what
 // an organiser opens the page for (attendance, ratings, settlement).
@@ -70,6 +80,26 @@ const POST_GAME_GROUPS: { key: PostGameGroup; label: string; hint: string; atten
 ];
 
 const DEFAULT_SORT: Record<GamesView, string> = { upcoming: 'date-asc', past: 'date-desc' };
+
+// Upcoming's "Show" switch: live games, planned recurring games, or both.
+type ShowKind = "all" | "live" | "planned";
+const SHOW_KIND_KEY = "kk-upcoming-show";
+// Statuses a game on Upcoming can actually have — completed and cancelled games
+// are never shown there, so offering them only produces an empty list.
+const STATUS_OPTIONS: Record<GamesView, { value: string; label: string }[]> = {
+  upcoming: [
+    { value: "open", label: "Open" },
+    { value: "tentative", label: "Tentative" },
+    { value: "confirmed", label: "Confirmed" },
+  ],
+  past: [
+    { value: "open", label: "Open" },
+    { value: "tentative", label: "Tentative" },
+    { value: "confirmed", label: "Confirmed" },
+    { value: "completed", label: "Completed" },
+    { value: "cancelled", label: "Cancelled" },
+  ],
+};
 
 // Paged fetches can overlap by a row when games move between pages (a game
 // finishing pushes everything down one), so a merge keeps the first copy.
@@ -100,19 +130,27 @@ export default function OrganiserGamesBoard({ view }: { view: GamesView }) {
     sending?: boolean;
     error?: string;
     regulars:   { id?: string; name: string; games: number; phone: string }[];
-    recipients: { id: string; name: string; sub?: string; games?: number }[];
+    // `lists` = the saved Player Lists that put this person here; `manual` = also
+    // picked some other way, so un-ticking a list leaves them in.
+    recipients: { id: string; name: string; sub?: string; games?: number; lists?: string[]; manual?: boolean }[];
     // Every SOS this game has already sent, newest first — the record of who was
     // asked, when, and whether WhatsApp carried it.
     log:        { id?: string; playerId?: string | null; name: string; phone?: string; sentAt: string; sentByName?: string | null; whatsapp: string }[];
     // Player ids holding a seat right now: a logged recipient who is in this set
     // answered the call, which is the only measure of whether an SOS worked.
     seated:     string[];
+    // Send = pick recipients and send (the default); History = every SOS this
+    // game has sent and what came of it (components/dashboard/SosHistory).
+    tab?:       "send" | "history";
+    // The card says this game has sent an SOS (or had an automatic wave), so
+    // the History tab is worth offering before the log has even loaded.
+    hasHistory?: boolean;
   }>(null);
   // Private-game invitations
   const [inviteGameId, setInviteGameId] = useState<string | null>(null);
   const [inviteRegulars, setInviteRegulars] = useState<{ id?: string; name: string; phone: string; games: number }[]>([]);
   const [inviteRegLoading, setInviteRegLoading] = useState(false);
-  const [inviteRows, setInviteRows] = useState<{ name: string; phone?: string; playerId?: string }[]>([]);
+  const [inviteRows, setInviteRows] = useState<{ name: string; phone?: string; playerId?: string; lists?: string[]; manual?: boolean }[]>([]);
   const [inviteName, setInviteName] = useState("");
   const [invitePhone, setInvitePhone] = useState("");
   const [inviteSending, setInviteSending] = useState(false);
@@ -128,6 +166,10 @@ export default function OrganiserGamesBoard({ view }: { view: GamesView }) {
   const [coOrgGame, setCoOrgGame] = useState<any>(null);
   const [facilitatorGame, setFacilitatorGame] = useState<any>(null);
   const [teamHistoryGame, setTeamHistoryGame] = useState<any>(null);
+  // SOS history opened straight from the card menu — read-only, so view
+  // co-organisers and finished games get it too (the SOS modal itself is
+  // edit-only and live games only).
+  const [sosHistoryGame, setSosHistoryGame] = useState<any>(null);
   const [cancelTargetGame, setCancelTargetGame] = useState<any>(null);
   const [cancelMessage, setCancelMessage] = useState("");
   const [cancellingId, setCancellingId] = useState<string | null>(null);
@@ -154,6 +196,25 @@ export default function OrganiserGamesBoard({ view }: { view: GamesView }) {
   const [searchQuery, setSearchQuery] = useState('');
   const [filterStatus, setFilterStatus] = useState('all');
   const [filterFormat, setFilterFormat] = useState('all');
+  // Which schedule a game came from: 'all', 'recurring', 'one-off', or a series
+  // id. Applied by the server to live games and here to planned ones.
+  const [filterSeries, setFilterSeries] = useState('all');
+  // Upcoming only: live games, planned recurring ones, or both. A per-browser
+  // preference rather than a filter — someone who never wants the planned strip
+  // should not have to switch it off on every visit — so Clear leaves it alone.
+  const [showKind, setShowKindState] = useState<ShowKind>('all');
+  useEffect(() => {
+    try {
+      const saved = window.localStorage.getItem(SHOW_KIND_KEY);
+      if (saved === 'live' || saved === 'planned') setShowKindState(saved);
+    } catch { /* storage blocked: default to both */ }
+  }, []);
+  const setShowKind = (k: ShowKind) => {
+    setShowKindState(k);
+    // "One-off" is not offered once only planned games show — none are one-off.
+    if (k === 'planned') setFilterSeries((cur) => (cur === 'one-off' ? 'all' : cur));
+    try { window.localStorage.setItem(SHOW_KIND_KEY, k); } catch { /* not remembered, still applied */ }
+  };
   const defaultSort = DEFAULT_SORT[view];
   const [sortBy, setSortBy] = useState(defaultSort);
   // Past Events group (backend utils/postGameState.js). Seeded from
@@ -176,12 +237,14 @@ export default function OrganiserGamesBoard({ view }: { view: GamesView }) {
   }, [searchQuery]);
   const listQuery = new URLSearchParams({
     q: debouncedSearch.trim(), status: filterStatus, format: filterFormat, sort: sortBy,
+    ...(filterSeries !== 'all' ? { series: filterSeries } : {}),
     ...(view === 'past' && postGameFilter !== 'all' ? { postGame: postGameFilter } : {}),
   }).toString();
   const listQueryRef   = useRef(listQuery);
   const pagesLoadedRef = useRef(1);
   const [paging, setPaging]     = useState<{ hasMore: boolean; total: number } | null>(null);
   const [scopeFormats, setScopeFormats]   = useState<string[] | null>(null);
+  const [scopeSeries, setScopeSeries]     = useState<{ _id: string; name: string; status?: string }[]>([]);
   const [refiltering, setRefiltering] = useState(false);
   const [loadingMore, setLoadingMore]   = useState(false);
   const loadingMoreRef = useRef(false);
@@ -294,6 +357,7 @@ export default function OrganiserGamesBoard({ view }: { view: GamesView }) {
         setScopeCounts(data.counts ?? null);
         setPaging({ hasMore: !!data.hasMore, total: data.total ?? nextGames.length });
         setScopeFormats(Array.isArray(data.formats) ? data.formats : null);
+        if (Array.isArray(data.series)) setScopeSeries(data.series);
         setAlertGames(Array.isArray(data.alerts) ? data.alerts : null);
         setPostGameSummary(data.postGame ?? null);
         setFetchError(null);  
@@ -402,6 +466,23 @@ export default function OrganiserGamesBoard({ view }: { view: GamesView }) {
   // Keep dashboard data fresh — 20 s poll + focus + visibility
   const silentFetch = useCallback(() => fetchGames({ silent: true }), [fetchGames]);
   useAutoRefresh(isAuthorized ? silentFetch : null, { interval: 20_000 });
+
+  // Recurring games that are planned but not created yet — shown faded under
+  // Upcoming, read-only. They change only when a schedule is edited or a game
+  // goes live, so a slow poll is plenty. A failure just leaves the strip out:
+  // it is context, and must never take the live list down with it.
+  const [plannedGames, setPlannedGames] = useState<PlannedGamePreview[]>([]);
+  const fetchPlanned = useCallback(async () => {
+    try {
+      setPlannedGames(await getUpcomingPreview(30));
+    } catch {
+      /* keep whatever was shown last */
+    }
+  }, []);
+  useEffect(() => {
+    if (isAuthorized && view === 'upcoming') fetchPlanned();
+  }, [isAuthorized, view, fetchPlanned]);
+  useAutoRefresh(isAuthorized && view === 'upcoming' ? fetchPlanned : null, { interval: 120_000 });
 
   // Real-time: re-fetch whenever a socket notification arrives (e.g. guest waitlist changes)
   useEffect(() => {
@@ -522,14 +603,14 @@ export default function OrganiserGamesBoard({ view }: { view: GamesView }) {
     setConfirmVisible(true);
   };
 
-  const handleSendSos = async (gameId: string, playerIds: string[]) => {
+  const handleSendSos = async (gameId: string, playerIds: string[], listIds: string[] = []) => {
     const { token } = getSession();
     if (!token) { clearSession(); router.replace("/login?role=organiser"); return; }
     try {
       const res  = await fetch(buildApiUrl(`/api/v1/games/organisers/${gameId}/sos`), {
         method: 'POST',
         headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
-        body: JSON.stringify({ playerIds }),
+        body: JSON.stringify({ playerIds, listIds }),
       });
       const data = await res.json();
       if (!res.ok || !data.success) { showToast("error", data.message || "Failed to send SOS"); return; }
@@ -551,7 +632,7 @@ export default function OrganiserGamesBoard({ view }: { view: GamesView }) {
     const seated = (game.registrations || [])
       .filter((r: any) => r.player && !r.plusOneName && !["refunded", "forfeited"].includes(r.paymentStatus))
       .map((r: any) => String(r.player?._id || r.player));
-    setSosModal({ gameId: game._id, gameTitle: game.title, loading: true, regulars: [], recipients: [], log: [], seated });
+    setSosModal({ gameId: game._id, gameTitle: game.title, loading: true, regulars: [], recipients: [], log: [], seated, tab: "send", hasHistory: hasSosHistory(game) });
     sosFind.reset();
     const { token } = getSession();
     if (!token) { clearSession(); router.replace("/login?role=organiser"); return; }
@@ -571,7 +652,7 @@ export default function OrganiserGamesBoard({ view }: { view: GamesView }) {
         regulars,
         log: data.data?.sosLog || [],
         // Pre-selected, so the old one-tap "send to all regulars" is still one tap.
-        recipients: regulars.filter((r) => r.id).map((r) => ({ id: r.id!, name: r.name, sub: r.phone, games: r.games })),
+        recipients: regulars.filter((r) => r.id).map((r) => ({ id: r.id!, name: r.name, sub: r.phone, games: r.games, manual: true })),
       } : m));
     } catch {
       setSosModal((m) => (m ? { ...m, loading: false, error: "Couldn't load eligible players" } : m));
@@ -579,7 +660,25 @@ export default function OrganiserGamesBoard({ view }: { view: GamesView }) {
   };
 
   const addSosRecipient = (p: { id: string; name: string; sub?: string; games?: number }) => {
-    setSosModal((m) => (m && !m.recipients.some((r) => r.id === p.id) ? { ...m, recipients: [...m.recipients, p] } : m));
+    setSosModal((m) => {
+      if (!m) return m;
+      if (m.recipients.some((r) => r.id === p.id)) {
+        return { ...m, recipients: m.recipients.map((r) => (r.id === p.id ? { ...r, manual: true } : r)) };
+      }
+      return { ...m, recipients: [...m.recipients, { ...p, manual: true }] };
+    });
+  };
+
+  // A saved Player List ticked in the SOS modal: add whoever it can reach for
+  // this game; un-ticking takes back only the people that list put there.
+  const addSosList = (listId: string, people: { playerId: string | null; name: string; sub: string; games?: number }[]) => {
+    const incoming = people
+      .filter((p) => p.playerId)
+      .map((p) => ({ id: p.playerId as string, name: p.name, sub: p.sub, games: p.games }));
+    setSosModal((m) => (m ? { ...m, recipients: addFromList(m.recipients, listId, incoming, (a, b) => a.id === b.id).next } : m));
+  };
+  const removeSosList = (listId: string) => {
+    setSosModal((m) => (m ? { ...m, recipients: removeList(m.recipients, listId) } : m));
   };
 
   const removeSosRecipient = (id: string) => {
@@ -594,7 +693,7 @@ export default function OrganiserGamesBoard({ view }: { view: GamesView }) {
   const confirmSendSos = async () => {
     if (!sosModal || sosModal.recipients.length === 0) return;
     setSosModal((m) => (m ? { ...m, sending: true } : m));
-    await handleSendSos(sosModal.gameId, sosModal.recipients.map((r) => r.id));
+    await handleSendSos(sosModal.gameId, sosModal.recipients.map((r) => r.id), listsUsed(sosModal.recipients));
     setSosModal(null);
   };
 
@@ -618,10 +717,27 @@ export default function OrganiserGamesBoard({ view }: { view: GamesView }) {
   };
 
   const addSearchInvitee = (p: PlayerSearchResult) => {
-    if (inviteRows.some((r) => r.playerId === p._id)) return;
-    setInviteRows((rows) => [...rows, { name: p.name, playerId: p._id }]);
+    if (inviteRows.some((r) => r.playerId === p._id)) {
+      setInviteRows((rows) => rows.map((r) => (r.playerId === p._id ? { ...r, manual: true } : r)));
+      inviteFind.reset();
+      return;
+    }
+    setInviteRows((rows) => [...rows, { name: p.name, playerId: p._id, manual: true }]);
     inviteFind.reset();
   };
+
+  // Same last-ten-digits comparison the server uses, so a number typed as
+  // 98765… and one stored as 9198765… are one person.
+  const sameInvitee = (a: { playerId?: string; phone?: string }, b: { playerId?: string; phone?: string }) =>
+    (!!a.playerId && a.playerId === b.playerId)
+    || (!a.playerId && !b.playerId && !!a.phone && !!b.phone
+        && a.phone.replace(/\D/g, "").slice(-10) === b.phone.replace(/\D/g, "").slice(-10));
+
+  const addInviteList = (listId: string, people: { playerId: string | null; name: string; phone?: string }[]) => {
+    const incoming = people.map((p) => (p.playerId ? { name: p.name, playerId: p.playerId } : { name: p.name, phone: p.phone }));
+    setInviteRows((rows) => addFromList(rows, listId, incoming, sameInvitee).next);
+  };
+  const removeInviteList = (listId: string) => setInviteRows((rows) => removeList(rows, listId));
 
   // Manage the shared invite link — toggle on/off, set/clear the cap, or regenerate.
   const manageLink = async (patch: { enabled?: boolean; maxJoins?: number | null; regenerate?: boolean }) => {
@@ -650,14 +766,14 @@ export default function OrganiserGamesBoard({ view }: { view: GamesView }) {
     const name = inviteName.trim();
     const phone = invitePhone.replace(/\D/g, "");
     if (!name || phone.length < 10) { showToast("error", "Enter a name and a valid phone number"); return; }
-    if (inviteRows.some((r) => r.phone === phone)) { showToast("error", "That number is already in the list"); return; }
-    setInviteRows((rows) => [...rows, { name, phone }]);
+    if (inviteRows.some((r) => sameInvitee(r, { phone }))) { showToast("error", "That number is already in the list"); return; }
+    setInviteRows((rows) => [...rows, { name, phone, manual: true }]);
     setInviteName(""); setInvitePhone("");
   };
 
   const addRegularInvitee = (reg: { id?: string; name: string }) => {
     if (!reg.id || inviteRows.some((r) => r.playerId === reg.id)) return;
-    setInviteRows((rows) => [...rows, { name: reg.name, playerId: reg.id }]);
+    setInviteRows((rows) => [...rows, { name: reg.name, playerId: reg.id, manual: true }]);
   };
 
   const removeInviteRow = (idx: number) => setInviteRows((rows) => rows.filter((_, i) => i !== idx));
@@ -673,7 +789,7 @@ export default function OrganiserGamesBoard({ view }: { view: GamesView }) {
       const res = await fetch(buildApiUrl(`/api/v1/games/organisers/${inviteGameId}/invite`), {
         method: "POST",
         headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
-        body: JSON.stringify({ invitees, playerIds }),
+        body: JSON.stringify({ invitees, playerIds, listIds: listsUsed(inviteRows) }),
       });
       const data = await res.json();
       if (!res.ok || !data.success) { showToast("error", data.message || "Failed to send invites"); return; }
@@ -714,7 +830,7 @@ export default function OrganiserGamesBoard({ view }: { view: GamesView }) {
   };
 
   const copyInviteLink = async (token: string) => {
-    const link = `https://www.kasakai.in/join/${token}`;
+    const link = inviteLinkUrl(token);
     try {
       await navigator.clipboard.writeText(link);
       showToast("success", "Link copied", link);
@@ -861,15 +977,57 @@ export default function OrganiserGamesBoard({ view }: { view: GamesView }) {
   const filteredUpcoming = upcomingGames;
   const filteredPast     = pastGames;
   const shownGames       = view === 'upcoming' ? filteredUpcoming : filteredPast;
-  const hasActiveFilters = !!(searchQuery || filterStatus !== 'all' || filterFormat !== 'all' || sortBy !== defaultSort || postGameFilter !== 'all');
+  const hasActiveFilters = !!(searchQuery || filterStatus !== 'all' || filterFormat !== 'all' || filterSeries !== 'all' || sortBy !== defaultSort || postGameFilter !== 'all');
   const listTotal        = paging?.total ?? shownGames.length;
+
+  // Planned recurring games follow the same search, format and schedule
+  // filters, matched here because they never reach the server's game query. A
+  // status filter hides them: a planned game has no status until it goes live.
+  const plannedOnly = view === 'upcoming' && showKind === 'planned';
+  const plannedShown = (() => {
+    if (view !== 'upcoming' || showKind === 'live') return [];
+    // Status is switched off in planned-only mode, so it cannot hide them there.
+    if (!plannedOnly && filterStatus !== 'all') return [];
+    if (filterSeries === 'one-off') return [];
+    const q = searchQuery.trim().toLowerCase();
+    const rows = plannedGames.filter((p) => {
+      if (filterSeries !== 'all' && filterSeries !== 'recurring' && String(p.series._id) !== filterSeries) return false;
+      if (filterFormat !== 'all' && p.format !== filterFormat) return false;
+      if (!q) return true;
+      return [p.title, p.series.name, p.turf?.name, p.turf?.area, p.turf?.city, p.format]
+        .some((v) => v && v.toLowerCase().includes(q));
+    });
+    return rows;
+  })();
+
+  // ONE list: planned games slotted between the live ones by the chosen sort,
+  // held back while more live pages are still to load (utils/mergePlanned).
+  const upcomingItems = view === 'upcoming'
+    ? mergePlanned(plannedOnly ? [] : filteredUpcoming, plannedShown, {
+        sort: sortBy,
+        hasMore: plannedOnly ? false : hasMorePage,
+      })
+    : [];
+
+  // Every schedule either list mentions — live games' (from the server, scope
+  // wide) and planned ones' — for the schedule filter and the live cards' badge.
+  const seriesOptions = (() => {
+    const byId = new Map<string, { _id: string; name: string; status?: string }>();
+    for (const sr of scopeSeries) byId.set(String(sr._id), sr);
+    if (view === 'upcoming') for (const p of plannedGames) if (!byId.has(String(p.series._id))) byId.set(String(p.series._id), p.series);
+    return [...byId.values()].sort((a, b) => a.name.localeCompare(b.name));
+  })();
+  const seriesNameById = new Map(seriesOptions.map((sr) => [String(sr._id), sr.name]));
+  const allFormatsWithPlanned = view === 'upcoming'
+    ? [...new Set([...allFormats, ...plannedGames.map((p) => p.format)])].sort()
+    : allFormats;
 
   // What the decision pop-up looks at: the server's alert games, with any that
   // are on screen taken from the page (the fresher copy after a patch).
   const loadedById = new Map(games.map((g) => [g._id, g]));
   const lifecycleGames = alertGames ? alertGames.map((a) => loadedById.get(a._id) ?? a) : games;
 
-  const clearFilters = () => { setSearchQuery(''); setFilterStatus('all'); setFilterFormat('all'); setSortBy(defaultSort); setPostGameFilter('all'); };
+  const clearFilters = () => { setSearchQuery(''); setFilterStatus('all'); setFilterFormat('all'); setFilterSeries('all'); setSortBy(defaultSort); setPostGameFilter('all'); };
 
   const handleLogout = () => {
   clearSession(); // ✅ better than localStorage.clear()
@@ -929,6 +1087,22 @@ export default function OrganiserGamesBoard({ view }: { view: GamesView }) {
         onCancel={(g) => { setCancelTargetGame(g); setCancelMessage(""); setShowCancelModal(true); }}
       />
 
+      {/* SOS history — every SOS this game sent, and who it brought in */}
+      {sosHistoryGame && (
+        <div className="modal-overlay" onClick={() => setSosHistoryGame(null)}>
+          <div onClick={(e) => e.stopPropagation()} style={{ width: "100%", maxWidth: 620, maxHeight: "88vh", overflowY: "auto", background: "#111214", border: "1px solid #2a2a2a", borderRadius: 16, padding: 22, color: "#fff" }}>
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 6 }}>
+              <h2 style={{ margin: 0, fontSize: 18, fontWeight: 800 }}>📣 SOS history</h2>
+              <button onClick={() => setSosHistoryGame(null)} style={{ background: "none", border: "none", color: "#888", fontSize: 20, cursor: "pointer", lineHeight: 1 }}>✕</button>
+            </div>
+            <p style={{ fontSize: 13, color: "#9aa", margin: "0 0 14px", lineHeight: 1.5 }}>
+              Every SOS sent for <b style={{ color: "#ddd" }}>{sosHistoryGame.title}</b>, newest first: who it went to, when, and whether they took a spot.
+            </p>
+            <SosHistory gameId={sosHistoryGame._id} />
+          </div>
+        </div>
+      )}
+
       {/* Published team sheets — what the players were told, and when */}
       {teamHistoryGame && (
         <div className="modal-overlay" onClick={() => setTeamHistoryGame(null)}>
@@ -938,7 +1112,7 @@ export default function OrganiserGamesBoard({ view }: { view: GamesView }) {
               <button onClick={() => setTeamHistoryGame(null)} style={{ background: "none", border: "none", color: "#888", fontSize: 20, cursor: "pointer", lineHeight: 1 }}>✕</button>
             </div>
             <p style={{ fontSize: 13, color: "#9aa", margin: "0 0 14px", lineHeight: 1.5 }}>
-              Every time the teams for <b style={{ color: "#ddd" }}>{teamHistoryGame.title}</b> were published, newest first — and whether each player&apos;s message got through.
+              Every time the teams for <b style={{ color: "#ddd" }}>{teamHistoryGame.title}</b>{" "}were published, newest first — and whether each player&apos;s message got through.
             </p>
             <TeamSheetHistory gameId={teamHistoryGame._id} />
           </div>
@@ -963,13 +1137,47 @@ export default function OrganiserGamesBoard({ view }: { view: GamesView }) {
         }
         const count = sosModal.recipients.length;
         const canSend = count > 0 && !sosModal.loading && !sosModal.sending;
+        const sosTab = sosModal.tab || "send";
+        const setSosTab = (tab: "send" | "history") => setSosModal((m) => (m ? { ...m, tab } : m));
+        // One send = one moment (every row of a send shares its timestamp).
+        const sendsSoFar = new Set(sosModal.log.map((r) => r.sentAt)).size;
+        const showSosTabs = !!sosModal.hasHistory || sosModal.log.length > 0;
+        const peopleAsked = new Set(sosModal.log.map((r) => r.playerId || r.name)).size;
+        const joinedSoFar = new Set(
+          sosModal.log.filter((r) => r.playerId && seatedIds.has(String(r.playerId))).map((r) => String(r.playerId))
+        ).size;
         return (
         <div className="modal-overlay" onClick={closeSos}>
-          <div onClick={(e) => e.stopPropagation()} style={{ width: "100%", maxWidth: 460, background: "#111214", border: "1px solid #2a2a2a", borderRadius: 16, padding: 22, color: "#fff", maxHeight: "88vh", overflowY: "auto" }}>
+          <div onClick={(e) => e.stopPropagation()} style={{ width: "100%", maxWidth: sosTab === "history" ? 620 : 460, background: "#111214", border: "1px solid #2a2a2a", borderRadius: 16, padding: 22, color: "#fff", maxHeight: "88vh", overflowY: "auto" }}>
             <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 6 }}>
-              <h2 style={{ margin: 0, fontSize: 18, fontWeight: 800 }}>📣 Send SOS</h2>
+              <h2 style={{ margin: 0, fontSize: 18, fontWeight: 800 }}>{sosTab === "history" ? "📣 SOS history" : "📣 Send SOS"}</h2>
               <button onClick={closeSos} style={{ background: "none", border: "none", color: "#888", fontSize: 20, cursor: "pointer", lineHeight: 1 }}>✕</button>
             </div>
+
+            {showSosTabs && (
+              <div className="sos-tabs" role="tablist" aria-label="SOS">
+                <button type="button" role="tab" aria-selected={sosTab === "send"} className={`sos-tab ${sosTab === "send" ? "is-on" : ""}`} onClick={() => setSosTab("send")}>
+                  Send
+                </button>
+                <button type="button" role="tab" aria-selected={sosTab === "history"} className={`sos-tab ${sosTab === "history" ? "is-on" : ""}`} onClick={() => setSosTab("history")}>
+                  History{sendsSoFar > 0 && <span>{sendsSoFar}</span>}
+                </button>
+              </div>
+            )}
+
+            {sosTab === "history" ? (
+            <>
+              <p style={{ fontSize: 13, color: "#9aa", margin: "0 0 14px", lineHeight: 1.5 }}>
+                Every SOS sent for <b style={{ color: "#ddd" }}>{sosModal.gameTitle}</b>, newest first: who it went to, when, and whether they took a spot.
+              </p>
+              <SosHistory gameId={sosModal.gameId} />
+              <div style={{ display: "flex", gap: 10, marginTop: 16 }}>
+                <button onClick={closeSos} style={{ flex: 1, padding: 11, borderRadius: 9, border: "1px solid #333", background: "transparent", color: "#ccc", fontWeight: 700, cursor: "pointer" }}>Close</button>
+                <button onClick={() => setSosTab("send")} style={{ flex: 2, padding: 11, borderRadius: 9, border: "none", fontWeight: 800, background: "#c8ff3e", color: "#000", cursor: "pointer" }}>Send another SOS</button>
+              </div>
+            </>
+            ) : (
+            <>
             <p style={{ fontSize: 13, color: "#9aa", margin: "0 0 14px", lineHeight: 1.5 }}>
               Ask players to fill the spots in <b style={{ color: "#ddd" }}>{sosModal.gameTitle}</b>. We&apos;ve pre-picked the venue regulars — add anyone else, or remove whoever you don&apos;t want, then send.
             </p>
@@ -1022,6 +1230,17 @@ export default function OrganiserGamesBoard({ view }: { view: GamesView }) {
                   </div>
                 )}
               </div>
+
+              {/* Saved Player Lists — one tap adds everyone on a list this SOS can reach */}
+              <ListQuickAdd
+                gameId={sosModal.gameId}
+                purpose="sos"
+                organiserId={organiserId}
+                activeIds={listsUsed(sosModal.recipients)}
+                pickedKeys={new Set(sosModal.recipients.map((r) => pickedKey({ playerId: r.id })))}
+                onAdd={addSosList}
+                onRemove={removeSosList}
+              />
 
               {suggestions.length > 0 && (
                 <div style={{ marginBottom: 12 }}>
@@ -1082,42 +1301,27 @@ export default function OrganiserGamesBoard({ view }: { view: GamesView }) {
                 </div>
               )}
 
+              {count >= 2 && (
+                <SaveAsList
+                  key={sosModal.gameId}
+                  defaultName={defaultListName(sosModal.gameTitle)}
+                  playerIds={sosModal.recipients.map((r) => r.id)}
+                  via="sos"
+                />
+              )}
+
               {/* ── Already sent ──────────────────────────────────────────────
-                  An SOS leaves no invitation behind, so this log is the only
-                  record of who was asked. It is the answer to both questions a
-                  second send raises: who did we already ping, and did it land? */}
+                  A pointer to the History tab, which has the full record —
+                  every send, who, when, WhatsApp, taps and who joined. The
+                  per-recipient "SOS sent 2h ago" above stays where it was. */}
               {sosModal.log.length > 0 && (
-                <div style={{ marginTop: 18 }}>
-                  <div style={{ fontSize: 12, fontWeight: 700, color: "#c8ff3e", textTransform: "uppercase", letterSpacing: 0.4, marginBottom: 8 }}>
-                    Already sent <span style={{ color: "#777" }}>({sosModal.log.length})</span>
-                  </div>
-                  <div style={{ maxHeight: 220, overflowY: "auto", border: "1px solid #262626", borderRadius: 10 }}>
-                    {sosModal.log.map((row, i) => {
-                      const wa = SOS_WA_BADGE[row.whatsapp] || SOS_WA_BADGE.sent;
-                      const joined = !!row.playerId && seatedIds.has(String(row.playerId));
-                      return (
-                        <div key={row.id || `${row.playerId || row.name}-${row.sentAt}-${i}`}
-                          style={{ display: "flex", alignItems: "center", gap: 10, justifyContent: "space-between", padding: "9px 12px", borderBottom: i < sosModal.log.length - 1 ? "1px solid #1c1c1c" : "none" }}>
-                          <div style={{ minWidth: 0 }}>
-                            <div style={{ fontSize: 13.5, fontWeight: 600, color: "#eee", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
-                              {row.name}
-                              {joined && <span style={{ marginLeft: 7, fontSize: 10.5, fontWeight: 700, color: "#c8ff3e" }}>✓ JOINED</span>}
-                            </div>
-                            <div style={{ fontSize: 11, color: "#777", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
-                              {[timeAgo(row.sentAt), row.phone, row.sentByName ? `by ${row.sentByName}` : null].filter(Boolean).join(" · ")}
-                            </div>
-                          </div>
-                          <span style={{ flexShrink: 0, fontSize: 10.5, fontWeight: 700, color: wa.color, background: wa.bg, border: `1px solid ${wa.border}`, borderRadius: 20, padding: "2px 9px" }}>
-                            {wa.label}
-                          </span>
-                        </div>
-                      );
-                    })}
-                  </div>
-                  <div style={{ fontSize: 11, color: "#777", marginTop: 6, lineHeight: 1.45 }}>
-                    Everyone listed got the in-app notification — the badge says what WhatsApp did with it.
-                  </div>
-                </div>
+                <button type="button" className="sos-history-pointer" onClick={() => setSosTab("history")}>
+                  <span>
+                    Already sent {sendsSoFar === 1 ? "once" : `${sendsSoFar} times`} to {peopleAsked} player{peopleAsked === 1 ? "" : "s"}
+                    {" "}· <b>{joinedSoFar} joined</b> · last {timeAgo(sosModal.log[0].sentAt)}
+                  </span>
+                  <span className="go">See who →</span>
+                </button>
               )}
             </>
             )}
@@ -1135,6 +1339,8 @@ export default function OrganiserGamesBoard({ view }: { view: GamesView }) {
                 {sosModal.sending ? "Sending…" : count === 0 ? "No one selected" : `Send SOS to ${count} player${count !== 1 ? "s" : ""}`}
               </button>
             </div>
+            </>
+            )}
           </div>
         </div>
         );
@@ -1235,6 +1441,16 @@ export default function OrganiserGamesBoard({ view }: { view: GamesView }) {
                 )}
               </div>
 
+              <ListQuickAdd
+                gameId={inviteGame._id}
+                purpose="invite"
+                organiserId={organiserId}
+                activeIds={listsUsed(inviteRows)}
+                pickedKeys={new Set(inviteRows.map((r) => pickedKey({ playerId: r.playerId, phone: r.phone })))}
+                onAdd={addInviteList}
+                onRemove={removeInviteList}
+              />
+
               {inviteRegLoading ? (
                 <div style={{ fontSize: 12, color: "#888", marginBottom: 10 }}>Loading venue regulars…</div>
               ) : inviteRegulars.length > 0 && (
@@ -1288,6 +1504,18 @@ export default function OrganiserGamesBoard({ view }: { view: GamesView }) {
                 </div>
               )}
 
+              {inviteRows.length >= 2 && (
+                <div style={{ marginTop: -4, marginBottom: 12 }}>
+                  <SaveAsList
+                    key={inviteGame._id}
+                    defaultName={defaultListName(inviteGame.title)}
+                    playerIds={inviteRows.filter((r) => r.playerId).map((r) => r.playerId as string)}
+                    contacts={inviteRows.filter((r) => !r.playerId && r.phone).map((r) => ({ name: r.name, phone: r.phone as string }))}
+                    via="invite"
+                  />
+                </div>
+              )}
+
               <button
                 disabled={inviteRows.length === 0 || inviteSending}
                 onClick={submitInvites}
@@ -1306,7 +1534,7 @@ export default function OrganiserGamesBoard({ view }: { view: GamesView }) {
                   <div style={{ display: "flex", gap: 8, alignItems: "center", marginBottom: 10 }}>
                     <input
                       readOnly
-                      value={`https://www.kasakai.in/join/${inviteGame.inviteLinkToken}`}
+                      value={inviteLinkUrl(inviteGame.inviteLinkToken)}
                       onFocus={(e) => e.currentTarget.select()}
                       style={{ flex: 1, minWidth: 0, padding: "9px 11px", borderRadius: 8, border: "1px solid #2a2a2a", background: "#0e0e0e", color: inviteGame.inviteLinkEnabled === false ? "#666" : "#bbb", fontSize: 12 }}
                     />
@@ -1544,8 +1772,9 @@ export default function OrganiserGamesBoard({ view }: { view: GamesView }) {
         </div>
       )}
 
-      {/* Filter / Search Bar */}
-      {!loading && games.length > 0 && (
+      {/* Filter / Search Bar — kept while a filter is on, or an empty result
+          would take away the controls needed to undo it. */}
+      {!loading && (games.length > 0 || hasActiveFilters || (view === 'upcoming' && plannedGames.length > 0)) && (
         <div className="filter-bar">
           <div className="filter-search-wrap">
             <svg className="filter-search-icon" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
@@ -1567,19 +1796,48 @@ export default function OrganiserGamesBoard({ view }: { view: GamesView }) {
             )}
           </div>
 
-          <select className="filter-select" value={filterStatus} onChange={e => setFilterStatus(e.target.value)}>
+          {view === 'upcoming' && (plannedGames.length > 0 || showKind !== 'all') && (
+            <select
+              className="filter-select"
+              value={showKind}
+              onChange={e => setShowKind(e.target.value as ShowKind)}
+              title="Planned = recurring games not created yet (next 30 days)"
+              aria-label="Show live games, planned recurring games, or both"
+            >
+              <option value="all">Live + planned ({(scopeCounts?.upcoming ?? 0) + plannedGames.length})</option>
+              <option value="live">Live only ({scopeCounts?.upcoming ?? 0})</option>
+              <option value="planned">Planned only ({plannedGames.length})</option>
+            </select>
+          )}
+
+          <select
+            className="filter-select"
+            value={plannedOnly ? 'all' : filterStatus}
+            onChange={e => setFilterStatus(e.target.value)}
+            disabled={plannedOnly}
+            title={plannedOnly ? "Planned games have no status until they go live" : undefined}
+          >
             <option value="all">All Status</option>
-            <option value="open">Open</option>
-            <option value="tentative">Tentative</option>
-            <option value="confirmed">Confirmed</option>
-            <option value="completed">Completed</option>
-            <option value="cancelled">Cancelled</option>
+            {STATUS_OPTIONS[view].map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
           </select>
 
           <select className="filter-select" value={filterFormat} onChange={e => setFilterFormat(e.target.value)}>
             <option value="all">All Formats</option>
-            {allFormats.map(f => <option key={f} value={f}>{f}</option>)}
+            {allFormatsWithPlanned.map(f => <option key={f} value={f}>{f}</option>)}
           </select>
+
+          {seriesOptions.length > 0 && (
+            <select className="filter-select" value={filterSeries} onChange={e => setFilterSeries(e.target.value)} title="Which recurring schedule a game comes from">
+              <option value="all">All Schedules</option>
+              <option value="recurring">Any recurring</option>
+              {!plannedOnly && <option value="one-off">One-off games</option>}
+              {seriesOptions.map((sr) => (
+                <option key={sr._id} value={sr._id}>
+                  {sr.name}{sr.status && sr.status !== 'active' ? ` (${sr.status})` : ''}
+                </option>
+              ))}
+            </select>
+          )}
 
           <select className="filter-select filter-sort" value={sortBy} onChange={e => setSortBy(e.target.value)}>
             <option value="date-asc">Date ↑</option>
@@ -1599,9 +1857,18 @@ export default function OrganiserGamesBoard({ view }: { view: GamesView }) {
           )}
 
           <span className="filter-result-count">
-            {listTotal}
-            {' '}/{' '}
-            {(view === 'upcoming' ? scopeCounts?.upcoming : scopeCounts?.past) ?? listTotal} events
+            {plannedOnly ? (
+              <>{plannedShown.length} / {plannedGames.length} planned</>
+            ) : (
+              <>
+                {listTotal}
+                {' '}/{' '}
+                {(view === 'upcoming' ? scopeCounts?.upcoming : scopeCounts?.past) ?? listTotal} events
+                {view === 'upcoming' && showKind === 'all' && plannedGames.length > 0 && (
+                  <> · {plannedShown.length} planned</>
+                )}
+              </>
+            )}
           </span>
         </div>
       )}
@@ -1614,7 +1881,7 @@ export default function OrganiserGamesBoard({ view }: { view: GamesView }) {
             <p>Loading events...</p>
           </div>
         ) : view === 'upcoming' ? (
-          filteredUpcoming.length === 0 ? (
+          upcomingItems.length === 0 ? (
             <div className="empty-state">
               <div className="empty-icon">
                 <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" style={{ opacity: 0.4 }}>
@@ -1627,23 +1894,39 @@ export default function OrganiserGamesBoard({ view }: { view: GamesView }) {
                   <p>Try adjusting your search or filters</p>
                   <button className="btn-primary" onClick={clearFilters}>Clear Filters</button>
                 </>
+              ) : plannedOnly ? (
+                <>
+                  <h3>No planned recurring games</h3>
+                  <p>Nothing is scheduled to go live in the next 30 days</p>
+                  <button className="btn-primary" onClick={() => setShowKind('all')}>Show all events</button>
+                </>
               ) : (
                 <>
                   <h3>No upcoming events</h3>
-                  <p>Create your first event to get started</p> 
-                  <button className="btn-primary" onClick={() => router.push(`/dashboard/organizer/${organiserId}/create-event`)}>
-                    <span>+ </span>Create Event
-                  </button>
+                  <p>{showKind === 'live' && plannedGames.length ? `${plannedGames.length} planned recurring game${plannedGames.length === 1 ? " is" : "s are"} hidden` : "Create your first event to get started"}</p>
+                  {showKind === 'live' && plannedGames.length ? (
+                    <button className="btn-primary" onClick={() => setShowKind('all')}>Show planned games</button>
+                  ) : (
+                    <button className="btn-primary" onClick={() => router.push(`/dashboard/organizer/${organiserId}/create-event`)}>
+                      <span>+ </span>Create Event
+                    </button>
+                  )}
                 </>
               )}
             </div>
           ) : (
             <>
             <div className="games-list" style={refiltering ? { opacity: 0.55, transition: "opacity .15s" } : undefined} aria-busy={refiltering}>
-              {filteredUpcoming.map((game) => (
+              {upcomingItems.map((item) => {
+                if (item.kind === 'planned') {
+                  return <PlannedGameCard key={`planned-${item.planned.occurrenceId}`} p={item.planned} />;
+                }
+                const game = item.game;
+                return (
                 <GameCard
                 key={game._id}
                 game={game}
+                seriesName={game.recurringSeries ? seriesNameById.get(String(game.recurringSeries)) ?? "Recurring" : undefined}
                 isMenuOpen={openMenuGameId === game._id}
                 onToggleMenu={() => setOpenMenuGameId(openMenuGameId === game._id ? null : game._id)}
                 onPlayers={() => {
@@ -1667,13 +1950,15 @@ export default function OrganiserGamesBoard({ view }: { view: GamesView }) {
                 onManageCoOrgs={() => { setCoOrgGame(game); setOpenMenuGameId(null); }}
                 onFacilitators={() => { setFacilitatorGame(game); setOpenMenuGameId(null); }}
                 onTeamHistory={() => { setTeamHistoryGame(game); setOpenMenuGameId(null); }}
+                onSosHistory={() => { setSosHistoryGame(game); setOpenMenuGameId(null); }}
               />
-              ))}
+                );
+              })}
           </div>
             {/* Scrolling to here fetches the next page. The button is the
                 fallback for keyboard users and for anything without
-                IntersectionObserver. */}
-            {hasMorePage && (
+                IntersectionObserver. Planned-only has no live pages to load. */}
+            {hasMorePage && !plannedOnly && (
               <div className="kk-load-more" ref={sentinelRef}>
                 <button type="button" className="kk-load-more-btn" onClick={loadMore} disabled={loadingMore}>
                   {loadingMore ? "Loading…" : "Show more events"}
@@ -1726,6 +2011,7 @@ export default function OrganiserGamesBoard({ view }: { view: GamesView }) {
                   }}
                   onCancel={() => openCancelModal(game)}
                   onTeamHistory={() => { setTeamHistoryGame(game); setOpenMenuGameId(null); }}
+                  onSosHistory={() => { setSosHistoryGame(game); setOpenMenuGameId(null); }}
                 />
               ))}
             </div>
@@ -1804,6 +2090,17 @@ export default function OrganiserGamesBoard({ view }: { view: GamesView }) {
           hostInfo={selectedGame.hostInfo || null}
           pricing={selectedGame.pricing || null}
           hasTeams={Boolean(selectedGame.teamDistributionRun)}
+          shareGame={selectedGame}
+          pendingRequests={(selectedGame.invitations || []).filter((i: any) => i.status === "pending").length}
+          // Invite is where a private game's link is turned on and join requests
+          // are approved — view-only co-organisers can do neither.
+          onOpenInvite={selectedGame.myRole === "view" ? undefined : () => {
+            const g = selectedGame;
+            setShowPlayersModal(false);
+            setSelectedGame(null);
+            openInviteModal(g);
+          }}
+          organiserNames={organiserNamesOf(selectedGame)}
           autoTeamsState={{
             // Absent reads as ON, as it does on the backend (utils/autoTeams.js).
             on: selectedGame.autoTeamDistribution !== false,

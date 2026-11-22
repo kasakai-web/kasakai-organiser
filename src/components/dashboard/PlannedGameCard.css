@@ -1,0 +1,87 @@
+/* Planned recurring games, mixed into Upcoming Events. They reuse the
+   GameCard layout so the eye reads them as games, then fade and dash it so
+   nobody mistakes one for a live game they can act on. */
+
+/* The fade itself. Hover lifts it enough to read comfortably without ever
+   reaching full strength, so it still never looks live. */
+.game-card.planned-card {
+  opacity: 0.58;
+  background: #141518;
+  border: 1px dashed #34363d;
+  cursor: default;
+  user-select: text;
+  transition: opacity 0.15s ease;
+}
+
+.game-card.planned-card:hover {
+  opacity: 0.85;
+}
+
+.status-bar.planned {
+  background: #5a5d66;
+}
+
+.status-box.planned {
+  background: #1d1f24;
+  color: #9aa0aa;
+}
+
+.status-box.planned .status-pill {
+  background: rgba(255, 255, 255, 0.06);
+  color: #b4b8c0;
+}
+
+.game-card.planned-card.paused .status-box.planned,
+.game-card.planned-card.blocked .status-box.planned {
+  color: #f59e0b;
+}
+
+.planned-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  flex-shrink: 0;
+  font-size: 10.5px;
+  font-weight: 700;
+  padding: 2px 9px;
+  border-radius: 20px;
+  white-space: nowrap;
+  color: #b4b8c0;
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid #3a3d45;
+}
+
+.detail-row.planned-golive.info {
+  color: #b4b8c0;
+}
+
+.detail-row.planned-golive.warn {
+  color: #f59e0b;
+}
+
+.planned-notes {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 4px;
+}
+
+.planned-note {
+  font-size: 11px;
+  padding: 2px 8px;
+  border-radius: 6px;
+  color: #9aa0aa;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid #2f3138;
+}
+
+.stat.planned-track small {
+  max-width: 150px;
+  line-height: 1.35;
+}
+
+@media (max-width: 640px) {
+  .planned-badge {
+    white-space: normal;
+  }
+}
