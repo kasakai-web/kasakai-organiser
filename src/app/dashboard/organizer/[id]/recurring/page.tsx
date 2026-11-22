@@ -6,7 +6,7 @@
 // schedule's occurrence calendar. They share loaded state, so pausing a schedule
 // from the list and then opening it doesn't refetch the world.
 
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useRef, useState, useCallback } from "react";
 import { useParams } from "next/navigation";
 import { useAuthGuard } from "@/hooks/useAuthGuard";
 import { ConfirmationModal } from "@/components/ui/ConfirmationModal";
@@ -69,6 +69,17 @@ export default function RecurringPage() {
       showToast("error", "Couldn't open that schedule", err instanceof Error ? err.message : undefined);
     }
   }, [showToast]);
+
+  // `?series=<id>` opens that schedule straight away — the dashboard's planned
+  // game cards link here with it. Read off `window` rather than through
+  // useSearchParams, which would make the whole page suspend; once per mount.
+  const deepLinked = useRef(false);
+  useEffect(() => {
+    if (deepLinked.current) return;
+    deepLinked.current = true;
+    const id = new URLSearchParams(window.location.search).get("series");
+    if (id) openDetail(id);
+  }, [openDetail]);
 
   const refreshDetail = useCallback(async () => {
     if (!active) return;

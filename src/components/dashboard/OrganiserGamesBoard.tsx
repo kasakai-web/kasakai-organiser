@@ -23,7 +23,11 @@ import { ListQuickAdd, SaveAsList, pickedKey } from "@/components/playerLists/Li
 import { addFromList, defaultListName, listsUsed, removeList } from "@/utils/playerLists";
 import { PlannedGameCard } from "@/components/dashboard/PlannedGameCard";
 import { mergePlanned } from "@/utils/mergePlanned";
-import { getUpcomingPreview, type PlannedGamePreview } from "@/utils/recurring";
+import { OccurrenceEditModal, OccurrenceMoveModal } from "@/components/dashboard/OccurrenceModals";
+import {
+  getUpcomingPreview, getSeries, updateOccurrence, skipOccurrence, createGameForOccurrence, prettyClock, prettyDateFull,
+  type PlannedGamePreview, type RecurringSeries, type SeriesOccurrence,
+} from "@/utils/recurring";
 import { inviteLinkUrl } from "@/utils/gameLink";
 
 // Organiser id → name for one game (owner + co-organisers), so the Players
@@ -483,6 +487,66 @@ export default function OrganiserGamesBoard({ view }: { view: GamesView }) {
     if (isAuthorized && view === 'upcoming') fetchPlanned();
   }, [isAuthorized, view, fetchPlanned]);
   useAutoRefresh(isAuthorized && view === 'upcoming' ? fetchPlanned : null, { interval: 120_000 });
+
+  // Per-date changes to a planned game, from its card's Actions menu — the same
+  // ones the Recurring page offers (Move, Edit this game, Create now, Cancel
+  // this date),
+  // through the same modals and the same occurrence endpoints. Each reaches
+  // ONE date; the schedule itself is edited on the Recurring page.
+  const [plannedBusyId, setPlannedBusyId] = useState<string | null>(null);
+  const [movingPlanned, setMovingPlanned] = useState<PlannedGamePreview | null>(null);
+  const [skippingPlanned, setSkippingPlanned] = useState<PlannedGamePreview | null>(null);
+  // Editing needs what the preview does not carry — the date's current
+  // overrides and the schedule's defaults the blanks inherit — so the series is
+  // loaded when the organiser asks, not for every card on the board.
+  const [editingPlanned, setEditingPlanned] = useState<{
+    p: PlannedGamePreview; series: RecurringSeries; occurrence: SeriesOccurrence;
+  } | null>(null);
+
+  const runPlanned = async (p: PlannedGamePreview, fn: () => Promise<unknown>, okTitle: string, okSub?: string) => {
+    setPlannedBusyId(p.occurrenceId);
+    try {
+      await fn();
+      showToast("success", okTitle, okSub);
+      // A move can carry a date inside the go-live window, where the hourly job
+      // will create it — refresh both lists so neither shows the old state.
+      await fetchPlanned();
+      silentFetch();
+    } catch (err) {
+      const e = err as Error & { code?: string };
+      showToast("error", e.code === "HAS_PLAYERS" ? "Players have already joined" : "Couldn't do that", e.message);
+    } finally {
+      setPlannedBusyId(null);
+    }
+  };
+
+  // Create the real game now instead of waiting for the go-live time. `force`
+  // matches the Recurring page's Create now: it also creates a date held back
+  // by a clash, which is why such a date is confirmed first (creatingPlanned).
+  const [creatingPlanned, setCreatingPlanned] = useState<PlannedGamePreview | null>(null);
+  const createPlannedNow = (p: PlannedGamePreview) =>
+    runPlanned(p, () => createGameForOccurrence(p.occurrenceId, true), "Game created", "It's live and open for booking.");
+
+  const openPlannedEdit = async (p: PlannedGamePreview) => {
+    setOpenMenuGameId(null);
+    setPlannedBusyId(p.occurrenceId);
+    try {
+      const series = await getSeries(p.series._id);
+      const occurrence = (series.occurrences || []).find((o) => o._id === p.occurrenceId);
+      if (!occurrence || occurrence.status !== 'planned') {
+        // Gone live, skipped or moved off this slot since the board loaded.
+        showToast("error", "This date has changed", "Refreshing — try again from the updated card.");
+        fetchPlanned();
+        silentFetch();
+        return;
+      }
+      setEditingPlanned({ p, series, occurrence });
+    } catch (err) {
+      showToast("error", "Couldn't open this game", err instanceof Error ? err.message : undefined);
+    } finally {
+      setPlannedBusyId(null);
+    }
+  };
 
   // Real-time: re-fetch whenever a socket notification arrives (e.g. guest waitlist changes)
   useEffect(() => {
@@ -1055,6 +1119,70 @@ export default function OrganiserGamesBoard({ view }: { view: GamesView }) {
           <span className="btn-icon">+ </span>Create New Event
         </button>
       </div>
+
+      {/* Planned recurring games: per-date Move / Edit / Cancel */}
+      {movingPlanned && (
+        <OccurrenceMoveModal
+          scheduledAt={movingPlanned.scheduledAt}
+          onClose={() => setMovingPlanned(null)}
+          onInvalid={(m) => showToast("error", m)}
+          onSave={(iso) => {
+            const p = movingPlanned;
+            setMovingPlanned(null);
+            runPlanned(p, () => updateOccurrence(p.occurrenceId, { scheduledAt: iso }), "Game moved",
+              `Now ${prettyDateFull(iso)} at ${prettyClock(iso)}`);
+          }}
+        />
+      )}
+
+      {editingPlanned && (
+        <OccurrenceEditModal
+          scheduledAt={editingPlanned.occurrence.scheduledAt}
+          status={editingPlanned.occurrence.status}
+          overrides={editingPlanned.occurrence.overrides}
+          defaults={editingPlanned.series.gameDefaults}
+          seriesName={editingPlanned.series.name}
+          onClose={() => setEditingPlanned(null)}
+          onInvalid={(m) => showToast("error", m)}
+          onSave={(overrides) => {
+            const { p } = editingPlanned;
+            setEditingPlanned(null);
+            runPlanned(p, () => updateOccurrence(p.occurrenceId, { overrides }), "This game updated");
+          }}
+        />
+      )}
+
+      <ConfirmationModal
+        open={!!creatingPlanned}
+        title="Create this game despite the clash?"
+        message={creatingPlanned
+          ? `${creatingPlanned.conflicts.map((c) => c.message).join(" ") || "This date clashes with another game."} Creating it now opens "${creatingPlanned.title}" on ${prettyDateFull(creatingPlanned.scheduledAt)} at ${prettyClock(creatingPlanned.scheduledAt)} for booking anyway.`
+          : ""}
+        confirmLabel="Create anyway"
+        cancelLabel="Not now"
+        onCancel={() => setCreatingPlanned(null)}
+        onConfirm={() => {
+          const p = creatingPlanned;
+          setCreatingPlanned(null);
+          if (p) createPlannedNow(p);
+        }}
+      />
+
+      <ConfirmationModal
+        open={!!skippingPlanned}
+        title="Cancel this date?"
+        message={skippingPlanned
+          ? `No game will be created for "${skippingPlanned.title}" on ${prettyDateFull(skippingPlanned.scheduledAt)} at ${prettyClock(skippingPlanned.scheduledAt)}. The rest of the "${skippingPlanned.series.name}" schedule carries on, and you can restore this date from the Recurring page.`
+          : ""}
+        confirmLabel="Cancel this date"
+        cancelLabel="Keep it"
+        onCancel={() => setSkippingPlanned(null)}
+        onConfirm={() => {
+          const p = skippingPlanned;
+          setSkippingPlanned(null);
+          if (p) runPlanned(p, () => skipOccurrence(p.occurrenceId), "Date cancelled", "No game will be created on this date.");
+        }}
+      />
 
       <ConfirmationModal
         open={confirmVisible}
@@ -1919,7 +2047,29 @@ export default function OrganiserGamesBoard({ view }: { view: GamesView }) {
             <div className="games-list" style={refiltering ? { opacity: 0.55, transition: "opacity .15s" } : undefined} aria-busy={refiltering}>
               {upcomingItems.map((item) => {
                 if (item.kind === 'planned') {
-                  return <PlannedGameCard key={`planned-${item.planned.occurrenceId}`} p={item.planned} />;
+                  const p = item.planned;
+                  const menuKey = `planned-${p.occurrenceId}`;
+                  return (
+                    <PlannedGameCard
+                      key={menuKey}
+                      p={p}
+                      scheduleHref={`/dashboard/organizer/${organiserId}/recurring?series=${p.series._id}`}
+                      isMenuOpen={openMenuGameId === menuKey}
+                      onToggleMenu={() => setOpenMenuGameId(openMenuGameId === menuKey ? null : menuKey)}
+                      busy={plannedBusyId === p.occurrenceId}
+                      onMove={() => { setMovingPlanned(p); setOpenMenuGameId(null); }}
+                      onEdit={() => openPlannedEdit(p)}
+                      onCreateNow={() => {
+                        setOpenMenuGameId(null);
+                        // A clean date is created straight away; one that clashes
+                        // is asked about first, because creating it overrides the
+                        // clash the card is warning about.
+                        if (p.goLiveState === 'blocked' || p.conflicts.length > 0) setCreatingPlanned(p);
+                        else createPlannedNow(p);
+                      }}
+                      onCancelDate={() => { setSkippingPlanned(p); setOpenMenuGameId(null); }}
+                    />
+                  );
                 }
                 const game = item.game;
                 return (

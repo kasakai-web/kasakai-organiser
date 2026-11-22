@@ -1,16 +1,22 @@
 "use client";
 
 // A faded card in Upcoming Events for a recurring game that is planned but not
-// created yet — mixed into the live games by date. Read-only on purpose — there are no players, no roster and
-// nothing to confirm until the game goes live, so a card here carries no
-// buttons and no menu. What it carries is what an organiser needs to decide
-// whether to leave the date alone: when it goes live, whether anything will
-// stop it, what it will be priced and sized at, and how this series' last few
-// games actually went. Editing a date stays on the Recurring page.
+// created yet — mixed into the live games by date. There are no players, no
+// roster and nothing to confirm until the game goes live, so the card carries
+// what an organiser needs to decide whether to leave the date alone: when it
+// goes live, whether anything will stop it, what it will be priced and sized
+// at, and how this series' last few games actually went.
+//
+// Its Actions menu holds the per-date actions the Recurring page offers —
+// Move, Edit this game, Create now, Cancel this date (a skip) — each reaching
+// THIS occurrence only. Anything wider stays on the schedule itself, linked from
+// the same menu.
 
-import { useState } from "react";
+import { useLayoutEffect, useRef, useState } from "react";
+import Link from "next/link";
 import {
-  Calendar, CalendarClock, Clock, Lock, MapPin, Pause, Repeat, TriangleAlert, Users, Ban,
+  Calendar, CalendarClock, CalendarPlus, CalendarX, ChevronDown, Clock, ExternalLink, Lock, MapPin, Pause, Pencil,
+  Repeat, TriangleAlert, Users, Ban, MoveRight,
 } from "lucide-react";
 import "./GameCard/GameCard.css";
 import "./PlannedGameCard.css";
@@ -75,10 +81,38 @@ function trackLine(t: PlannedGamePreview["track"]): string {
   return parts.join(" · ");
 }
 
-export function PlannedGameCard({ p }: { p: PlannedGamePreview }) {
+interface Props {
+  p: PlannedGamePreview;
+  /** Where "Open schedule" goes — the Recurring page. Omitted, the link is left out. */
+  scheduleHref?: string;
+  isMenuOpen?: boolean;
+  onToggleMenu?: () => void;
+  /** While a change to this date is in flight. */
+  busy?: boolean;
+  onMove?: () => void;
+  onEdit?: () => void;
+  /** Create the real game now instead of waiting for it to go live on schedule. */
+  onCreateNow?: () => void;
+  onCancelDate?: () => void;
+}
+
+export function PlannedGameCard({
+  p, scheduleHref, isMenuOpen = false, onToggleMenu, busy = false, onMove, onEdit, onCreateNow, onCancelDate,
+}: Props) {
   // Read once per mount: "goes live in 3 days" does not need to tick, and the
   // clock must not be read during render.
   const [now] = useState(() => Date.now());
+  const hasActions = !!(onToggleMenu && (onMove || onEdit || onCreateNow || onCancelDate || scheduleHref));
+
+  // Same flip-up rule as GameCard: a menu that would run off the bottom of the
+  // screen opens above the button instead.
+  const dropdownRef = useRef<HTMLDivElement>(null);
+  const [openUpward, setOpenUpward] = useState(false);
+  useLayoutEffect(() => {
+    if (!isMenuOpen) { setOpenUpward(false); return; }
+    const el = dropdownRef.current;
+    if (el) setOpenUpward(el.getBoundingClientRect().bottom > window.innerHeight);
+  }, [isMenuOpen]);
   const box = STATE_BOX[p.goLiveState] ?? STATE_BOX.scheduled;
   const live = goLiveLine(p, now);
   const venue = p.turf ? [p.turf.name, p.turf.area].filter(Boolean).join(", ") : "Venue not set";
@@ -95,7 +129,8 @@ export function PlannedGameCard({ p }: { p: PlannedGamePreview }) {
 
   return (
     <div
-      className={`game-card planned-card ${p.goLiveState}`}
+      className={`game-card planned-card ${p.goLiveState} ${isMenuOpen ? "menu-open" : ""} ${busy ? "busy" : ""}`}
+      aria-busy={busy || undefined}
       aria-label={`Planned recurring game: ${p.title}, not live yet`}
     >
       <div className="status-bar planned" />
@@ -182,6 +217,56 @@ export function PlannedGameCard({ p }: { p: PlannedGamePreview }) {
           <small>{trackLine(p.track)}</small>
         </div>
       </div>
+
+      {hasActions && (
+        <div className="game-actions">
+          <button
+            type="button"
+            className={`action-btn ${isMenuOpen ? "active" : ""}`}
+            onClick={onToggleMenu}
+            disabled={busy}
+            aria-expanded={isMenuOpen}
+          >
+            {busy ? "Saving…" : "Actions"}
+            <ChevronDown size={16} className={isMenuOpen ? "rotate-icon" : ""} />
+          </button>
+
+          {isMenuOpen && (
+            <div ref={dropdownRef} className={`actions-dropdown ${openUpward ? "dropdown-up" : ""}`}>
+              {onMove && (
+                <button onClick={onMove} className="planned-move-item" title="Move this date only — the rest of the schedule stays put">
+                  <MoveRight size={16} />
+                  Move
+                </button>
+              )}
+              {onEdit && (
+                <button onClick={onEdit} className="edit-item" title="Change settings for this date only">
+                  <Pencil size={16} />
+                  Edit this game
+                </button>
+              )}
+              {onCreateNow && (
+                <button onClick={onCreateNow} className="confirm-item" title="Create this game now and open it for booking, instead of waiting for it to go live">
+                  <CalendarPlus size={16} />
+                  Create now
+                </button>
+              )}
+              {scheduleHref && (
+                <Link href={scheduleHref} className="planned-menu-link" title="Open the recurring schedule this game belongs to">
+                  <ExternalLink size={16} />
+                  Open schedule
+                </Link>
+              )}
+              {onCancelDate && (
+                <button onClick={onCancelDate} className="danger-item" title="No game will be created on this date — you can restore it from the schedule">
+                  <CalendarX size={16} />
+                  Cancel this date
+                </button>
+              )}
+            </div>
+          )}
+        </div>
+      )}
     </div>
   );
 }
