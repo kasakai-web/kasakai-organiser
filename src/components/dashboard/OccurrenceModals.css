@@ -1,0 +1,64 @@
+/* Per-occurrence modals (Move / Edit this game / add one-off) — shared by the
+   Recurring page and the dashboard's planned-game cards. */
+
+/* ── Small modals (move / add one-off) ────────────────────────────────────── */
+.rec-modal-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.66);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+  z-index: 1000;
+}
+
+.rec-modal {
+  width: 100%;
+  max-width: 420px;
+  background: #141414;
+  border: 1px solid #2a2a2a;
+  border-radius: 16px;
+  padding: 22px;
+}
+
+.rec-modal h3 { margin: 0 0 8px; font-size: 16px; font-weight: 800; color: #f4f4f5; }
+.rec-modal p { margin: 0 0 14px; font-size: 12.5px; line-height: 1.55; color: #8a8a8a; }
+
+.rec-modal-actions {
+  display: flex;
+  gap: 9px;
+  justify-content: flex-end;
+  margin-top: 16px;
+}
+
+/* ── Per-occurrence editor ────────────────────────────────────────────────── */
+/* Wider than the move/one-off modals: this one carries the full override set,
+   and a 12-field column on a 420px sheet is unreadable. */
+.rec-modal.wide { max-width: 560px; max-height: 88vh; overflow-y: auto; }
+
+.rec-ov-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.rec-ov-field { display: flex; flex-direction: column; gap: 5px; min-width: 0; }
+.rec-ov-field.full { grid-column: 1 / -1; }
+.rec-ov-field .form-input,
+.rec-ov-field .form-select { width: 100%; }
+
+/* A blank field inherits the schedule, so the placeholder is the real value —
+   keep it legible rather than the usual near-invisible grey. */
+.rec-ov-field .form-input::placeholder { color: #5c5c5c; font-style: italic; }
+
+@media (max-width: 520px) {
+  .rec-ov-grid { grid-template-columns: minmax(0, 1fr); }
+}
+
+.rec-ov-note { font-size: 10.5px; color: #6a6a6a; font-style: italic; }
+.rec-ov-field .form-select:disabled { opacity: .5; cursor: not-allowed; }
+
+/* The schedule form's hint style, repeated here because the dashboard does not
+   load that form's stylesheet. */
+.rec-ov-field .field-hint { font-size: 12px; font-weight: 400; margin-top: 4px; color: var(--muted, #6a6a6a); }

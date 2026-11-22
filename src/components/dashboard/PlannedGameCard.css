@@ -17,6 +17,44 @@
   opacity: 0.85;
 }
 
+/* With its Actions menu open the card is something the organiser is acting
+   on: full strength so the menu is legible, and lifted above the next card —
+   a faded card is its own stacking context, so without the z-index the card
+   below would paint over the dropdown. */
+.game-card.planned-card.menu-open {
+  opacity: 1;
+  z-index: 20;
+}
+
+.game-card.planned-card.busy {
+  opacity: 0.4;
+  pointer-events: none;
+}
+
+.planned-move-item {
+  color: #c4b5fd;
+}
+
+.planned-move-item:hover {
+  background: rgba(167, 139, 250, 0.18);
+}
+
+/* "Open schedule" is a link, not a button, but sits in the same menu. */
+.actions-dropdown .planned-menu-link {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px;
+  border-radius: 10px;
+  font-size: 14px;
+  color: #b4b8c0;
+  text-decoration: none;
+}
+
+.actions-dropdown .planned-menu-link:hover {
+  background: rgba(255, 255, 255, 0.06);
+}
+
 .status-bar.planned {
   background: #5a5d66;
 }
