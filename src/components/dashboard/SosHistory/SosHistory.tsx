@@ -25,6 +25,8 @@ type Recipient = {
   phone: string;
   sentAt: string | null;
   whatsapp: string;
+  // Why a WhatsApp leg failed or was stopped (AiSensy's reason, or "game full").
+  whatsappError?: string | null;
   inApp: boolean;
   openedAt: string | null;
   outcome: Outcome;
@@ -49,6 +51,7 @@ type Send = {
   recipients: Recipient[];
   counts: {
     recipients: number; whatsapp: number; failed: number; inAppOnly: number; dryRun?: number;
+    queued?: number; stopped?: number;
     notReached: number; opened: number; joined: number; joinedLeft: number; waitlisted: number;
   };
   spotsFilled: number;
@@ -116,8 +119,10 @@ const plural = (n: number, one: string, many = `${one}s`) => `${n} ${n === 1 ? o
 
 // What WhatsApp did. In-app goes out on every row except "alerts_off".
 const WA: Record<string, { label: string; tone: string; title: string }> = {
-  sent:       { label: "WhatsApp ✓",  tone: "ok",    title: "Delivered to WhatsApp, plus the in-app notification" },
+  sent:       { label: "WhatsApp ✓",  tone: "ok",    title: "Handed to WhatsApp, plus the in-app notification. WhatsApp can still hold a message back after this (e.g. its limit on promotional messages per person)" },
   failed:     { label: "WA failed",   tone: "bad",   title: "WhatsApp rejected it — the in-app notification still went" },
+  queued:     { label: "WA queued",   tone: "muted", title: "WhatsApp messages go out one by one, a few seconds apart — this one hasn't had its turn yet. The in-app notification already went" },
+  stopped:    { label: "WA not sent", tone: "muted", title: "Not sent: by its turn the game had filled (or they had booked anyway). The in-app notification still went" },
   opted_out:  { label: "In-app only", tone: "muted", title: "The player has WhatsApp notifications turned off" },
   no_number:  { label: "No number",   tone: "warn",  title: "No phone/WhatsApp number on file — in-app only" },
   held_back:  { label: "In-app only", tone: "muted", title: "Automatic SOS kept WhatsApp back: they left the last few unanswered" },
@@ -321,7 +326,9 @@ export function SosHistory({ gameId }: { gameId: string }) {
                   <div className="sosh-counts">
                     <span>{plural(c.recipients, "player")}</span>
                     <span>{c.whatsapp} WhatsApp</span>
+                    {(c.queued ?? 0) > 0 && <span className="info">{c.queued} WhatsApp still going out</span>}
                     {c.failed > 0 && <span className="bad">{c.failed} failed</span>}
+                    {(c.stopped ?? 0) > 0 && <span>{c.stopped} WhatsApp not sent</span>}
                     {c.inAppOnly > 0 && <span>{c.inAppOnly} in-app only</span>}
                     {(c.dryRun ?? 0) > 0 && <span>{c.dryRun} WhatsApp skipped (dry run)</span>}
                     {c.opened > 0 && <span className="info">{c.opened} tapped</span>}
@@ -338,7 +345,8 @@ export function SosHistory({ gameId }: { gameId: string }) {
                     <div className="sosh-rows-note">Showing {rows.length} of {c.recipients}</div>
                   )}
                   {rows.map((r) => {
-                    const wa = WA[r.whatsapp] || WA.sent;
+                    const base = WA[r.whatsapp] || WA.sent;
+                    const wa = r.whatsappError ? { ...base, title: `${base.title} — ${r.whatsappError}` } : base;
                     const o = outcomeOf(r);
                     return (
                       <div key={r.id} className="sosh-row">
