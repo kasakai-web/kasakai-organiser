@@ -774,7 +774,7 @@ export default function OrganiserProfilePage() {
               <div>
                 <div className="op-notif-label">Auto-confirm at minimum</div>
                 <div className="op-notif-desc">
-                  Between the 1st and 2nd check-in, a game is confirmed the moment it has its minimum players.
+                  From the 1st check-in up to the 2nd, a game is confirmed the moment it has its minimum players.
                   A confirmed game stays confirmed. Applies to new games — you can still switch it per game
                   until it is confirmed.
                 </div>

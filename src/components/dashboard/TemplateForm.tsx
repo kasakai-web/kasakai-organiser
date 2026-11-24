@@ -15,7 +15,7 @@ import { saveTemplate, updateTemplate, type Template, type Format } from "@/util
 import { defaultCheckTimes } from "@/utils/checkins";
 import { fromStored, toPayload, describeForOrganiser, WINDOW_CHOICES, GRACE_CHOICES, choicesWith, switchUnit, clampPercent, type BackoutPolicy, type FeeUnit } from "@/utils/backoutPolicy";
 import { hostSlotsFromStored, hostSlotsToPayload, hostSlotsError, type HostSlotsForm } from "@/utils/hosts";
-import { AUTO_CONFIRM_LABEL, autoConfirmHelper } from "@/utils/autoConfirm";
+import { AUTO_CANCEL_LABEL, AUTO_CONFIRM_LABEL, autoCancelHelper, autoConfirmHelper } from "@/utils/autoConfirm";
 import { HostSpotsFields } from "@/components/dashboard/HostSpotsFields";
 import { EarlyBirdFields, earlyBirdBlueprint, earlyBirdToPayload, type EarlyBirdRow } from "@/components/dashboard/EarlyBirdFields";
 
@@ -460,8 +460,9 @@ export function TemplateForm({ template, onClose, onSaved }: TemplateFormProps) 
           <h3 className="section-title">Confirmation Check-ins</h3>
           <label className="toggle-row">
             <input type="checkbox" checked={automationEnabled} onChange={(ev) => setAutomationEnabled(ev.target.checked)} className="toggle-checkbox" />
-            <span className="toggle-label">Automation — auto-confirm / auto-cancel at the 2nd check-in</span>
+            <span className="toggle-label">{AUTO_CANCEL_LABEL}</span>
           </label>
+          <div className="field-hint">{autoCancelHelper(automationEnabled)}</div>
           <label className="toggle-row" style={{ marginTop: 10 }}>
             <input type="checkbox" checked={autoConfirmOnMin} onChange={(ev) => setAutoConfirmOnMin(ev.target.checked)} className="toggle-checkbox" />
             <span className="toggle-label">{AUTO_CONFIRM_LABEL}</span>

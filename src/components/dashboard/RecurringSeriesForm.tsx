@@ -21,7 +21,7 @@ import {
 } from "@/utils/recurring";
 import { fromStored, toPayload, describeForOrganiser, WINDOW_CHOICES, GRACE_CHOICES, choicesWith, switchUnit, clampPercent, type BackoutPolicy, type FeeUnit } from "@/utils/backoutPolicy";
 import { hostSlotsFromStored, hostSlotsToPayload, hostSlotsError, type HostSlotsForm } from "@/utils/hosts";
-import { AUTO_CONFIRM_LABEL, autoConfirmHelper } from "@/utils/autoConfirm";
+import { AUTO_CANCEL_LABEL, AUTO_CONFIRM_LABEL, autoCancelHelper, autoConfirmHelper } from "@/utils/autoConfirm";
 import { HostSpotsFields } from "@/components/dashboard/HostSpotsFields";
 import { EarlyBirdFields, earlyBirdBlueprint, earlyBirdToPayload, type EarlyBirdRow } from "@/components/dashboard/EarlyBirdFields";
 
@@ -733,8 +733,9 @@ export function RecurringSeriesForm({ series, pivotOccurrenceId, onClose, onSave
             </label>
             <label className="toggle-row">
               <input type="checkbox" className="toggle-checkbox" checked={automationEnabled} onChange={(ev) => setAutomationEnabled(ev.target.checked)} />
-              <span className="toggle-label">Auto-confirm / auto-cancel at the second check-in</span>
+              <span className="toggle-label">{AUTO_CANCEL_LABEL}</span>
             </label>
+            <div className="field-hint">{autoCancelHelper(automationEnabled)}</div>
             <label className="toggle-row">
               <input type="checkbox" className="toggle-checkbox" checked={autoConfirmOnMin} onChange={(ev) => setAutoConfirmOnMin(ev.target.checked)} />
               <span className="toggle-label">{AUTO_CONFIRM_LABEL}</span>

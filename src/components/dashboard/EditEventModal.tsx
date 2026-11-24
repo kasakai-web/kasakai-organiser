@@ -252,7 +252,7 @@ export function EditEventModal({
      A check-in is "N hours before kickoff", not a fixed wall-clock moment. If the
      game moves a week out and the check-ins stay put, the engine reaches the 2nd
      check-in on the old date and decides the game's fate a week early — with
-     automation ON, that auto-cancels and refunds a game nobody had a chance to
+     auto-cancel ON, that cancels and refunds a game nobody had a chance to
      fill. Translating every pending check by the same delta keeps the organiser's
      intent and preserves 1st < 2nd < kickoff for free. Always measured from the
      ORIGINAL values so repeated edits can't compound. */
@@ -842,8 +842,8 @@ export function EditEventModal({
                   </div>
                   <div style={{ fontSize: 11, color: "#666" }}>
                     {automationEnabled
-                      ? `Automation is ON — the system will decide at ${prettyIst(secondCheckIso)}.`
-                      : `Automation is OFF — you'll be asked to decide at ${prettyIst(secondCheckIso)}.`}
+                      ? `Auto-cancel is ON — if it is still below its minimum at ${prettyIst(secondCheckIso)}, it is cancelled and everyone refunded.`
+                      : `Auto-cancel is OFF — if it is below its minimum at ${prettyIst(secondCheckIso)}, you'll be asked what to do.`}
                   </div>
                 </>
               )}

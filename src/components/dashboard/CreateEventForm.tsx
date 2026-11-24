@@ -6,7 +6,7 @@ import { buildApiUrl, getSession } from "@/utils/api";
 import { checkInDate, defaultCheckTimes, checkInIsoFromParts } from "@/utils/checkins";
 import { saveTemplate, listTemplates, prettyTime, type Template } from "@/utils/templates";
 import { fromStored, toPayload, describeForOrganiser, formatMins, WINDOW_CHOICES, GRACE_CHOICES, choicesWith, newTier, switchUnit, clampPercent, type BackoutPolicy } from "@/utils/backoutPolicy";
-import { AUTO_CONFIRM_LABEL, autoConfirmHelper, freeExitWarning } from "@/utils/autoConfirm";
+import { AUTO_CANCEL_LABEL, AUTO_CONFIRM_LABEL, autoCancelHelper, autoConfirmHelper, freeExitWarning } from "@/utils/autoConfirm";
 import { hostSlotsFromStored, hostSlotsToPayload, hostSlotsError, listMyHosts, type HostSlotsForm } from "@/utils/hosts";
 import { HostSpotsFields } from "@/components/dashboard/HostSpotsFields";
 import { EarlyBirdFields, earlyBirdBlueprint, earlyBirdToPayload, type EarlyBirdRow } from "@/components/dashboard/EarlyBirdFields";
@@ -338,9 +338,9 @@ export function CreateEventForm({ lastEvent, presetDate, onClose, onCreate, onSu
   const [altMax, setAltMax] = useState<string>(lastAlt?.maxPlayers ? String(lastAlt.maxPlayers) : "");
   const [altFee, setAltFee] = useState<string>(lastAlt?.feeInPaise ? String(lastAlt.feeInPaise / 100) : "");
   const altDefaultsSet = useRef(!!lastAlt);
-  // Automation master switch (section 3.1, amended Jul 2026): governs EVERYTHING at
-  // the 2nd check-in. ON = auto-confirm main/alternate or auto-cancel by itself;
-  // OFF = the system only prompts (pop-up + WhatsApp) and waits for the organiser.
+  // Auto-cancel at the 2nd check-in (stored as `automationEnabled`, a historical
+  // name): ON = below every playable minimum there → cancelled + refunded by
+  // itself; OFF = the organiser is prompted (pop-up + WhatsApp) and decides.
   const [automationEnabled, setAutomationEnabled] = useState(lastEvent?.lifecycle?.automationEnabled ?? false);
   // Auto-confirm at minimum. Off by default; the organiser's profile default
   // (fetched below) can turn it on for a fresh form, a template sets it outright.
@@ -1632,8 +1632,8 @@ export function CreateEventForm({ lastEvent, presetDate, onClose, onCreate, onSu
               {checkTip === "second" && (
                 <div className="bg-[#1a2322] border border-[#233527] p-4 rounded-xl mb-6">
                   <p className="text-[#99c8a9] text-sm leading-relaxed">
-                    <span className="font-bold text-white">Second check-in — the deadline.</span> Automation ON: the system acts by itself — enough players → confirm; enough for the alternate → switch &amp; confirm; too few → cancel + refund.<br />
-                    Automation OFF: you get a pop-up + WhatsApp and <span className="font-bold text-white">you</span> decide (confirm / switch / cancel / keep waiting).
+                    <span className="font-bold text-white">Second check-in — the deadline.</span> Enough players → confirmed if auto-confirm is on. Too few → cancelled + refunded if auto-cancel is on.<br />
+                    Anything else — including whether to play the alternate format — you get a pop-up + WhatsApp and <span className="font-bold text-white">you</span> decide (confirm / switch / cancel / keep waiting).
                   </p>
                 </div>
               )}
@@ -1650,10 +1650,8 @@ export function CreateEventForm({ lastEvent, presetDate, onClose, onCreate, onSu
 
               <div className="mt-10 pt-10 border-t border-[#222]">
                 <CheckboxRow
-                  label={<span className="font-bold">Automation — auto-confirm / auto-cancel at the 2nd check-in</span>}
-                  helper={automationEnabled
-                    ? "ON: at the 2nd check-in the system acts by itself — enough players → game confirmed automatically; enough for the alternate → switched & confirmed; too few → auto-cancelled and everyone refunded."
-                    : "OFF: the system never acts on its own. At the 2nd check-in you get a pop-up + WhatsApp with a recommendation — you confirm, switch, cancel, or keep waiting."}
+                  label={<span className="font-bold">{AUTO_CANCEL_LABEL}</span>}
+                  helper={autoCancelHelper(automationEnabled)}
                   checked={automationEnabled}
                   onChange={() => setAutomationEnabled((v: boolean) => !v)}
                 />
