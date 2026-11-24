@@ -24,7 +24,11 @@ export default function SocketClient() {
       teardown();
 
       const socket = io(SERVER_BASE, {
-        auth: { token },
+        // Read on every (re)connect, not captured once: the session is renewed
+        // daily (SessionRenewal), and a reconnect days later must not present
+        // the token this tab happened to start with.
+        auth: (cb: (data: { token: string | null }) => void) =>
+          cb({ token: localStorage.getItem("authToken") }),
         transports: ["websocket", "polling"],
         reconnectionAttempts: 15,
         reconnectionDelay: 1000,
