@@ -32,7 +32,12 @@ const STATUS_CHIP: Record<RecurringSeries["status"], { label: string; cls: strin
 };
 
 export default function RecurringPage() {
-  const tmplPerm = useOrgPermission("templatesRecurring");
+  // A new schedule makes games, so it needs Create games (on, under its cap) too.
+  const recurringPerm = useOrgPermission("templatesRecurring");
+  const createPerm = useOrgPermission("createGames");
+  const tmplPerm = !recurringPerm.on ? recurringPerm
+    : !createPerm.on || createPerm.atLimit ? { on: false, note: createPerm.on ? `Limit reached: ${createPerm.note}` : createPerm.note }
+    : recurringPerm;
   const routeParams = useParams<{ id?: string | string[] }>();
   const organiserId = Array.isArray(routeParams?.id) ? routeParams.id[0] : routeParams?.id;
 
