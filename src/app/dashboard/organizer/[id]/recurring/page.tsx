@@ -6,6 +6,7 @@
 // schedule's occurrence calendar. They share loaded state, so pausing a schedule
 // from the list and then opening it doesn't refetch the world.
 
+import { useOrgPermission } from "@/components/OrgPermissions";
 import { useEffect, useRef, useState, useCallback } from "react";
 import { useParams } from "next/navigation";
 import { useAuthGuard } from "@/hooks/useAuthGuard";
@@ -31,6 +32,7 @@ const STATUS_CHIP: Record<RecurringSeries["status"], { label: string; cls: strin
 };
 
 export default function RecurringPage() {
+  const tmplPerm = useOrgPermission("templatesRecurring");
   const routeParams = useParams<{ id?: string | string[] }>();
   const organiserId = Array.isArray(routeParams?.id) ? routeParams.id[0] : routeParams?.id;
 
@@ -167,8 +169,9 @@ export default function RecurringPage() {
             Set a pattern once — games are created automatically a few days before each kick-off, never all at once.
           </p>
         </div>
-        <button className="btn-primary" onClick={() => { setActive(null); setView("new"); }}>
+        <button className="btn-primary" disabled={!tmplPerm.on} title={tmplPerm.note || undefined} onClick={() => { setActive(null); setView("new"); }}>
           <span className="btn-icon">+ </span>New Schedule
+          {!tmplPerm.on && <span style={{ display: "block", fontSize: 11, fontWeight: 500 }}>{tmplPerm.note}</span>}
         </button>
       </div>
 
@@ -181,7 +184,7 @@ export default function RecurringPage() {
           <div style={{ marginBottom: 18 }}>
             Got a weekly fixture? Set the pattern once and stop creating the same game every week.
           </div>
-          <button className="btn-primary" onClick={() => setView("new")}><span className="btn-icon">+ </span>New Schedule</button>
+          <button className="btn-primary" disabled={!tmplPerm.on} title={tmplPerm.note || undefined} onClick={() => setView("new")}><span className="btn-icon">+ </span>New Schedule</button>
         </div>
       ) : (
         <div className="rec-grid">

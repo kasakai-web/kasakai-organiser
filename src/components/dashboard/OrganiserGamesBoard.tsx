@@ -1,5 +1,6 @@
 "use client";
 
+import { useOrgPermission } from "@/components/OrgPermissions";
 import  { useState, useEffect, useCallback, useRef } from "react";
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
@@ -113,6 +114,8 @@ const dedupeById = (list: any[]) => {
 };
 
 export default function OrganiserGamesBoard({ view }: { view: GamesView }) {
+  const createPerm = useOrgPermission("createGames");
+  const canCreate = createPerm.on && !createPerm.atLimit;
   const router = useRouter();
   const routeParams = useParams<{ id?: string | string[] }>();
   const organiserId = Array.isArray(routeParams?.id) ? routeParams.id[0] : routeParams?.id;
@@ -1115,8 +1118,11 @@ export default function OrganiserGamesBoard({ view }: { view: GamesView }) {
               : 'Manage your events, track players, and monitor revenue'}
           </p>
         </div>
-        <button className="btn-primary " onClick={() => router.push(`/dashboard/organizer/${organiserId}/create-event`)}>
+        <button className="btn-primary " disabled={!canCreate} title={createPerm.note || undefined}
+          style={canCreate ? undefined : { opacity: 0.5, cursor: "not-allowed" }}
+          onClick={() => router.push(`/dashboard/organizer/${organiserId}/create-event`)}>
           <span className="btn-icon">+ </span>Create New Event
+          {createPerm.note && <span style={{ display: "block", fontSize: 11, fontWeight: 500 }}>{createPerm.note}</span>}
         </button>
       </div>
 
@@ -2035,7 +2041,8 @@ export default function OrganiserGamesBoard({ view }: { view: GamesView }) {
                   {showKind === 'live' && plannedGames.length ? (
                     <button className="btn-primary" onClick={() => setShowKind('all')}>Show planned games</button>
                   ) : (
-                    <button className="btn-primary" onClick={() => router.push(`/dashboard/organizer/${organiserId}/create-event`)}>
+                    <button className="btn-primary" disabled={!canCreate} title={createPerm.note || undefined}
+                      onClick={() => router.push(`/dashboard/organizer/${organiserId}/create-event`)}>
                       <span>+ </span>Create Event
                     </button>
                   )}

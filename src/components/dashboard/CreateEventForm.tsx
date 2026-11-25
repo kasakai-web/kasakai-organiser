@@ -1,5 +1,6 @@
 "use client";
 
+import { useOrgPermission } from "@/components/OrgPermissions";
 import { useState, useEffect, useRef, type ReactNode } from "react";
 import { Calendar, Minus, Plus, Check, ChevronDown, Info, Save } from "lucide-react";
 import { buildApiUrl, getSession } from "@/utils/api";
@@ -282,6 +283,7 @@ export interface CreateEventFormProps {
 }
 
 export function CreateEventForm({ lastEvent, presetDate, onClose, onCreate, onSuccess }: CreateEventFormProps) {
+  const publicPerm = useOrgPermission("publicGames");
   const [turfs, setTurfs] = useState<Turf[]>([]);
   const [loading, setLoading] = useState(false);
   const [errors, setErrors] = useState<Record<string, string>>({});
@@ -289,7 +291,9 @@ export function CreateEventForm({ lastEvent, presetDate, onClose, onCreate, onSu
   const [activeTab, setActiveTab] = useState<Tab>("Event Details");
 
   const [title, setTitle] = useState(lastEvent?.title ?? "");
-  const [visibility, setVisibility] = useState<"public" | "private">(lastEvent?.visibility === "private" ? "private" : "public");
+  const [visibilityChoice, setVisibility] = useState<"public" | "private">(lastEvent?.visibility === "private" ? "private" : "public");
+  // Public games off (organiser level): every game is private.
+  const visibility = publicPerm.on ? visibilityChoice : "private";
   const [requiresApproval, setRequiresApproval] = useState<boolean>(lastEvent?.requiresApproval === true);
   const [turf, setTurf] = useState(lastEvent?.turf?._id || (typeof lastEvent?.turf === "string" ? lastEvent.turf : ""));
   const [date, setDate] = useState(presetDate ?? "");
@@ -1013,6 +1017,8 @@ export function CreateEventForm({ lastEvent, presetDate, onClose, onCreate, onSu
                 <button
                   key={v}
                   type="button"
+                  disabled={v === "public" && !publicPerm.on}
+                  title={v === "public" && !publicPerm.on ? publicPerm.note : undefined}
                   onClick={() => setVisibility(v)}
                   className={`border rounded-xl p-3 cursor-pointer transition-colors text-left ${
                     visibility === v ? "border-[#c4f042] bg-[#1a2e05]" : "border-[#333] bg-[#111] hover:border-[#555]"
@@ -1023,7 +1029,7 @@ export function CreateEventForm({ lastEvent, presetDate, onClose, onCreate, onSu
                     <span className={`font-black text-sm capitalize ${visibility === v ? "text-[#c4f042]" : "text-white"}`}>{v}</span>
                   </div>
                   <p className="text-[#888] text-xs leading-relaxed">
-                    {v === "public" ? "Listed for everyone to browse & join." : "Hidden — invite players by WhatsApp."}
+                    {v === "public" && !publicPerm.on ? `${publicPerm.note}.` : v === "public" ? "Listed for everyone to browse & join." : "Hidden — invite players by WhatsApp."}
                   </p>
                 </button>
               ))}
