@@ -1,5 +1,6 @@
 "use client";
 
+import { OrgPermissionsProvider } from "@/components/OrgPermissions";
 import React, { useState, useEffect, useCallback } from "react";
 import { useAutoRefresh } from "@/hooks/useAutoRefresh";
 import Link from "next/link";
@@ -524,7 +525,7 @@ export default function DashboardLayout({
               </button>
             </div>
           )}
-          {children}
+          <OrgPermissionsProvider>{children}</OrgPermissionsProvider>
         </main>
       </div>
     </div>

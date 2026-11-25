@@ -1,5 +1,6 @@
 "use client";
 
+import { useOrgPermission } from "@/components/OrgPermissions";
 import { useEffect, useState, useCallback } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { useAuthGuard } from "@/hooks/useAuthGuard";
@@ -20,6 +21,7 @@ const turfName = (t?: Template["turf"]) => (t && typeof t === "object" ? t.name 
 type Pending = { template: Template; dateYMD: string };
 
 export default function TemplatesPage() {
+  const tmplPerm = useOrgPermission("templatesRecurring");
   const router = useRouter();
   const routeParams = useParams<{ id?: string | string[] }>();
   const organiserId = Array.isArray(routeParams?.id) ? routeParams.id[0] : routeParams?.id;
@@ -125,8 +127,9 @@ export default function TemplatesPage() {
           <h1 className="dashboard-title">Game Templates</h1>
           <p className="dashboard-subtitle">Save a game blueprint once — launch it any day in one tap. For games that repeat, set up a <strong>Recurring</strong> schedule instead.</p>
         </div>
-        <button className="btn-primary" onClick={() => { setEditing(null); setView("new"); }}>
+        <button className="btn-primary" disabled={!tmplPerm.on} title={tmplPerm.note || undefined} onClick={() => { setEditing(null); setView("new"); }}>
           <span className="btn-icon">+ </span>New Template
+          {!tmplPerm.on && <span style={{ display: "block", fontSize: 11, fontWeight: 500 }}>{tmplPerm.note}</span>}
         </button>
       </div>
 
@@ -137,7 +140,7 @@ export default function TemplatesPage() {
           <div style={{ fontSize: 34, marginBottom: 10 }}>📋</div>
           <div style={{ fontSize: 16, fontWeight: 700, color: "#ccc", marginBottom: 6 }}>No templates yet</div>
           <div style={{ marginBottom: 18 }}>Create one to skip filling the whole form every time.</div>
-          <button className="btn-primary" onClick={() => setView("new")}><span className="btn-icon">+ </span>New Template</button>
+          <button className="btn-primary" disabled={!tmplPerm.on} title={tmplPerm.note || undefined} onClick={() => setView("new")}><span className="btn-icon">+ </span>New Template</button>
         </div>
       ) : (
         <div className="tmpl-grid">
