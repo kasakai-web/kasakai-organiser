@@ -87,7 +87,8 @@ export function OrgPermissionsProvider({ children }: { children: React.ReactNode
     return () => { clearTimeout(t); window.removeEventListener("focus", load); onDenied = null; };
   }, [load]);
 
-  const off = perms ? perms.features.filter((f) => !perms.permissions[f.key]?.on) : [];
+  // netRevenue is hidden silently (user's call, 26 Nov 2026), so it is never named here.
+  const off = perms ? perms.features.filter((f) => f.key !== "netRevenue" && !perms.permissions[f.key]?.on) : [];
 
   return (
     <Ctx.Provider value={perms}>
