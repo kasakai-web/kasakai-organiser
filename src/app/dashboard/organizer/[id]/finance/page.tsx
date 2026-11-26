@@ -4,6 +4,7 @@ import React, { useState, useEffect, useCallback } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { buildApiUrl, clearSession, getSession } from "@/utils/api";
 import { useAuthGuard } from "@/hooks/useAuthGuard";
+import { useOrgPermission } from "@/components/OrgPermissions";
 import "../../../organizer-dashboard.css";
 import "./finance.css";
 
@@ -135,6 +136,7 @@ export default function OrgFinancePage() {
     redirectTo: "/login?role=organiser",
   });
 
+  const showNet = useOrgPermission("netRevenue").on;
   const [summary, setSummary] = useState<FinanceSummary | null>(null);
   const [games, setGames]     = useState<GameFinance[]>([]);
   const [loading, setLoading] = useState(true);
@@ -205,12 +207,14 @@ export default function OrgFinancePage() {
           {summary && (
             <div className="fin-overview">
               {/* Hero row: money */}
-              <div className="fin-hero-row">
-                <div className="fin-hero-card fin-hero-net">
-                  <div className="fin-hero-label">Net Revenue</div>
-                  <div className="fin-hero-val fin-col-green">{rs(summary.netRevenuePaise)}</div>
-                  <div className="fin-hero-sub">after refunds</div>
-                </div>
+              <div className={`fin-hero-row${showNet ? "" : " fin-hero-2"}`}>
+                {showNet && (
+                  <div className="fin-hero-card fin-hero-net">
+                    <div className="fin-hero-label">Net Revenue</div>
+                    <div className="fin-hero-val fin-col-green">{rs(summary.netRevenuePaise)}</div>
+                    <div className="fin-hero-sub">after refunds</div>
+                  </div>
+                )}
                 <div className="fin-hero-card">
                   <div className="fin-hero-label">Total Collected</div>
                   <div className="fin-hero-val fin-col-lime">{rs(summary.totalRevenuePaise)}</div>
