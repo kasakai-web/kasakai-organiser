@@ -10,11 +10,6 @@ import { AUTO_CANCEL_LABEL, AUTO_CONFIRM_LABEL, autoCancelHelper, autoConfirmHel
 import { hostSlotsFromStored, hostSlotsToPayload, hostSlotsError, listMyHosts, type HostSlotsForm } from "@/utils/hosts";
 import { HostSpotsFields } from "@/components/dashboard/HostSpotsFields";
 import { EarlyBirdFields, earlyBirdBlueprint, earlyBirdToPayload, type EarlyBirdRow } from "@/components/dashboard/EarlyBirdFields";
-// Test server only (Test_Speedups_Plan.md): the "Test timings" tab and the
-// per-minute pickers appear only when the backend's test-tools status answers.
-import { useTestTools } from "@/hooks/useTestTools";
-import { TestTimingsTab } from "@/components/dashboard/TestTimingsTab";
-import { FALLBACK_SETTINGS, PLAN_FIELDS, planFromNow, timingsOf, type TestSettings } from "@/utils/testTools";
 
 const TIME_SLOT_OPTIONS = Array.from({ length: 96 }, (_, idx) => {
   const hours = Math.floor(idx / 4);
@@ -59,10 +54,7 @@ const templateTurfId = (t?: Template["turf"]): string =>
   !t ? "" : typeof t === "string" ? t : t._id || "";
 
 const TABS = ["Event Details", "Configuration", "Check-in & Guests"] as const;
-// The 4th tab, on the test server only.
-const TEST_TAB = "Test timings" as const;
-type Tab = typeof TABS[number] | typeof TEST_TAB;
-const TEST_TABS: readonly Tab[] = [...TABS, TEST_TAB];
+type Tab = typeof TABS[number];
 
 // Which tab owns each validation error, so a failed submit can surface the tab
 // that actually holds the offending field instead of a silent no-op.
@@ -75,7 +67,6 @@ const TAB_FOR_ERROR: Record<string, Tab> = {
   hosts: "Configuration",
   alt: "Configuration",
   checks: "Check-in & Guests",
-  testPlan: TEST_TAB,
 };
 
 const inputBase =
@@ -352,17 +343,6 @@ export function CreateEventForm({ lastEvent, presetDate, onClose, onCreate, onSu
   const [secondCheckDate, setSecondCheckDate] = useState("");
   const [checkTip, setCheckTip] = useState<"first" | "second" | null>(null);
   const checkTimesEdited = useRef(false);
-
-  // ── Test server only (Test_Speedups_Plan.md) ─────────────────────────────
-  // `testOn` is true only when the backend's test-tools status answered; on
-  // production it never does, and none of this changes the form.
-  const { enabled: testOn, status: testStatus } = useTestTools();
-  const [testPlan, setTestPlan] = useState<TestSettings>(FALLBACK_SETTINGS);
-  const testPlanSeeded = useRef(false);
-  const [useTestPlan, setUseTestPlan] = useState(false);
-  const [testAnchor, setTestAnchor] = useState(true);
-  const [testNow, setTestNow] = useState(() => new Date());
-  const testActive = testOn && useTestPlan;
   const [organiserIsPlaying, setOrganiserPlaying] = useState(lastEvent?.organiserIsPlaying ?? false);
   const [organiserGuests, setOrganiserGuests] = useState<{ name: string; position: string; teamPreference: string }[]>([]);
   const [guestPrefOpen, setGuestPrefOpen] = useState(false);
@@ -416,85 +396,14 @@ export function CreateEventForm({ lastEvent, presetDate, onClose, onCreate, onSu
       )
     : templates;
 
-  const testTimes = {
-    kickoff: date ? new Date(`${date}T${time}:00+05:30`) : null,
-    first: firstCheckIso ? new Date(firstCheckIso) : null,
-    second: secondCheckIso ? new Date(secondCheckIso) : null,
-    reportingMins: Number(reportingMins),
-    durationMins: Number(durationMins),
-  };
-
   const errorTabs = new Set<string>();
   Object.keys(errors).forEach((k) => { const t = TAB_FOR_ERROR[k]; if (t) errorTabs.add(t); });
   if (checkOrderBad) errorTabs.add("Check-in & Guests");
 
-  // ── Test timings (test server only) ────────────────────────────────────────
-  // Write a plan's times into the form's own date/time fields, counted from
-  // `now`. One copy of each time: the tab drives the same fields the other tabs
-  // show, and the check-in defaults effect is kept off them.
-  const applyTestTimes = (plan: TestSettings, now: Date) => {
-    const p = planFromNow(plan, now);
-    checkTimesEdited.current = true;
-    setDate(p.date);
-    setTime(p.time);
-    setFirstCheckDate(p.firstCheckDate);
-    setFirstCheckTime(p.firstCheckTime);
-    setSecondCheckDate(p.secondCheckDate);
-    setSecondCheckTime(p.secondCheckTime);
-  };
-  const changeTestPlan = (next: TestSettings) => {
-    setTestPlan(next);
-    setReporting(next.reportingMins);
-    setDuration(next.durationMins);
-    applyTestTimes(next, new Date());
-  };
-  // Opening the tab for the first time switches test timings on for this game.
-  const startTestPlan = () => {
-    setUseTestPlan(true);
-    setReporting(testPlan.reportingMins);
-    setDuration(testPlan.durationMins);
-    applyTestTimes(testPlan, new Date());
-  };
-  // Editing a kick-off or check-in time by hand means "use exactly this time".
-  const handEditedTime = () => { if (testActive) setTestAnchor(false); };
-
   const goToTab = (tab: Tab) => {
-    if (tab === TEST_TAB && !useTestPlan) startTestPlan();
     setActiveTab(tab);
     if (typeof window !== "undefined") window.scrollTo({ top: 0, behavior: "smooth" });
   };
-
-  // The admin box's defaults seed the plan once, before the tab is first opened.
-  useEffect(() => {
-    if (!testStatus?.settings || testPlanSeeded.current) return;
-    testPlanSeeded.current = true;
-    setTestPlan({ ...FALLBACK_SETTINGS, ...testStatus.settings });
-  }, [testStatus]);
-
-  // While the plan counts from "now", keep its times moving forward.
-  useEffect(() => {
-    if (!testActive) return;
-    const id = setInterval(() => {
-      const now = new Date();
-      setTestNow(now);
-      if (testAnchor) applyTestTimes(testPlan, now);
-    }, 15000);
-    return () => clearInterval(id);
-  }, [testActive, testAnchor, testPlan]);
-
-  // A per-minute time input on the test server; the usual quarter-hour list elsewhere.
-  const timeInput = (value: string, onChange: (v: string) => void) => (
-    testOn ? (
-      <input type="time" step={60} className={dateCls()} value={value} onChange={(e) => onChange(e.target.value)} />
-    ) : (
-      <>
-        <select value={value} onChange={(e) => onChange(e.target.value)} className={selectCls()}>
-          {TIME_SLOT_OPTIONS.map((s) => <option key={s.value} value={s.value}>{s.label}</option>)}
-        </select>
-        <ChevronDown size={18} className="absolute right-4 top-4.5 text-[#888] pointer-events-none" />
-      </>
-    )
-  );
 
 
   useEffect(() => {
@@ -677,33 +586,8 @@ export function CreateEventForm({ lastEvent, presetDate, onClose, onCreate, onSu
     setErrors({});
   };
 
-  // The form's time fields as they stand; handleCreate may count them again.
-  const dateState = date;
-  const timeState = time;
-  const firstCheckDateState = firstCheckDate;
-  const firstCheckTimeState = firstCheckTime;
-  const secondCheckDateState = secondCheckDate;
-  const secondCheckTimeState = secondCheckTime;
-
   const handleCreate = async () => {
     const newErrors: Record<string, string> = {};
-
-    // Test server: with "count from when I press Create" on, every time is
-    // counted again right now, so check-in 1 cannot have slipped into the past
-    // while the rest of the form was filled in. The form shows the same values.
-    const anchored = testActive && testAnchor ? planFromNow(testPlan, new Date()) : null;
-    if (anchored) applyTestTimes(testPlan, new Date());
-    const date = anchored ? anchored.date : dateState;
-    const time = anchored ? anchored.time : timeState;
-    const firstCheckDate = anchored ? anchored.firstCheckDate : firstCheckDateState;
-    const firstCheckTime = anchored ? anchored.firstCheckTime : firstCheckTimeState;
-    const secondCheckDate = anchored ? anchored.secondCheckDate : secondCheckDateState;
-    const secondCheckTime = anchored ? anchored.secondCheckTime : secondCheckTimeState;
-    if (testActive) {
-      const bad = PLAN_FIELDS.find((f) => !Number.isInteger(testPlan[f.key]) || testPlan[f.key] < f.min || testPlan[f.key] > f.max);
-      if (bad) newErrors.testPlan = `${bad.label} must be from ${bad.min} to ${bad.max}.`;
-    }
-
     if (!title.trim()) newErrors.title = "Event name is required";
     if (!turf) newErrors.turf = "Please select a turf";
     if (!date) newErrors.date = "Date is required";
@@ -768,7 +652,7 @@ export function CreateEventForm({ lastEvent, presetDate, onClose, onCreate, onSu
     if (Object.keys(newErrors).length > 0) {
       setErrors(newErrors);
       // First Error  Tab jump to that
-      const firstBadTab = (testOn ? TEST_TABS : TABS).find((t) => Object.keys(newErrors).some((k) => TAB_FOR_ERROR[k] === t));
+      const firstBadTab = TABS.find((t) => Object.keys(newErrors).some((k) => TAB_FOR_ERROR[k] === t));
       if (firstBadTab) goToTab(firstBadTab);
       return;
     }
@@ -811,9 +695,6 @@ export function CreateEventForm({ lastEvent, presetDate, onClose, onCreate, onSu
           automationEnabled,
           autoConfirmOnMin,
         },
-        // Test server only: this game's own waits. Never sent otherwise, and
-        // the production backend drops the field even if it were.
-        ...(testActive ? { testTimings: timingsOf(testPlan) } : {}),
         alternateFormats: allowSizeChange ? [{
           format: altFormat,
           turf: altTurf || turf,
@@ -1003,7 +884,7 @@ export function CreateEventForm({ lastEvent, presetDate, onClose, onCreate, onSu
             </div>
           )}
 
-          <TabNavigation tabs={testOn ? TEST_TABS : TABS} activeTab={activeTab} onChange={(t) => goToTab(t as Tab)} errorTabs={errorTabs} />
+          <TabNavigation tabs={TABS} activeTab={activeTab} onChange={(t) => goToTab(t as Tab)} errorTabs={errorTabs} />
 
           {activeTab === "Event Details" && (
           <Panel>
@@ -1096,7 +977,7 @@ export function CreateEventForm({ lastEvent, presetDate, onClose, onCreate, onSu
                     type="date"
                     value={date}
                     min={todayStr}
-                    onChange={(e) => { handEditedTime(); setDate(e.target.value); }}
+                    onChange={(e) => setDate(e.target.value)}
                     className={dateCls(!!errors.date)}
                   />
                   <Calendar size={18} className="absolute right-5 top-4 text-[#888] pointer-events-none" />
@@ -1106,11 +987,14 @@ export function CreateEventForm({ lastEvent, presetDate, onClose, onCreate, onSu
               <div>
                 <Label text="Game Start Time" />
                 <div className="relative">
-                  {timeInput(time, (v) => {
-                    // A test plan keeps its own check-ins; otherwise they follow the kick-off.
-                    if (testActive) handEditedTime(); else checkTimesEdited.current = false;
-                    setTime(v);
-                  })}
+                  <select
+                    value={time}
+                    onChange={(e) => { checkTimesEdited.current = false; setTime(e.target.value); }}
+                    className={selectCls()}
+                  >
+                    {TIME_SLOT_OPTIONS.map((s) => <option key={s.value} value={s.value}>{s.label}</option>)}
+                  </select>
+                  <ChevronDown size={18} className="absolute right-4 top-4.5 text-[#888] pointer-events-none" />
                 </div>
               </div>
               <div>
@@ -1121,7 +1005,7 @@ export function CreateEventForm({ lastEvent, presetDate, onClose, onCreate, onSu
                     onChange={(e) => setReporting(Number(e.target.value))}
                     className={selectCls()}
                   >
-                    {(testOn ? [0, 5, 10, 15, 30, 45, 60] : [15, 30, 45, 60]).map((m) => (
+                    {[15,30,45,60].map((m) => (
                       <option key={m} value={m}>{m} mins before game{reportingTime && date ? ` (${reportingTime})` : ""}</option>
                     ))}
                   </select>
@@ -1131,16 +1015,15 @@ export function CreateEventForm({ lastEvent, presetDate, onClose, onCreate, onSu
               </div>
               <div>
                 <Label text="Duration" />
-                {/* Quarter hours; by the minute on the test server. */}
                 <Counter
                   value={durationMins}
                   unit="min"
-                  min={testOn ? 1 : 15}
-                  step={testOn ? 1 : 15}
-                  onInput={(raw) => setDuration(Math.max(testOn ? 1 : 15, Number(raw) || (testOn ? 1 : 15)))}
-                  onDec={() => setDuration((v: number) => Math.max(testOn ? 1 : 15, v - (testOn ? 1 : 15)))}
-                  onInc={() => setDuration((v: number) => v + (testOn ? 1 : 15))}
-                  decDisabled={Number(durationMins) <= (testOn ? 1 : 15)}
+                  min={15}
+                  step={15}
+                  onInput={(raw) => setDuration(Math.max(15, Number(raw) || 15))}
+                  onDec={() => setDuration((v: number) => Math.max(15, v - 15))}
+                  onInc={() => setDuration((v: number) => v + 15)}
+                  decDisabled={Number(durationMins) <= 15}
                 />
                 {endTime && date && <Hint>Game ends at <strong className="text-[#aaa]">{endTime}</strong></Hint>}
               </div>
@@ -1579,7 +1462,7 @@ export function CreateEventForm({ lastEvent, presetDate, onClose, onCreate, onSu
                       value={firstCheckDate}
                       min={todayStr}
                       max={date || undefined}
-                      onChange={(e) => { checkTimesEdited.current = true; handEditedTime(); setFirstCheckDate(e.target.value); }}
+                      onChange={(e) => { checkTimesEdited.current = true; setFirstCheckDate(e.target.value); }}
                     />
                     <Calendar size={18} className="absolute right-5 top-4 text-[#888] pointer-events-none" />
                   </div>
@@ -1587,7 +1470,14 @@ export function CreateEventForm({ lastEvent, presetDate, onClose, onCreate, onSu
                 <div>
                   <Label text="First Check-in Time" />
                   <div className="relative">
-                    {timeInput(firstCheckTime, (v) => { checkTimesEdited.current = true; handEditedTime(); setFirstCheckTime(v); })}
+                    <select
+                      className={selectCls()}
+                      value={firstCheckTime}
+                      onChange={(e) => { checkTimesEdited.current = true; setFirstCheckTime(e.target.value); }}
+                    >
+                      {TIME_SLOT_OPTIONS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
+                    </select>
+                    <ChevronDown size={18} className="absolute right-4 top-4.5 text-[#888] pointer-events-none" />
                   </div>
                 </div>
                 <div>
@@ -1608,7 +1498,7 @@ export function CreateEventForm({ lastEvent, presetDate, onClose, onCreate, onSu
                       value={secondCheckDate}
                       min={firstCheckDate || todayStr}
                       max={date || undefined}
-                      onChange={(e) => { checkTimesEdited.current = true; handEditedTime(); setSecondCheckDate(e.target.value); }}
+                      onChange={(e) => { checkTimesEdited.current = true; setSecondCheckDate(e.target.value); }}
                     />
                     <Calendar size={18} className="absolute right-5 top-4 text-[#888] pointer-events-none" />
                   </div>
@@ -1616,7 +1506,14 @@ export function CreateEventForm({ lastEvent, presetDate, onClose, onCreate, onSu
                 <div>
                   <Label text="Second Check-in Time" />
                   <div className="relative">
-                    {timeInput(secondCheckTime, (v) => { checkTimesEdited.current = true; handEditedTime(); setSecondCheckTime(v); })}
+                    <select
+                      className={selectCls()}
+                      value={secondCheckTime}
+                      onChange={(e) => { checkTimesEdited.current = true; setSecondCheckTime(e.target.value); }}
+                    >
+                      {TIME_SLOT_OPTIONS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
+                    </select>
+                    <ChevronDown size={18} className="absolute right-4 top-4.5 text-[#888] pointer-events-none" />
                   </div>
                 </div>
               </div>
@@ -1815,26 +1712,6 @@ export function CreateEventForm({ lastEvent, presetDate, onClose, onCreate, onSu
                 Back
               </button>
             </div>
-          </Panel>
-          )}
-
-          {testOn && activeTab === TEST_TAB && (
-          <Panel>
-            <SubSectionHeader title="Test timings" first />
-            <TestTimingsTab
-              plan={{ ...testPlan, reportingMins: Number(reportingMins), durationMins: Number(durationMins) }}
-              onPlanChange={changeTestPlan}
-              on={useTestPlan}
-              onToggle={(on) => { setUseTestPlan(on); if (on) startTestPlan(); }}
-              anchor={testAnchor}
-              onAnchorChange={(a) => { setTestAnchor(a); if (a) applyTestTimes(testPlan, new Date()); }}
-              onApplyNow={() => applyTestTimes(testPlan, new Date())}
-              times={testTimes}
-              now={testNow}
-              flags={testStatus?.flags || []}
-              testCode={testStatus?.testCode}
-            />
-            {errors.testPlan && <FieldError>{errors.testPlan}</FieldError>}
           </Panel>
           )}
         </div>
