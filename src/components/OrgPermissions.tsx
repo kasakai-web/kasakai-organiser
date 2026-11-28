@@ -52,6 +52,28 @@ export function useOrgPermissions() {
   return useContext(Ctx);
 }
 
+// Banner wording for each cap (28 Nov 2026). A cap with no entry here falls back to "<cap> <capUnit>".
+const LIMIT_TEXT: Record<string, (e: Entry) => string> = {
+  createGames: (e) => `max ${e.cap} upcoming games`,
+  paidGames: (e) => `fee up to ₹${e.cap} per seat`,
+  cancellationFees: (e) => `cancellation fee up to ${e.cap}%`,
+  sosBlasts: (e) => `${e.cap} SOS per ${e.period === "week" ? "week (Mon–Sun)" : "day"}`,
+  whatsappInvites: (e) => `${e.cap} WhatsApp invites per day`,
+  coOrganisers: (e) => `max ${e.cap} co-organisers`,
+};
+
+/** "max 3 upcoming games", "max 2 games in any 4 days", … for every feature that is on and capped. */
+function limitsOf(p: Perms): string[] {
+  const out: string[] = [];
+  for (const f of p.features) {
+    const e = p.permissions[f.key];
+    if (!e?.on) continue;
+    if (e.cap !== null) out.push(LIMIT_TEXT[f.key]?.(e) ?? `${e.cap} ${f.capUnit ?? ""}`.trim());
+    if (e.windowCap !== undefined && e.windowDays) out.push(`max ${e.windowCap} games in any ${e.windowDays} days`);
+  }
+  return out;
+}
+
 let fetchPatched = false;
 let onDenied: ((message: string) => void) | null = null;
 
@@ -96,10 +118,11 @@ export function OrgPermissionsProvider({ children }: { children: React.ReactNode
 
   // netRevenue is hidden silently (user's call, 26 Nov 2026), so it is never named here.
   const off = perms ? perms.features.filter((f) => f.key !== "netRevenue" && !perms.permissions[f.key]?.on) : [];
+  const limits = perms ? limitsOf(perms) : [];
 
   return (
     <Ctx.Provider value={perms}>
-      {perms && (perms.frozen || off.length > 0) && (
+      {perms && (perms.frozen || off.length > 0 || limits.length > 0) && (
         <div style={{
           background: perms.frozen ? "rgba(248,113,113,0.08)" : "rgba(255,255,255,0.03)",
           border: `1px solid ${perms.frozen ? "rgba(248,113,113,0.35)" : "#333"}`,
@@ -114,6 +137,11 @@ export function OrgPermissionsProvider({ children }: { children: React.ReactNode
           {off.length > 0 && (
             <p style={{ margin: perms.frozen ? "4px 0 0" : 0 }}>
               {DISABLED_NOTE}: {off.map((f) => f.label).join(" · ")}
+            </p>
+          )}
+          {limits.length > 0 && (
+            <p style={{ margin: perms.frozen || off.length > 0 ? "4px 0 0" : 0 }}>
+              Your limits: {limits.join(" · ")}
             </p>
           )}
         </div>
