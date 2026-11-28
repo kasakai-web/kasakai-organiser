@@ -1,28 +1,12 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { gameJoinSlug, gameJoinUrl, inviteLinkUrl, shareLinkFor } from "./gameLink.ts";
+import { gameJoinUrl, inviteLinkUrl, shareLinkFor } from "./gameLink.ts";
 
 const id = "6a345f4fcf9f2ad4d6a5c1be";
 const base = { _id: id, title: "Saturday Morning Game", scheduledAt: "2026-06-20T06:15:00+05:30" };
 
-test("gameJoinSlug: readable title + IST date", () => {
-  assert.equal(gameJoinSlug(base.title, base.scheduledAt), "saturday-morning-game-20-jun-2026");
-});
-
-test("gameJoinSlug: the date is the IST day, not the UTC one", () => {
-  // 00:30 IST on the 21st is still the 20th in UTC.
-  assert.equal(gameJoinSlug("Night", "2026-06-21T00:30:00+05:30"), "night-21-jun-2026");
-});
-
-test("gameJoinUrl: ends in the game id, which is all the player app reads", () => {
-  const url = gameJoinUrl(base);
-  assert.equal(url, `https://www.kasakai.in/join/saturday-morning-game-20-jun-2026-${id}`);
-  // The player app's /join route: last 24-hex run in the segment.
-  assert.equal(url.match(/[0-9a-f]{24}/gi)?.pop(), id);
-});
-
-test("gameJoinUrl: punctuation-only title still yields a working link", () => {
-  assert.equal(gameJoinUrl({ _id: id, title: "!!!" }), `https://www.kasakai.in/join/${id}`);
+test("gameJoinUrl: the bare-id link, the same one the player app copies", () => {
+  assert.equal(gameJoinUrl(base), `https://www.kasakai.in/join/${id}`);
 });
 
 test("shareLinkFor: public game shares its game page", () => {

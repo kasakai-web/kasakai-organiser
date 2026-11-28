@@ -4,9 +4,10 @@
 // the game card's Copy link, the Players modal header and the Copy List
 // message all call it, so the three can never hand out different links.
 //
-// The player app's /join/[gameId] route takes the LAST 24-hex run in the
-// segment as the game id, so the readable slug in front is decoration — old
-// bare-id links keep working and a renamed game's old link still resolves.
+// It is the bare-id link the player app copies (/join/<gameId>), so a game has
+// ONE link whoever shares it. The player app's /join/[gameId] route takes the
+// LAST 24-hex run in the segment as the game id, so the older slugged links
+// (/join/saturday-evening-game-28-nov-2026-<id>) already sent out still resolve.
 
 export const PLAYER_APP_ORIGIN = (
   process.env.NEXT_PUBLIC_PLAYER_APP_URL || "https://www.kasakai.in"
@@ -24,21 +25,9 @@ export interface ShareableGame {
   invitations?: { via?: string; status?: string }[];
 }
 
-/** "Thursday Morning Game" on 12 Jun 2026 → "thursday-morning-game-12-jun-2026". */
-export function gameJoinSlug(title?: string, scheduledAt?: string): string {
-  const dateLabel = scheduledAt
-    ? new Date(scheduledAt).toLocaleDateString("en-IN", {
-        day: "numeric", month: "short", year: "numeric", timeZone: "Asia/Kolkata",
-      })
-    : "";
-  return `${title || "game"} ${dateLabel}`
-    .toLowerCase().trim().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "");
-}
-
 /** The public game page — what a player copies from the game in the player app. */
-export function gameJoinUrl(game: Pick<ShareableGame, "_id" | "title" | "scheduledAt">): string {
-  const slug = gameJoinSlug(game.title, game.scheduledAt);
-  return `${PLAYER_APP_ORIGIN}/join/${slug ? `${slug}-` : ""}${game._id}`;
+export function gameJoinUrl(game: Pick<ShareableGame, "_id">): string {
+  return `${PLAYER_APP_ORIGIN}/join/${game._id}`;
 }
 
 /** The game's shared invite link (`inv_…` token). */

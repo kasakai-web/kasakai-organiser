@@ -58,9 +58,9 @@ test("buildPlayerListMessage: register link at the BOTTOM with www domain", () =
   assert.ok(last.includes("6a345f4fcf9f2ad4d6a5c1be"));
 });
 
-test("buildPlayerListMessage: readable slug includes game name + date", () => {
+test("buildPlayerListMessage: link is the short bare-id game link", () => {
   const msg = buildPlayerListMessage(sample);
-  assert.match(msg, /join\/saturday-morning-game-20-jun-2026-6a345f4fcf9f2ad4d6a5c1be/);
+  assert.match(msg, /join\/6a345f4fcf9f2ad4d6a5c1be\b/);
 });
 
 test("buildPlayerListMessage: missing player name falls back to Unknown", () => {

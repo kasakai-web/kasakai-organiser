@@ -55,7 +55,7 @@ export function buildPlayerListMessage(input: PlayerListInput): string {
   lines.push("");
 
   // Register CTA with the join link at the bottom
-  const joinUrl = gameJoinUrl({ _id: gameId, title: gameName, scheduledAt });
+  const joinUrl = gameJoinUrl({ _id: gameId });
   lines.push(`🚨 *To get your name added on the list, register on ${joinUrl}*`);
 
   return lines.join("\n");
