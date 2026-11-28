@@ -11,7 +11,7 @@ import { createContext, useCallback, useContext, useEffect, useState } from "rea
 import { buildApiUrl, getSession } from "@/utils/api";
 import { Toast } from "@/components/ui/Toast";
 
-type Entry = { on: boolean; cap: number | null; source: string };
+type Entry = { on: boolean; cap: number | null; source: string; windowCap?: number; windowDays?: number; period?: "day" | "week" };
 type Feature = { key: string; group: string; label: string; capUnit?: string };
 type Perms = {
   trustLevel: "new" | "trusted" | "partner";
@@ -34,11 +34,18 @@ export function useOrgPermission(key: string) {
   if (key === "createGames" && p.frozen) return { on: false, atLimit: false, note: "Your account is frozen by KasaKai" };
   if (!e.on) return { on: false, atLimit: false, note: DISABLED_NOTE };
   const used = p.usage?.[key];
-  const unit = p.features.find((f) => f.key === key)?.capUnit;
+  let unit = p.features.find((f) => f.key === key)?.capUnit ?? "";
+  if (key === "sosBlasts") unit += e.period === "week" ? " this week" : " today";
+  // Depends on the kickoff the organiser picks, so it never greys the button; the server's refusal toasts.
+  const windowNote = e.windowCap !== undefined && e.windowDays ? `max ${e.windowCap} games in any ${e.windowDays} days` : "";
+  const notes: string[] = [];
+  let atLimit = false;
   if (e.cap !== null && used !== undefined) {
-    return { on: true, atLimit: used >= e.cap, note: `${used} of ${e.cap} ${unit ?? ""} used`.trim() };
+    atLimit = used >= e.cap;
+    notes.push(`${used} of ${e.cap} ${unit} used`.trim());
   }
-  return { on: true, atLimit: false, note: "" };
+  if (windowNote) notes.push(windowNote);
+  return { on: true, atLimit, note: notes.join(" · ") };
 }
 
 export function useOrgPermissions() {
